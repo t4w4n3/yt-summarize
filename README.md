@@ -44,6 +44,8 @@ mise is the single entrypoint for every contributor action. Task files live in
 | `mise run test-ui` | UI specs only (mocked API) |
 | `mise run test-stack` | API + fake-worker specs only |
 | `mise run pipeline <url>` | Submit a YouTube URL to the running stack and poll until done |
+| `mise run backup` | Snapshot both volumes (SQLite job DB + artifacts) to `~/.local/backups/` (keeps the last 10; set `BACKUP_KEEP` to change) |
+| `mise run restore <file> [--yes]` | Restore volumes from a backup archive (stops the stack, restores, restarts; prompts unless `--yes`) |
 | `mise run app [-p PORT]` | Run the web app locally (no container) for UI/API iteration |
 | `mise run worker` | Run the worker locally (no container; paid stages need the stack) |
 | `mise run cookies <file>` | Install a Netscape `cookies.txt` for the worker and restart it |

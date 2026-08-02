@@ -89,6 +89,26 @@ This copies the file to `~/.secrets/youtube-cookies.txt` (mode 600) and restarts
 the worker. The worker automatically passes `--cookies /secrets/youtube-cookies.txt`
 to yt-dlp when the file is present (it is mounted read-only from `~/.secrets`).
 
+## Production access (Tailscale)
+
+The app is served over HTTPS from the tailnet only — it is never published on a
+public interface (`compose.yaml` binds `127.0.0.1:8080`; the host's public IP
+exposes nothing). `tailscaled` terminates TLS for:
+
+    https://<machine>.ts.net/
+
+Reachable only by devices on your tailnet. Set up (one-time, on the host):
+
+```bash
+sudo tailscale set --operator=$USER
+mise run up                       # starts the stack, loopback-bound
+sudo tailscale serve --bg --https=443 http://127.0.0.1:8080
+```
+
+Inspect or disable with `tailscale serve status` / `tailscale serve --https=443 off`.
+The serve config persists across reboots, and the stack restarts via
+`restart: unless-stopped`.
+
 ## Pipeline
 
 `yt-dlp → ffmpeg → OpenRouter STT API → OpenRouter chat API → rendered Markdown`

@@ -1,0 +1,24 @@
+{
+  "name": "summarize-yt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted YouTube learning-summary workstation",
+  "main": "src/app/server.js",
+  "scripts": {
+    "start": "node src/app/server.js",
+    "start:worker": "node src/worker/worker.js",
+    "test:e2e": "playwright test --config e2e/playwright.config.js",
+    "test:e2e:ui": "playwright test --config e2e/playwright.config.js e2e/ui.spec.js",
+    "test:e2e:stack": "playwright test --config e2e/playwright.config.js e2e/stack.spec.js",
+    "test:e2e:containers": "playwright test --config e2e/playwright.containers.config.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}

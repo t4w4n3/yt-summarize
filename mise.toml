@@ -1,0 +1,5 @@
+# Development toolchain, managed by mise.
+# `mise install` / `mise run <task>` ensures this version is available to every task.
+# Keep in sync with image/Dockerfile (node:24-bookworm-slim) and package.json engines (>=24).
+[tools]
+node = "24"

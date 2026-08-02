@@ -1,0 +1,43 @@
+# e2e/compose.e2e.yaml
+# Container smoke-test stack, driven by `mise run test-containers`.
+#
+# The app service is the REAL shipped artifact (same image/Dockerfile and
+# entrypoints as compose.yaml), but the worker runs the hermetic fake pipeline
+# (e2e/fake-worker.js) instead of the real one — so no yt-dlp/ffmpeg/gnupg and
+# NO secret mounts. Job data is bind-mounted under e2e/.tmp/data (gitignored)
+# so tests start clean and you can inspect it on the host after a failure.
+#
+# Standalone (not an overlay of compose.yaml) on purpose: podman-compose
+# concatenates ports/volumes from base files, which would keep the worker's
+# secrets mounts and clash with the dev stack's 8080 mapping.
+name: summarize-yt-e2e
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: image/Dockerfile
+    command: ["/app/entrypoint-app.sh"]
+    ports:
+      - "${E2E_PORT:-4174}:8080"
+    environment:
+      PORT: "8080"
+      DATA_DIR: "/data"
+    volumes:
+      - ./.tmp/data:/data
+    restart: "no"
+
+  worker:
+    build:
+      context: ..
+      dockerfile: image/Dockerfile
+    command: ["node", "/app/e2e/fake-worker.js"]
+    environment:
+      DATA_DIR: "/data"
+      FAKE_WORKER_PORT: "4175"
+    volumes:
+      - ./.tmp/data:/data
+      - ./fake-worker.js:/app/e2e/fake-worker.js:ro
+    ports:
+      - "${E2E_WORKER_PORT:-4175}:4175"
+    restart: "no"

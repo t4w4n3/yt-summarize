@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f4f0">
+  <meta name="description" content="Turn a YouTube video into a durable study note.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <title>Summarize YT — local study-note workstation</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!--
+  THESIS: Turn a YouTube URL into a durable study note inside a one-bit desktop, refusing the generic form-and-spinner layout.
+  OWN-WORLD: black/white pixels, dithered grays, one-pixel window chrome, overlapping work surfaces, inverse pressed states.
+  STORY: Paste a video URL, watch its four-step instrument panel advance, then read and download the note without leaving the workstation.
+  FIRST VIEWPORT: The command window is centered under a persistent menu bar; input + pipeline occupy left two-thirds and the blank note window holds the right third; SUMMARIZE sits beside the URL field.
+  FORM: early one-bit desktop, position 4 in the grounded direction set, seed 13cc52ce.
+  FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+  -->
+  <header class="menu-bar" aria-label="Application menu">
+    <div class="menu-left">
+      <span class="pixel-mark" aria-hidden="true"></span>
+      <strong>SUMMARIZE-YT</strong>
+      <button type="button" class="menu-item" data-action="about">FILE</button>
+      <button type="button" class="menu-item" data-action="about">VIEW</button>
+      <button type="button" class="menu-item" data-action="about">ABOUT</button>
+    </div>
+    <div class="menu-status">
+      <span class="status-led" aria-hidden="true"></span>
+      <span>LOCAL WORKSTATION</span>
+      <span class="menu-divider" aria-hidden="true"></span>
+      <span id="clock">--:--</span>
+    </div>
+  </header>
+
+  <main class="desktop" id="workspace">
+    <div class="desktop-note desktop-note--back" aria-hidden="true">
+      <div class="window-titlebar">
+        <span class="window-close"></span>
+        <span class="window-title">READ ME</span>
+        <span class="window-grip"></span>
+      </div>
+      <div class="desktop-note__body">
+        <p>One video in.</p>
+        <p>One useful note out.</p>
+        <div class="scribble" aria-hidden="true"></div>
+      </div>
+    </div>
+
+    <section class="app-window" aria-labelledby="app-title">
+      <div class="window-titlebar">
+        <button class="window-close" type="button" aria-label="Reset workspace" data-action="reset"></button>
+        <h1 class="window-title" id="app-title">NEW STUDY NOTE</h1>
+        <span class="window-grip" aria-hidden="true"></span>
+      </div>
+
+      <div class="app-toolbar">
+        <div>
+          <p class="toolbar-kicker">YOUTUBE → MARKDOWN</p>
+          <p class="toolbar-copy">A permanent note for later, not a disposable blurb.</p>
+        </div>
+        <div class="toolbar-meta">
+          <span class="meta-label">QUEUE</span>
+          <span class="meta-value" id="queue-state">EMPTY</span>
+        </div>
+      </div>
+
+      <div class="work-grid">
+        <section class="input-panel panel" aria-labelledby="input-heading">
+          <div class="panel-heading">
+            <span class="panel-icon panel-icon--in" aria-hidden="true">IN</span>
+            <div>
+              <h2 id="input-heading">VIDEO SOURCE</h2>
+              <p>Paste one YouTube URL.</p>
+            </div>
+          </div>
+
+          <form id="summarize-form" novalidate>
+            <label for="video-url">YOUTUBE URL</label>
+            <div class="url-row">
+              <input id="video-url" name="url" type="url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://youtube.com/watch?v=..." aria-describedby="url-help url-error" required>
+              <button class="button button--primary" type="submit" id="submit-button">SUMMARIZE<span class="button-corner" aria-hidden="true">↵</span></button>
+            </div>
+            <p class="field-help" id="url-help">Single videos only · the original URL stays on this machine.</p>
+            <p class="field-error" id="url-error" role="alert" hidden>That does not look like a YouTube video URL. Try a youtube.com or youtu.be link.</p>
+          </form>
+
+          <div class="pipeline" aria-label="Summary pipeline">
+            <div class="pipeline-line" aria-hidden="true"></div>
+            <div class="pipeline-step" data-stage="downloading">
+              <span class="step-square" aria-hidden="true">01</span>
+              <div><strong>DOWNLOAD</strong><small>audio track</small></div>
+            </div>
+            <div class="pipeline-step" data-stage="converting">
+              <span class="step-square" aria-hidden="true">02</span>
+              <div><strong>CONVERT</strong><small>16 kHz mono</small></div>
+            </div>
+            <div class="pipeline-step" data-stage="transcribing">
+              <span class="step-square" aria-hidden="true">03</span>
+              <div><strong>TRANSCRIBE</strong><small>speech to text</small></div>
+            </div>
+            <div class="pipeline-step" data-stage="summarizing">
+              <span class="step-square" aria-hidden="true">04</span>
+              <div><strong>SUMMARIZE</strong><small>study structure</small></div>
+            </div>
+          </div>
+
+          <div class="input-footnote">
+            <span class="tiny-led" aria-hidden="true"></span>
+            <span id="status-message" aria-live="polite">READY — waiting for a source</span>
+          </div>
+        </section>
+
+        <section class="output-panel panel" aria-labelledby="output-heading">
+          <div class="panel-heading panel-heading--output">
+            <span class="panel-icon panel-icon--out" aria-hidden="true">OUT</span>
+            <div>
+              <h2 id="output-heading">STUDY NOTE</h2>
+              <p id="output-subtitle">Your rendered Markdown will open here.</p>
+            </div>
+            <button class="text-button" type="button" id="sample-button">OPEN SAMPLE</button>
+          </div>
+
+          <div class="note-empty" id="note-empty">
+            <div class="empty-mark" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <h3>NO NOTE OPEN</h3>
+            <p>Start with a video source.<br>Come back to this window when it is ready.</p>
+          </div>
+
+          <article class="note-content" id="note-content" hidden>
+            <div class="note-header">
+              <div>
+                <span class="note-label">RENDERED MARKDOWN</span>
+                <h3 id="note-title">Learning system notes</h3>
+              </div>
+              <button class="button button--small" type="button" id="download-button">DOWNLOAD .MD</button>
+            </div>
+            <div class="note-rule" aria-hidden="true"></div>
+            <div class="markdown-body" id="markdown-output"></div>
+          </article>
+
+          <div class="output-loading" id="output-loading" hidden>
+            <div class="loading-head">
+              <span class="loading-block loading-block--wide"></span>
+              <span class="loading-block loading-block--short"></span>
+            </div>
+            <div class="loading-lines" aria-hidden="true">
+              <span></span><span></span><span></span><span class="loading-line--short"></span>
+            </div>
+            <p id="loading-copy">Preparing note window…</p>
+          </div>
+
+          <div class="output-error" id="output-error" role="alert" hidden>
+            <strong>NOTE WINDOW STOPPED</strong>
+            <p id="output-error-copy">The worker could not finish this note.</p>
+            <button class="button button--small" type="button" data-action="reset">TRY ANOTHER URL</button>
+          </div>
+        </section>
+      </div>
+
+      <footer class="app-statusbar">
+        <span><span class="status-led" aria-hidden="true"></span> <span id="footer-state">IDLE</span></span>
+        <span id="word-count">NO WORDS</span>
+        <span>MARKDOWN / LOCAL</span>
+      </footer>
+    </section>
+
+    <aside class="desktop-note desktop-note--front" aria-label="Workspace note">
+      <div class="window-titlebar">
+        <span class="window-close" aria-hidden="true"></span>
+        <span class="window-title">SHORTCUTS</span>
+        <span class="window-grip" aria-hidden="true"></span>
+      </div>
+      <div class="shortcut-list">
+        <p><kbd>↵</kbd> submit source</p>
+        <p><kbd>esc</kbd> reset workspace</p>
+        <p><kbd>⌘D</kbd> download note</p>
+      </div>
+    </aside>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="app.js" defer></script>
+</body>
+</html>

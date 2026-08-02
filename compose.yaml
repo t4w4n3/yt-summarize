@@ -1,0 +1,43 @@
+name: summarize-yt
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: image/Dockerfile
+    command: ["/app/entrypoint-app.sh"]
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      DATA_DIR: "/data"
+    volumes:
+      - jobs-data:/data
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: image/Dockerfile
+    command: ["/app/entrypoint-worker.sh"]
+    environment:
+      DATA_DIR: "/data"
+      ARTIFACTS_DIR: "/artifacts"
+      STT_MODEL: "${STT_MODEL:-mistralai/voxtral-mini-transcribe}"
+      LLM_PROVIDER: "${LLM_PROVIDER:-openrouter}"
+      LLM_MODEL: "deepseek/deepseek-v4-flash-0731"
+      LLM_THINKING: "${LLM_THINKING:-high}"
+      WORKER_POLL_MS: "${WORKER_POLL_MS:-2000}"
+      JOB_TIMEOUT_MS: "${JOB_TIMEOUT_MS:-1800000}"
+      STALE_AFTER_MS: "${STALE_AFTER_MS:-600000}"
+    volumes:
+      - jobs-data:/data
+      - artifacts:/artifacts
+      - ${HOME}/.secrets:/secrets:ro           # OpenRouter key, GPG-encrypted at rest (never decrypted on disk)
+      - ${HOME}/.gnupg:/gnupg:ro               # passphrase-less GPG keyring (read-only; copied to writable $GNUPGHOME by entrypoint)
+    network_mode: host                         # host DNS/network; required on hosts without podman's aardvark-dns
+    restart: unless-stopped
+
+volumes:
+  jobs-data:
+  artifacts:

@@ -59,13 +59,11 @@ services:
     # Le port 1080 n'est publié qu'en loopback (personne d'autre n'y accède).
     ports:
       - "127.0.0.1:1080:1080"
-    # DNS via le tunnel (le stub systemd-resolved de l'hôte est injoignable
-    # depuis le netns du sidecar).
-    dns:
-      - 10.64.0.1
     volumes:
-      - ${HOME}/.local/mullvad-poc/wg0.conf:/cfg/wg0.conf:ro   # config WireGuard (clé privée, 0600 sur l'hôte)
-    restart: unless-stopped
+      - ${HOME}/.local/mullvad-poc:/mullvad:ro   # config WireGuard (clé privée, 0600 sur l'hôte)
+    # on-failure + exit 0 de l'entrypoint: sans config, le service reste arrêté
+    # proprement (clone frais) au lieu de boucler.
+    restart: on-failure
 
 volumes:
   jobs-data:

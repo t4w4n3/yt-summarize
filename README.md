@@ -91,6 +91,33 @@ This copies the file to `~/.secrets/youtube-cookies.txt` (mode 600) and restarts
 the worker. The worker automatically passes `--cookies /secrets/youtube-cookies.txt`
 to yt-dlp when the file is present (it is mounted read-only from `~/.secrets`).
 
+## Mullvad VPN (downloads from a datacenter IP)
+
+YouTube blocks datacenter IPs. To download reliably, the worker routes yt-dlp
+through a Mullvad WireGuard tunnel via the `vpn` sidecar (a loopback-only SOCKS5
+proxy on `127.0.0.1:1080`; nothing else — app, worker, host — is affected).
+
+First-time setup (needs a Mullvad account, ~€5/month):
+
+```bash
+mise run mullvad init    # interactive: génère une paire de clés, affiche la
+                             # clé PUBLIQUE à enregistrer sur mullvad.net, puis
+                             # demande l'adresse de tunnel attribuée (10.x.x.x/32)
+mise run up                  # démarre app + worker + vpn
+```
+
+Alternative automatisée (l'API attribue l'adresse toute seule) :
+`MULLVAD_ACCOUNT=<16 chiffres> mise run mullvad init`.
+
+- Clé privée + config WireGuard : `~/.local/mullvad-poc/` (mode 600 — ne jamais
+  partager ; la clé publique seule va sur mullvad.net).
+- YouTube blackliste les IP de sortie au fil du temps : `mise run mullvad scan`
+  pour trouver un relais qui passe, puis `mise run mullvad init -i <addr> -r <relais>`.
+- Sans config, le service `vpn` reste arrêté proprement et le stack démarre quand
+  même ; pour télécharger en direct (IP du datacenter, souvent bloquée) :
+  `MULLVAD_ENABLED=false` dans `.env`.
+- Vérification : `mise run doctor` signale une config Mullvad manquante.
+
 ## Production access (Tailscale)
 
 The app is served over HTTPS from the tailnet only — it is never published on a

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-#MISE description="POC: yt-dlp via Mullvad dans un container podman isolé (WireGuard) — aucun autre trafic ne passe par le VPN"
+#MISE description="Mullvad: rotation de relais (scan), provisioning de la config (init) et debug du tunnel (run/test/dryrun)"
 #USAGE arg "[mode]" help="run | test | init | scan | dryrun | status" default="status"
 #USAGE arg "[cmd...]" help="Commande à exécuter DANS le container VPN (après --)"
 #USAGE flag "-r --relay <hostname>" help="Relais Mullvad (défaut fr-mrs-wg-001; fr-par-wg-001 est blacklisté par YouTube)" env="MULLVAD_RELAY"
 #USAGE flag "-w --wg-port <port>" help="Port WireGuard (défaut 51820)" env="MULLVAD_WG_PORT"
 #USAGE flag "-a --account <number>" help="Numéro de compte Mullvad (16 chiffres)" env="MULLVAD_ACCOUNT"
-#USAGE flag "-i --ip <address>" help="Adresse de tunnel Mullvad déjà attribuée (ex: 10.74.39.245/32) — saute l'API" env="MULLVAD_ADDR"
+#USAGE flag "-i --ip <address>" help="Adresse de tunnel Mullvad déjà attribuée (ex: 10.64.0.100/32) — saute l'API" env="MULLVAD_ADDR"
 
 ROOT="${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$ROOT"
@@ -37,6 +37,9 @@ pick_image() {
   exit 1
 }
 
+# shellcheck source=../scripts/mullvad-lib.sh
+. "$ROOT/scripts/mullvad-lib.sh"
+
 need_account() {
   if [ -z "$ACCOUNT" ]; then
     echo "Il me faut la clé Mullvad (16 chiffres): MULLVAD_ACCOUNT=<numero> ou -a <numero>" >&2
@@ -48,21 +51,12 @@ need_account() {
   fi
 }
 
-podman_wg() {
-  # Exécute une commande wg dans un container jetable — aucun binaire hôte requis.
-  podman run --rm -i "$(pick_image)" wg "$@"
-}
-
-refresh_relays() {
-  [ -s /tmp/mullvad-relays.json ] || curl -s --max-time 30 https://api.mullvad.net/www/relays/all/ -o /tmp/mullvad-relays.json
-}
-
 podman_vpn_run() {
   # Lance <cmd...> dans un container jetable dont TOUT le trafic sort par le
   # tunnel WireGuard Mullvad. L'hôte n'est jamais touché (routes, firewall, DNS).
   # Prerequis: /dev/net/tun + CAP_NET_ADMIN (container rootless OK).
   [ -f "$CONF" ] || {
-    echo "Pas de config WireGuard ($CONF). Étape requise: mise run poc-mullvad init" >&2
+    echo "Pas de config WireGuard ($CONF). Étape requise: mise run mullvad init" >&2
     exit 1
   }
   mkdir -p "$OUT_DIR"
@@ -77,17 +71,15 @@ podman_vpn_run() {
 }
 
 cmd_init() {
-  # Écrit wg0.conf. Deux voies:
-  #  - par défaut: enregistre la pubkey auprès de l'API Mullvad (nécessite MULLVAD_ACCOUNT);
-  #  - -i/--ip <addr>: adresse déjà attribuée (page Mullvad), on saute l'API.
+  # Écrit wg0.conf. Trois voies (mêmes fonctions que `mise run setup`):
+  #  - MULLVAD_ACCOUNT: enregistre la pubkey via l'API Mullvad (adresse auto);
+  #  - -i/--ip <addr>: adresse déjà attribuée (page Mullvad), on saute l'API;
+  #  - rien: interactif — génère la paire, affiche la pubkey à enregistrer
+  #    sur mullvad.net, puis demande l'adresse attribuée.
   # La clé privée n'est JAMAIS affichée: elle est lue uniquement pour écrire le fichier.
-  mkdir -p "$STATE_DIR"
-  umask 077
-  refresh_relays
-  if [ -z "$IP_ADDR" ]; then
+  if [ -n "$ACCOUNT" ]; then
     need_account
-    [ -f "$STATE_DIR/privkey" ] || podman_wg genkey > "$STATE_DIR/privkey"
-    podman_wg pubkey < "$STATE_DIR/privkey" > "$STATE_DIR/pubkey"
+    mullvad_keygen
     echo "Enregistrement de la clé publique auprès de Mullvad (relais $RELAY)..."
     RESP="$(curl --fail --silent --show-error \
       -d "account=$ACCOUNT" \
@@ -112,63 +104,13 @@ PY
       cat "$STATE_DIR/register.json" >&2
       exit 1
     fi
+    mullvad_build_conf "$ADDR" "$RELAY"
+  elif [ -n "$IP_ADDR" ]; then
+    mullvad_keygen
+    mullvad_build_conf "$IP_ADDR" "$RELAY"
   else
-    [ -f "$STATE_DIR/privkey" ] || {
-      echo "Pas de clé privée ($STATE_DIR/privkey) — génère-la d'abord." >&2
-      exit 1
-    }
-    ADDR="$IP_ADDR"
-    echo "Adresse fournie: $ADDR (pas d'appel API)"
+    mullvad_provision_interactive "$RELAY"
   fi
-  RELAY_IP="$(python3 - "$RELAY" <<'PY'
-import json, sys
-relay = sys.argv[1]
-data = json.load(open('/tmp/mullvad-relays.json'))
-for r in data:
-    if r.get('type') == 'wireguard' and r.get('active') and r.get('hostname') == relay:
-        print(r.get('ipv4_addr_in') or '')
-        break
-PY
-)"
-  RELAY_PUB="$(python3 - "$RELAY" <<'PY'
-import json, sys
-relay = sys.argv[1]
-data = json.load(open('/tmp/mullvad-relays.json'))
-for r in data:
-    if r.get('type') == 'wireguard' and r.get('active') and r.get('hostname') == relay:
-        print(r.get('pubkey') or '')
-        break
-PY
-)"
-  if [ -z "$RELAY_IP" ] || [ -z "$RELAY_PUB" ]; then
-    echo "Relais $RELAY introuvable — rafraîchis la liste: curl -s https://api.mullvad.net/www/relays/all/ -o /tmp/mullvad-relays.json" >&2
-    exit 1
-  fi
-  cat > "$CONF" <<EOF
-[Interface]
-PrivateKey = $(cat "$STATE_DIR/privkey")
-Address = $ADDR
-# MTU 1420: wg-quick hériterait du MTU de pasta (65520) et les gros paquets
-# seraient perdus (fragmentation). 1420 = 1500 - 80 d'overhead WireGuard.
-MTU = 1420
-# Pas de ligne DNS: le wg-quick Debian (patché) exige resolvconf, absent de
-# l'image. On passe --dns 10.64.0.1 à podman, qui écrit resolv.conf du container.
-# Table=off: on gère nous-mêmes le routage (le schéma fwmark de wg-quick a
-# besoin de sysctl src_valid_mark, refusé en rootless podman). PostUp pose la
-# route de l'endpoint via la gateway pasta, puis la default via wg0.
-Table = off
-PostUp = GW=\$(ip route show default | awk '{print \$3; exit}'); IF=\$(ip route show default | awk '{print \$5; exit}'); ip route add $RELAY_IP via \$GW dev \$IF; ip route add default dev wg0; ip -6 route add ::/0 dev wg0 2>/dev/null || true
-PreDown = ip route del default dev wg0 2>/dev/null || true; ip -6 route del ::/0 dev wg0 2>/dev/null || true
-
-[Peer]
-PublicKey = $RELAY_PUB
-Endpoint = $RELAY_IP:$WG_PORT
-AllowedIPs = 0.0.0.0/0, ::/0
-PersistentKeepalive = 25
-EOF
-  chmod 600 "$CONF"
-  echo "Config écrite: $CONF (IP tunnel $ADDR via $RELAY $RELAY_IP:$WG_PORT)."
-  echo "Test rapide: mise run poc-mullvad test"
 }
 
 cmd_dryrun() {
@@ -178,10 +120,10 @@ cmd_dryrun() {
   TMP_CONF="/tmp/mullvadok.conf"
   rm -f "$TMP_CONF" /tmp/.mullvad-poc-ka /tmp/.mullvad-poc-kb /tmp/.mullvad-poc-kb.pub
   umask 077
-  refresh_relays
-  podman_wg genkey > /tmp/.mullvad-poc-ka
-  podman_wg genkey > /tmp/.mullvad-poc-kb
-  podman_wg pubkey < /tmp/.mullvad-poc-kb > /tmp/.mullvad-poc-kb.pub
+  mullvad_refresh_relays
+  node "$ROOT/scripts/wgkey.js" > /tmp/.mullvad-poc-ka
+  node "$ROOT/scripts/wgkey.js" > /tmp/.mullvad-poc-kb
+  sed -n '2p' /tmp/.mullvad-poc-kb > /tmp/.mullvad-poc-kb.pub
   RELAY_IP="$(python3 - "$RELAY" <<'PY'
 import json, sys
 relay = sys.argv[1]
@@ -195,7 +137,7 @@ PY
   [ -n "$RELAY_IP" ] || { echo "Relais $RELAY introuvable dans /tmp/mullvad-relays.json" >&2; exit 1; }
   cat > "$TMP_CONF" <<EOF
 [Interface]
-PrivateKey = $(cat /tmp/.mullvad-poc-ka)
+PrivateKey = $(sed -n '1p' /tmp/.mullvad-poc-ka)
 Address = 10.99.0.2/32
 Table = off
 PostUp = GW=\$(ip route show default | awk '{print \$3; exit}'); IF=\$(ip route show default | awk '{print \$5; exit}'); ip route add $RELAY_IP via \$GW dev \$IF; ip route add default dev wg0; ip -6 route add ::/0 dev wg0 2>/dev/null || true
@@ -231,7 +173,7 @@ EOF
   rm -f "$TMP_CONF" /tmp/.mullvad-poc-ka /tmp/.mullvad-poc-kb /tmp/.mullvad-poc-kb.pub
   echo
   echo "dryrun OK — plomberie container WireGuard fonctionnelle."
-  echo "Prochaine étape: mise run poc-mullvad init (nécessite MULLVAD_ACCOUNT)"
+  echo "Prochaine étape: mise run mullvad init (ou déjà fait par 'mise run setup')"
 }
 
 cmd_test() {
@@ -245,8 +187,8 @@ cmd_test() {
 
 cmd_run() {
   [ $# -ge 1 ] || {
-    echo "Usage: mise run poc-mullvad run -- <commande...>" >&2
-    echo "Exemple: mise run poc-mullvad run -- yt-dlp --simulate https://youtu.be/dQw4w9WgXcQ" >&2
+    echo "Usage: mise run mullvad run -- <commande...>" >&2
+    echo "Exemple: mise run mullvad run -- yt-dlp --simulate https://youtu.be/dQw4w9WgXcQ" >&2
     exit 1
   }
   echo ">> Dans le container VPN Mullvad: $*"
@@ -256,7 +198,7 @@ cmd_run() {
 cmd_scan() {
   # Teste une liste de relais (même clé/adresse) pour trouver une IP de sortie
   # non blacklistée par YouTube. Le blacklistage évolue: relance régulièrement.
-  refresh_relays
+  mullvad_refresh_relays
   [ -f "$STATE_DIR/privkey" ] || { echo "Pas de clé privée ($STATE_DIR/privkey)." >&2; exit 1; }
   local relays=(
     fr-mrs-wg-001 fr-bod-wg-001 se-got-wg-001 no-osl-wg-001 fi-hel-wg-001
@@ -267,8 +209,8 @@ cmd_scan() {
   echo "--------------------------------------"
   for R in "${relays[@]}"; do
     local RIP RPUB
-    RIP="$(relay_field "$R" ipv4)"
-    RPUB="$(relay_field "$R" pubkey)"
+    RIP="$(mullvad_relay_field "$R" ipv4)"
+    RPUB="$(mullvad_relay_field "$R" pubkey)"
     [ -n "$RIP" ] && [ -n "$RPUB" ] || { echo "$R | (introuvable dans la liste)"; continue; }
     local TMP="/tmp/mullvad-scan-$R.conf"
     umask 077
@@ -303,25 +245,13 @@ EOF
     rm -f "$TMP"
   done
   echo
-  echo "Relais OK -> mise run poc-mullvad init -i <adresse> -r <relais>"
-}
-
-relay_field() { # $1=hostname $2=ipv4|pubkey
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-relay, field = sys.argv[1], sys.argv[2]
-data = json.load(open('/tmp/mullvad-relays.json'))
-for r in data:
-    if r.get('type') == 'wireguard' and r.get('active') and r.get('hostname') == relay:
-        print(r.get('ipv4_addr_in') if field == 'ipv4' else r.get('pubkey') or '')
-        break
-PY
+  echo "Relais OK -> mise run mullvad init -i <adresse> -r <relais>"
 }
 
 cmd_status() {
-  echo "=== Environnement POC Mullvad ==="
+  echo "=== Environnement Mullvad ==="
   echo "MULLVAD_ACCOUNT: $([ -n "$ACCOUNT" ] && echo défini || echo "NON défini (MULLVAD_ACCOUNT=<16 chiffres>)")"
-  echo "Config WireGuard: $([ -f "$CONF" ] && echo "présente ($CONF)" || echo "absente — 'mise run poc-mullvad init'")"
+  echo "Config WireGuard: $([ -f "$CONF" ] && echo "présente ($CONF)" || echo "absente — 'mise run mullvad init'")"
   echo "Image projet: $(podman image exists localhost/summarize-yt_app:latest 2>/dev/null && echo "construite" || echo "ABSENTE — 'mise run build'")"
   echo "Relais par défaut: $RELAY:$WG_PORT"
   echo
@@ -329,7 +259,7 @@ cmd_status() {
   curl -s --max-time 10 https://api.ipify.org && echo
   echo
   echo "=== Modes ==="
-  echo "  init    enregistre la clé WG auprès de Mullvad (nécessite MULLVAD_ACCOUNT)"
+  echo "  init    paire + wg0.conf (compte API, -i, ou interactif — idem 'mise run setup')"
   echo "  test    IP de sortie + download yt-dlp simulé via le tunnel"
   echo "  run -- <cmd...>   exécute <cmd> dans le container VPN"
   echo "  dryrun  valide la plomberie container sans compte"

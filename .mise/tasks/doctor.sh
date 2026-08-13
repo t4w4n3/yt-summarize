@@ -59,6 +59,13 @@ else
   warn "node_modules missing — run: mise run setup"
 fi
 
+echo "Mullvad VPN (YouTube downloads):"
+if [ -f "$HOME/.local/mullvad-poc/wg0.conf" ]; then
+  ok "$HOME/.local/mullvad-poc/wg0.conf present (vpn sidecar ready)"
+else
+  warn "Mullvad non configuré — lance: mise run mullvad init (README §Mullvad VPN). Sans config, le service vpn reste arrêté et les téléchargements échouent (ou MULLVAD_ENABLED=false dans .env pour désactiver)."
+fi
+
 echo "secrets (only the paid pipeline stages need these; e2e tests do not):"
 if [ -f "$HOME/.secrets/openrouter.gpg" ]; then
   if GNUPGHOME="$HOME/.gnupg" gpg --quiet --batch --no-tty --decrypt \

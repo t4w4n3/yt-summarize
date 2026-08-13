@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-#MISE description="One-time setup: create .env, install npm deps, install the Playwright browser"
+#MISE description="One-time setup: create .env, install npm deps, Playwright browser, generate the Mullvad WireGuard keypair"
 #MISE alias="install"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -15,6 +15,14 @@ fi
 
 npm ci
 npx playwright install chromium
+
+echo
+echo "Mullvad VPN (YouTube downloads) — paire de clés WireGuard:"
+# shellcheck source=scripts/mullvad-lib.sh
+. "$ROOT/scripts/mullvad-lib.sh"
+if ! mullvad_provision_interactive; then
+  echo "  (configurable plus tard: 'mise run mullvad init' ou MULLVAD_ENABLED=false)"
+fi
 
 echo
 echo "Setup complete."

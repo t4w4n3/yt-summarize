@@ -29,6 +29,7 @@ mise run up      # build + start the stack (app + worker) → http://localhost:8
 | `mise run app [-p PORT]` | Run the web app locally (no container) |
 | `mise run worker` | Run the worker locally (no container; paid stages need the stack) |
 | `mise run cookies <file>` | Install Netscape cookies.txt for the worker + restart it |
+| `mise run poc-mullvad <mode>` | POC: route yt-dlp through Mullvad in an isolated podman container (`init`/`run`/`test`/`dryrun`/`status`; needs `MULLVAD_ACCOUNT`) |
 | `mise run doctor` | Verify tools, Node ≥24, `.env`, GPG secrets |
 
 Aliases: `install` (setup), `start` (up), `stop` (down), `ps` (status), `b` (build), `t` (test), `tc` (test-containers), `check` (doctor).
@@ -37,5 +38,6 @@ Aliases: `install` (setup), `start` (up), `stop` (down), `ps` (status), `b` (bui
 
 - Tests: `mise run t` (or `test-ui` / `test-stack`); artifacts go to `test-results/` (gitignored).
 - The stack runs via podman-compose; secrets (`~/.secrets/openrouter.gpg`, `~/.gnupg`) are host GPG mounts, decrypted in worker memory — never put keys in `.env`.
+- YouTube downloads go through Mullvad via a `vpn` sidecar service (compose): it brings up the WireGuard tunnel in its own netns and exposes a loopback-only SOCKS5 proxy (127.0.0.1:1080). The worker's yt-dlp uses `--proxy socks5h://…` (`MULLVAD_ENABLED`/`MULLVAD_PROXY` in `.env`) — only yt-dlp's traffic exits via the tunnel. No host routes/firewall are touched; the tunnel never leaves the sidecar's network namespace. The WireGuard config lives at `~/.local/mullvad-poc/wg0.conf` (private key, 0600). Re-scan relays when YouTube starts blocking again: `mise run poc-mullvad scan` (then `mise run poc-mullvad init -i <addr> -r <relay>`).
 - Local dev data dirs: `.local/` (gitignored).
 - Raw commands (`podman-compose …`, `npm run …`) work, but task files are the documented interface.

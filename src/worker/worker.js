@@ -1,5 +1,5 @@
 const { config } = require('../shared/constants');
-const { openDatabase, claimNextJob, reclaimStaleJobs, heartbeat, markFailed, closeDatabase } = require('../shared/db');
+const { openDatabase, claimNextJob, reclaimStaleJobs, getJob, heartbeat, markFailed, closeDatabase } = require('../shared/db');
 const { runPipeline, friendlyError } = require('./pipeline');
 
 const db = openDatabase();
@@ -14,15 +14,20 @@ async function loop() {
       const job = claimNextJob(db);
       if (!job) { await sleep(config.pollMs); continue; }
       console.log(`Starting ${job.id}`);
+      const controller = new AbortController();
       const beat = setInterval(() => heartbeat(db, job.id), 10000);
       try {
-        await runWithTimeout(() => runPipeline(db, job), config.jobTimeoutMs);
+        await runWithTimeout(() => runPipeline(db, job, controller.signal), config.jobTimeoutMs, controller);
         console.log(`Completed ${job.id}`);
       } catch (error) {
         console.error(`Failed ${job.id}:`, error);
-        markFailed(db, job.id, friendlyError(error), error.stage || job.stage);
+        // The claimed row carries stage=NULL; attribute the failure to the
+        // stage the job was actually in when it stopped.
+        const current = getJob(db, job.id);
+        markFailed(db, job.id, friendlyError(error), error.stage || current?.stage || job.stage);
       } finally {
         clearInterval(beat);
+        controller.abort();
       }
     } catch (error) {
       console.error('Worker loop error:', error);
@@ -32,11 +37,17 @@ async function loop() {
 }
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-function runWithTimeout(task, timeoutMs) {
-  return Promise.race([
-    task(),
-    new Promise((_, reject) => setTimeout(() => { const error = new Error(`Job exceeded the ${Math.round(timeoutMs / 60000)} minute limit.`); error.stage = 'summarizing'; reject(error); }, timeoutMs)),
-  ]);
+function runWithTimeout(task, timeoutMs, controller) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      // Abort the in-flight pipeline (kills child processes / aborts fetches)
+      // so the job is actually stopped, not merely reported as failed.
+      controller.abort();
+      reject(new Error(`Job exceeded the ${Math.round(timeoutMs / 60000)} minute limit.`));
+    }, timeoutMs);
+  });
+  return Promise.race([task(), timeout]).finally(() => clearTimeout(timer));
 }
 function shutdown(signal) {
   console.log(`${signal}: worker shutting down`);

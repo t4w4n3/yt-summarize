@@ -24,7 +24,7 @@ async function download(job, context) {
     args.push('--cookies', '/secrets/youtube-cookies.txt');
   }
   args.push(job.url);
-  await runProcess('yt-dlp', args, { stage: 'downloading', timeoutMs: context.timeoutMs, logPath: context.logPath, onHeartbeat: context.onHeartbeat });
+  await runProcess('yt-dlp', args, { stage: 'downloading', timeoutMs: context.timeoutMs, logPath: context.logPath, onHeartbeat: context.onHeartbeat, signal: context.signal });
   const audioFile = fs.readdirSync(context.jobDir).find(name => name.startsWith('audio.') && name !== 'audio.wav');
   if (!audioFile) throw new StageError('YouTube audio was not downloaded.', 'downloading');
   let title = 'Untitled YouTube video';

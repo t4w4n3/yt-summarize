@@ -8,12 +8,12 @@ const { convert } = require('./stages/convert');
 const { transcribe } = require('./stages/transcribe');
 const { summarize } = require('./stages/summarize');
 
-async function runPipeline(db, job) {
+async function runPipeline(db, job, signal) {
   const jobDir = path.join(config.artifactsDir, job.id);
   fs.mkdirSync(jobDir, { recursive: true });
   const logPath = path.join(jobDir, 'stage.log');
   const onHeartbeat = () => heartbeat(db, job.id);
-  const context = { jobDir, logPath, onHeartbeat, timeoutMs: stageTimeoutMs('downloading') };
+  const context = { jobDir, logPath, onHeartbeat, timeoutMs: stageTimeoutMs('downloading'), signal };
   let audioPath;
   let wavPath;
   let transcriptPath;

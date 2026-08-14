@@ -22,6 +22,8 @@ async function summarize(transcriptPath, context) {
   const controller = new AbortController();
   const timeoutMs = context.timeoutMs || 10 * 60 * 1000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  // The stage timeout and the job-level cancellation both abort the fetch.
+  const signal = context.signal ? AbortSignal.any([controller.signal, context.signal]) : controller.signal;
   let response;
   try {
     appendLog(context.logPath, `$ POST ${API_URL} (model=${config.llmModel}, reasoning=${config.llmThinking})`);
@@ -36,9 +38,12 @@ async function summarize(transcriptPath, context) {
         ],
         reasoning: { effort: config.llmThinking },
       }),
-      signal: controller.signal,
+      signal,
     });
   } catch (error) {
+    if (context.signal?.aborted) {
+      throw new StageError('The job was cancelled.', 'summarizing');
+    }
     throw new StageError(
       error.name === 'AbortError' ? 'Summarization timed out.' : 'The summarization API could not be reached.',
       'summarizing',

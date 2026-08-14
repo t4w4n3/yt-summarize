@@ -11,7 +11,10 @@ class StageError extends Error {
 }
 
 function runProcess(command, args, options = {}) {
-  const { cwd, env, timeoutMs = 600000, logPath, inputPath, stage = 'pipeline', onHeartbeat } = options;
+  const { cwd, env, timeoutMs = 600000, logPath, inputPath, stage = 'pipeline', onHeartbeat, signal } = options;
+  if (signal?.aborted) {
+    return Promise.reject(new StageError(`${stage} was cancelled.`, stage));
+  }
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
@@ -24,6 +27,7 @@ function runProcess(command, args, options = {}) {
       settled = true;
       clearTimeout(timeout);
       clearInterval(heartbeatTimer);
+      signal?.removeEventListener('abort', onAbort);
       log?.end();
       fn(value);
     };
@@ -33,6 +37,12 @@ function runProcess(command, args, options = {}) {
       setTimeout(() => child.kill('SIGKILL'), 3000).unref();
       finish(reject, new StageError(`${stage} timed out after ${Math.round(timeoutMs / 60000)} minutes.`, stage));
     }, timeoutMs);
+    const onAbort = () => {
+      child.kill('SIGTERM');
+      setTimeout(() => child.kill('SIGKILL'), 3000).unref();
+      finish(reject, new StageError(`${stage} was cancelled.`, stage));
+    };
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
 
     log?.write(`\n$ ${command} ${args.map(arg => JSON.stringify(arg)).join(' ')}\n`);
     child.stdout.on('data', chunk => {

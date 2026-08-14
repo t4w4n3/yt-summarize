@@ -75,8 +75,8 @@ function reclaimStaleJobs(db, staleAfterMs) {
 
 function updateStage(db, id, stage, progress) {
   const timestamp = now();
-  db.prepare('UPDATE jobs SET stage = ?, progress = ?, updated_at = ? WHERE id = ?')
-    .run(stage, progress, timestamp, id);
+  db.prepare('UPDATE jobs SET stage = ?, progress = ?, updated_at = ? WHERE id = ? AND status = ?')
+    .run(stage, progress, timestamp, id, STATUS.RUNNING);
 }
 
 function heartbeat(db, id) {
@@ -87,14 +87,14 @@ function heartbeat(db, id) {
 
 function markDone(db, id, title, markdown) {
   const timestamp = now();
-  db.prepare(`UPDATE jobs SET status = ?, stage = NULL, progress = 100, title = ?, markdown = ?, error = NULL, last_heartbeat_at = NULL, updated_at = ? WHERE id = ?`)
-    .run(STATUS.DONE, title || null, markdown, timestamp, id);
+  db.prepare(`UPDATE jobs SET status = ?, stage = NULL, progress = 100, title = ?, markdown = ?, error = NULL, last_heartbeat_at = NULL, updated_at = ? WHERE id = ? AND status = ?`)
+    .run(STATUS.DONE, title || null, markdown, timestamp, id, STATUS.RUNNING);
 }
 
 function markFailed(db, id, error, stage) {
   const timestamp = now();
-  db.prepare(`UPDATE jobs SET status = ?, stage = ?, error = ?, last_heartbeat_at = NULL, updated_at = ? WHERE id = ?`)
-    .run(STATUS.FAILED, stage || null, error, timestamp, id);
+  db.prepare(`UPDATE jobs SET status = ?, stage = ?, error = ?, last_heartbeat_at = NULL, updated_at = ? WHERE id = ? AND status = ?`)
+    .run(STATUS.FAILED, stage || null, error, timestamp, id, STATUS.RUNNING);
 }
 
 function closeDatabase(db) {

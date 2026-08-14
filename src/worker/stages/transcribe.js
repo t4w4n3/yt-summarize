@@ -21,6 +21,8 @@ async function transcribe(wavPath, context) {
   const controller = new AbortController();
   const timeoutMs = context.timeoutMs || 25 * 60 * 1000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  // The stage timeout and the job-level cancellation both abort the fetch.
+  const signal = context.signal ? AbortSignal.any([controller.signal, context.signal]) : controller.signal;
   let response;
   try {
     appendLog(context.logPath, `$ POST ${API_URL} (model=${config.sttModel}, file=${path.basename(wavPath)})`);
@@ -28,9 +30,12 @@ async function transcribe(wavPath, context) {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}` },
       body: form,
-      signal: controller.signal,
+      signal,
     });
   } catch (error) {
+    if (context.signal?.aborted) {
+      throw new StageError('The job was cancelled.', 'transcribing');
+    }
     throw new StageError(
       error.name === 'AbortError' ? 'Transcription timed out.' : 'The transcription API could not be reached.',
       'transcribing',

@@ -11,18 +11,16 @@ const MULLVAD_DNS = process.env.MULLVAD_DNS || '10.64.0.1';
 
 // Résolution DNS via le DNS Mullvad (dans le tunnel). Le resolv.conf du
 // container pointe vers le stub systemd-resolved de l'hôte, injoignable ici.
+// Pas de fallback vers le résolveur système: la requête DNS fuirait hors du
+// tunnel (garantie de confidentialité du sidecar).
 const resolver = new dns.promises.Resolver();
 try { resolver.setServers([MULLVAD_DNS]); } catch {}
 
 async function resolveHost(host) {
   if (net.isIP(host)) return host;
-  try {
-    const ips = await resolver.resolve4(host);
-    if (ips.length) return ips[0];
-  } catch { /* fallback système ci-dessous */ }
-  return new Promise((resolve, reject) => {
-    dns.lookup(host, (err, address) => (err ? reject(err) : resolve(address)));
-  });
+  const ips = await resolver.resolve4(host);
+  if (!ips.length) throw new Error(`no A record for ${host}`);
+  return ips[0];
 }
 
 function parseAddress(buf, offset) {
@@ -49,25 +47,38 @@ const server = net.createServer((socket) => {
     if (greeting.length < 2 || greeting[0] !== 0x05) return socket.destroy();
     socket.write(Buffer.from([0x05, 0x00])); // seule méthode acceptée: no-auth
     socket.once('data', async (request) => {
-      if (request.length < 7 || request[0] !== 0x05 || request[1] !== 0x01) {
-        return socket.destroy(); // on ne fait que CONNECT
-      }
-      const addr = parseAddress(request, 3);
-      if (!addr) return socket.destroy();
-      const port = request.readUInt16BE(3 + addr.addrLen);
-      let ip;
       try {
-        ip = await resolveHost(addr.host); // DNS via le tunnel (10.64.0.1)
-      } catch {
-        return socket.destroy();
+        if (request.length < 7 || request[0] !== 0x05 || request[1] !== 0x01) {
+          return socket.destroy(); // on ne fait que CONNECT
+        }
+        const addr = parseAddress(request, 3);
+        if (!addr) return socket.destroy();
+        // La longueur de domaine annoncée n'est pas fiable: vérifier que le
+        // port (2 octets après l'adresse) est bien dans le buffer avant de
+        // le lire, sinon readUInt16BE lève un RangeError qui tuerait le
+        // process (rejet non géré dans ce listener async).
+        if (request.length < 3 + addr.addrLen + 2) return socket.destroy();
+        const port = request.readUInt16BE(3 + addr.addrLen);
+        let ip;
+        try {
+          ip = await resolveHost(addr.host); // DNS via le tunnel (10.64.0.1)
+        } catch (error) {
+          console.error(`CONNECT ${addr.host}:${port} — DNS via le tunnel impossible (${error.message})`);
+          return socket.destroy();
+        }
+        const remote = net.connect({ port, host: ip }, () => {
+          console.log(`CONNECT ${addr.host} (${ip}):${port}`);
+          socket.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])); // success
+          socket.pipe(remote);
+          remote.pipe(socket);
+        });
+        remote.on('error', () => socket.destroy());
+      } catch (error) {
+        // Défense en profondeur: une requête malformée coupe la connexion,
+        // jamais le process du sidecar.
+        console.error(`Requête SOCKS5 malformée ignorée: ${error.message}`);
+        socket.destroy();
       }
-      const remote = net.connect({ port, host: ip }, () => {
-        console.log(`CONNECT ${addr.host} (${ip}):${port}`);
-        socket.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])); // success
-        socket.pipe(remote);
-        remote.pipe(socket);
-      });
-      remote.on('error', () => socket.destroy());
     });
   });
 });

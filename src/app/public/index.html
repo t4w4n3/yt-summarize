@@ -66,6 +66,18 @@
         </div>
       </div>
 
+      <div class="resume-bar" id="resume-bar" hidden role="status" aria-live="polite">
+        <span class="resume-led" aria-hidden="true"></span>
+        <div class="resume-text">
+          <strong>RÉSUMÉ RETROUVÉ</strong>
+          <span id="resume-copy">Reconnexion au run précédent…</span>
+          <span id="resume-id" class="resume-id" hidden></span>
+        </div>
+        <div class="resume-actions">
+          <button class="button button--small button--ghost" type="button" id="resume-forget">OUBLIER</button>
+        </div>
+      </div>
+
       <div class="work-grid">
         <section class="input-panel panel" aria-labelledby="input-heading">
           <div class="panel-heading">
@@ -162,7 +174,7 @@
       </div>
 
       <footer class="app-statusbar">
-        <span><span class="status-led" aria-hidden="true"></span> <span id="footer-state">IDLE</span></span>
+        <span><span class="status-led" aria-hidden="true"></span> <span id="footer-state">IDLE</span> <span id="job-ref" class="job-ref" hidden></span></span>
         <span id="word-count">NO WORDS</span>
         <span>MARKDOWN / LOCAL</span>
       </footer>

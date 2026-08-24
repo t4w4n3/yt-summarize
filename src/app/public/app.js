@@ -7,6 +7,7 @@
   const queueState = document.querySelector('#queue-state');
   const footerState = document.querySelector('#footer-state');
   const wordCount = document.querySelector('#word-count');
+  const jobRef = document.querySelector('#job-ref');
   const emptyNote = document.querySelector('#note-empty');
   const noteContent = document.querySelector('#note-content');
   const loading = document.querySelector('#output-loading');
@@ -21,9 +22,16 @@
   const toast = document.querySelector('#toast');
   const steps = [...document.querySelectorAll('.pipeline-step')];
   const clock = document.querySelector('#clock');
+  const resumeBar = document.querySelector('#resume-bar');
+  const resumeCopy = document.querySelector('#resume-copy');
+  const resumeId = document.querySelector('#resume-id');
+  const resumeForget = document.querySelector('#resume-forget');
   let currentJobId = null;
   let pollTimer = null;
   let currentMarkdown = '';
+
+  const STORAGE_KEY = 'summarize-yt:lastJobId';
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   const demoMarkdown = `## Overview
 
@@ -73,6 +81,55 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     input.disabled = busy;
     submitButton.disabled = busy;
     submitButton.innerHTML = busy ? 'WORKING<span class="button-corner" aria-hidden="true">…</span>' : 'SUMMARIZE<span class="button-corner" aria-hidden="true">↵</span>';
+  }
+
+  function setJobRef(id) {
+    if (!jobRef) return;
+    if (!id) { jobRef.hidden = true; jobRef.textContent = ''; return; }
+    jobRef.hidden = false;
+    jobRef.textContent = `JOB ${id.slice(0, 8)}`;
+    jobRef.title = id;
+  }
+
+  function saveJobId(id) {
+    try { localStorage.setItem(STORAGE_KEY, id); } catch {}
+    try { history.replaceState(null, '', `#${id}`); } catch {}
+    setJobRef(id);
+  }
+
+  function clearStoredJobId() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    try {
+      if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    } catch {}
+    setJobRef(null);
+    if (resumeBar) resumeBar.hidden = true;
+  }
+
+  function getStoredJobId() {
+    try {
+      const hash = location.hash.slice(1);
+      if (hash && UUID_RE.test(hash)) return hash;
+    } catch {}
+    try {
+      const v = localStorage.getItem(STORAGE_KEY);
+      if (v && UUID_RE.test(v)) return v;
+    } catch {}
+    return null;
+  }
+
+  function showResumeBar(id, copy) {
+    if (!resumeBar) return;
+    resumeBar.hidden = false;
+    if (resumeCopy && copy) resumeCopy.textContent = copy;
+    if (resumeId) {
+      if (id) { resumeId.hidden = false; resumeId.textContent = id.slice(0, 8); resumeId.title = id; }
+      else resumeId.hidden = true;
+    }
+  }
+
+  function hideResumeBar() {
+    if (resumeBar) resumeBar.hidden = true;
   }
 
   function resetPanels() {
@@ -129,7 +186,6 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
   }
 
   function markdownToHtml(markdown) {
-    // Small safe renderer for the static v1 surface. API output is escaped before formatting.
     const escape = value => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char]);
     const lines = markdown.split(/\r?\n/);
     let html = '';
@@ -165,6 +221,7 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     noteContent.hidden = true;
     errorPanel.hidden = true;
     loading.hidden = false;
+    hideResumeBar();
     setBusy(true);
     statusMessage.textContent = 'QUEUED — waiting for the worker';
     queueState.textContent = '1 QUEUED';
@@ -174,6 +231,8 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Could not create this job.');
       currentJobId = data.jobId;
+      saveJobId(currentJobId);
+      if (pollTimer) window.clearInterval(pollTimer);
       pollTimer = window.setInterval(pollStatus, 2000);
       await pollStatus();
     } catch (error) {
@@ -190,33 +249,40 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       if (job.status === 'queued') { queueState.textContent = '1 QUEUED'; footerState.textContent = 'QUEUED'; statusMessage.textContent = 'QUEUED — waiting for the worker'; return; }
       if (job.status === 'running') { setStage(job.stage); return; }
       window.clearInterval(pollTimer);
+      pollTimer = null;
       if (job.status === 'done') return finish(job);
       showError(job.error || 'The worker stopped before the note was ready.');
     } catch (error) {
       window.clearInterval(pollTimer);
+      pollTimer = null;
       showError(error.message);
     }
   }
 
   async function finish(job) {
-    const response = await fetch(`/api/jobs/${encodeURIComponent(currentJobId)}/result`);
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'The note was marked done but could not be opened.');
-    currentMarkdown = result.markdown;
-    noteTitle.textContent = result.title || 'Untitled study note';
-    outputSubtitle.textContent = 'READY · rendered Markdown';
-    markdownOutput.innerHTML = markdownToHtml(result.markdown);
-    emptyNote.hidden = true;
-    loading.hidden = true;
-    errorPanel.hidden = true;
-    noteContent.hidden = false;
-    setBusy(false);
-    steps.forEach(step => { step.classList.remove('is-active'); step.classList.add('is-done'); });
-    queueState.textContent = 'COMPLETE';
-    footerState.textContent = 'DONE';
-    wordCount.textContent = `${result.wordCount || result.markdown.split(/\s+/).length} WORDS`;
-    statusMessage.textContent = 'DONE — note is ready to study';
-    showToast('Study note ready.');
+    try {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(currentJobId)}/result`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'The note was marked done but could not be opened.');
+      currentMarkdown = result.markdown;
+      noteTitle.textContent = result.title || 'Untitled study note';
+      outputSubtitle.textContent = 'READY · rendered Markdown';
+      markdownOutput.innerHTML = markdownToHtml(result.markdown);
+      emptyNote.hidden = true;
+      loading.hidden = true;
+      errorPanel.hidden = true;
+      noteContent.hidden = false;
+      hideResumeBar();
+      setBusy(false);
+      steps.forEach(step => { step.classList.remove('is-active'); step.classList.add('is-done'); });
+      queueState.textContent = 'COMPLETE';
+      footerState.textContent = 'DONE';
+      wordCount.textContent = `${result.wordCount || result.markdown.split(/\s+/).length} WORDS`;
+      statusMessage.textContent = 'DONE — note is ready to study';
+      showToast('Study note ready.');
+    } catch (error) {
+      showError(error.message);
+    }
   }
 
   function showError(message) {
@@ -244,15 +310,94 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
 
   function reset() {
     if (pollTimer) window.clearInterval(pollTimer);
+    pollTimer = null;
     setBusy(false);
     input.value = '';
+    clearStoredJobId();
     resetPanels();
     input.focus();
+  }
+
+  function forgetResume() {
+    if (pollTimer) window.clearInterval(pollTimer);
+    pollTimer = null;
+    clearStoredJobId();
+    setBusy(false);
+    resetPanels();
+    hideResumeBar();
+    showToast('Run précédent oublié.');
+    input.focus();
+  }
+
+  async function resumeStoredJob() {
+    const stored = getStoredJobId();
+    if (!stored) return;
+    currentJobId = stored;
+    setJobRef(stored);
+    showResumeBar(stored, 'Reconnexion au run précédent…');
+    emptyNote.hidden = true;
+    noteContent.hidden = true;
+    errorPanel.hidden = true;
+    loading.hidden = false;
+    setBusy(true);
+    queueState.textContent = 'RESTORING';
+    footerState.textContent = 'RESTORING';
+    statusMessage.textContent = 'REPRISE — reconnexion au worker…';
+    loadingCopy.textContent = 'RESTORING — reconnexion au worker…';
+    try {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(stored)}`);
+      const job = await response.json();
+      if (!response.ok) throw new Error(job.error || 'Job not found.');
+      if (job.status === 'queued') {
+        queueState.textContent = '1 QUEUED';
+        footerState.textContent = 'QUEUED';
+        statusMessage.textContent = 'QUEUED — reprise du suivi';
+        loadingCopy.textContent = 'QUEUED — reprise du suivi…';
+        if (pollTimer) window.clearInterval(pollTimer);
+        pollTimer = window.setInterval(pollStatus, 2000);
+        hideResumeBar();
+        showToast('Run retrouvé — reprise du suivi.');
+        return;
+      }
+      if (job.status === 'running') {
+        setStage(job.stage);
+        if (pollTimer) window.clearInterval(pollTimer);
+        pollTimer = window.setInterval(pollStatus, 2000);
+        hideResumeBar();
+        showToast('Run retrouvé — reprise du suivi.');
+        return;
+      }
+      if (job.status === 'done') {
+        await finish(job);
+        showToast('Résumé retrouvé après rechargement.');
+        return;
+      }
+      // failed
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+      showError(job.error || 'Le run précédent a échoué.');
+      showResumeBar(stored, 'Run précédent en erreur —');
+      setBusy(false);
+    } catch (error) {
+      clearStoredJobId();
+      hideResumeBar();
+      resetPanels();
+      setBusy(false);
+      currentJobId = null;
+    }
   }
 
   form.addEventListener('submit', submit);
   downloadButton.addEventListener('click', download);
   sampleButton.addEventListener('click', showSample);
+  if (resumeForget) resumeForget.addEventListener('click', forgetResume);
+  if (jobRef) {
+    jobRef.style.cursor = 'pointer';
+    jobRef.addEventListener('click', async () => {
+      if (!currentJobId) return;
+      try { await navigator.clipboard.writeText(currentJobId); showToast('Job ID copié.'); } catch { showToast(currentJobId); }
+    });
+  }
   document.addEventListener('click', event => {
     const action = event.target.closest('[data-action]')?.dataset.action;
     if (action === 'reset') reset();
@@ -262,4 +407,6 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     if (event.key === 'Escape') reset();
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') { event.preventDefault(); download(); }
   });
+
+  resumeStoredJob();
 })();

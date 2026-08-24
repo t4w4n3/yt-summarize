@@ -16,6 +16,8 @@
   --font-pixel: 'Press Start 2P', var(--font-ui);
 }
 
+[hidden] { display: none !important; }
+
 * { box-sizing: border-box; }
 
 html { min-width: 320px; background: var(--paper); }
@@ -357,6 +359,53 @@ kbd { display: inline-block; min-width: 28px; margin-right: 4px; padding: 3px 4p
   box-shadow: 4px 4px 0 var(--ink);
   font-size: 11px;
 }
+
+.resume-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 30px;
+  border-bottom: 1px solid var(--ink);
+  background: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+.resume-bar[hidden] { display: none !important; }
+.resume-led {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  box-shadow: 2px 2px 0 rgba(17, 17, 15, .12);
+  animation: pulse 1.2s steps(2, end) infinite;
+}
+.resume-text { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.resume-text strong { font-size: 10px; white-space: nowrap; }
+#resume-copy { color: var(--ink); font-weight: 600; }
+.resume-id {
+  padding: 2px 6px;
+  border: 1px solid var(--ink);
+  background: var(--paper-hi);
+  font: 600 9px var(--font-ui);
+  letter-spacing: .03em;
+}
+.resume-id[hidden] { display: none !important; }
+.resume-actions { margin-left: auto; display: flex; gap: 8px; flex: 0 0 auto; }
+.button--ghost { background: var(--paper-hi); }
+.button--ghost:hover { background: var(--ink); color: var(--paper-hi); }
+.job-ref {
+  margin-left: 8px;
+  padding: 2px 5px;
+  border: 1px solid var(--ink);
+  background: var(--paper-hi);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  vertical-align: 1px;
+}
+.job-ref[hidden] { display: none !important; }
 
 .is-busy .button--primary { background: var(--dither); }
 

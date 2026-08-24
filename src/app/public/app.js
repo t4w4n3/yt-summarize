@@ -29,6 +29,7 @@
   let currentJobId = null;
   let pollTimer = null;
   let currentMarkdown = '';
+  let lastDeduped = false;
 
   const STORAGE_KEY = 'summarize-yt:lastJobId';
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -231,9 +232,15 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Could not create this job.');
       currentJobId = data.jobId;
+      lastDeduped = !!data.deduped;
       saveJobId(currentJobId);
       if (pollTimer) window.clearInterval(pollTimer);
       pollTimer = window.setInterval(pollStatus, 2000);
+      if (data.deduped) {
+        statusMessage.textContent = 'TROUVÉ — résumé déjà disponible';
+        loadingCopy.textContent = 'TROUVÉ — ouverture instantanée…';
+        showToast('Déjà résumé — affichage instantané.');
+      }
       await pollStatus();
     } catch (error) {
       showError(error.message);
@@ -279,7 +286,12 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       footerState.textContent = 'DONE';
       wordCount.textContent = `${result.wordCount || result.markdown.split(/\s+/).length} WORDS`;
       statusMessage.textContent = 'DONE — note is ready to study';
-      showToast('Study note ready.');
+      if (lastDeduped) {
+        showToast('Déjà résumé — affichage instantané.');
+        lastDeduped = false;
+      } else {
+        showToast('Study note ready.');
+      }
     } catch (error) {
       showError(error.message);
     }

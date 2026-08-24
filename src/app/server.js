@@ -2,7 +2,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const express = require('express');
 const { config } = require('../shared/constants');
-const { openDatabase, createJob, getJob } = require('../shared/db');
+const { openDatabase, createJob, getJob, findExistingJobByVideoId } = require('../shared/db');
 
 const app = express();
 const db = openDatabase();
@@ -10,6 +10,17 @@ const publicDir = path.join(__dirname, 'public');
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
+
+function extractVideoId(value) {
+  try {
+    const url = new URL(value.trim());
+    const hostname = url.hostname.toLowerCase();
+    const isShort = hostname.endsWith('youtu.be');
+    const id = isShort ? url.pathname.slice(1).split('/')[0] : url.searchParams.get('v');
+    if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) return id;
+  } catch {}
+  return null;
+}
 
 function validateYouTubeUrl(value) {
   if (typeof value !== 'string' || value.length > 2048) return 'Enter a YouTube video URL.';
@@ -43,7 +54,13 @@ function publicJob(job) {
 app.post('/api/summarize', (req, res) => {
   const error = validateYouTubeUrl(req.body?.url);
   if (error) return res.status(400).json({ error });
-  const job = createJob(db, crypto.randomUUID(), req.body.url.trim());
+  const url = req.body.url.trim();
+  const videoId = extractVideoId(url);
+  const existing = videoId ? findExistingJobByVideoId(db, videoId) : null;
+  if (existing) {
+    return res.status(200).json({ jobId: existing.id, deduped: true });
+  }
+  const job = createJob(db, crypto.randomUUID(), url, videoId);
   return res.status(201).json({ jobId: job.id });
 });
 

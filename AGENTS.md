@@ -30,6 +30,8 @@ mise run up      # build + start the stack (app + worker) → http://localhost:8
 | `mise run worker` | Run the worker locally (no container; paid stages need the stack) |
 | `mise run cookies <file>` | Install Netscape cookies.txt for the worker + restart it |
 | `mise run mullvad <mode>` | Mullvad ops: relay rotation (`scan`), config provisioning (`init`), tunnel debug (`run`/`test`/`dryrun`) — the production path is the `vpn` sidecar, no `MULLVAD_ACCOUNT` needed for the interactive flow |
+| `mise run backup` | Back up both volumes (SQLite job DB + artifacts) to `~/.local/backups` |
+| `mise run restore <file> [-y]` | Restore both volumes from a `summarize-yt-*.tar.gz` backup (stops + restarts the stack) |
 | `mise run doctor` | Verify tools, Node ≥24, `.env`, GPG secrets |
 | `mise run docs` | Serve the architecture/stack docs (Mermaid) at :8123; `--expose` publishes on the tailnet via `tailscale serve` (https 8443) |
 

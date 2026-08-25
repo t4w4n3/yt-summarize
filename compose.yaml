@@ -45,6 +45,9 @@ services:
 
     network_mode: "host"                      # host DNS/network; required on hosts without podman's aardvark-dns
     restart: "unless-stopped"
+    # Runs as non-root `node` (image default); no HTTP endpoint to probe.
+    healthcheck:
+      disable: true
 
   vpn:
     build:
@@ -65,6 +68,9 @@ services:
     # on-failure + exit 0 de l'entrypoint: sans config, le service reste arrêté
     # proprement (clone frais) au lieu de boucler.
     restart: "on-failure"
+    # Pas d'endpoint HTTP sonnable pour ce sidecar.
+    healthcheck:
+      disable: true
 
 volumes:
   jobs-data:

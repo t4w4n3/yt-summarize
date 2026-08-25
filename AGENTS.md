@@ -38,6 +38,7 @@ mise run up      # build + start the stack (app + worker) → http://localhost:8
 | `mise run lint-yaml [--changed]` | yamllint in strict mode (warnings fail) on all YAML files |
 | `mise run lint-containerfile [--changed]` | hadolint on Containerfiles/Dockerfiles (failure-threshold: style) |
 | `mise run lint-compose [--changed]` | Validate compose files render with podman-compose |
+| `mise run security` | Run every security check: pnpm audit, Trivy (vulns/secrets/misconfig), Gitleaks (working tree + git history) |
 | `mise run doctor` | Verify tools, Node ≥24, `.env`, GPG secrets |
 | `mise run docs` | Serve the architecture/stack docs (Mermaid) at :8123; `--expose` publishes on the tailnet via `tailscale serve` (https 8443) |
 

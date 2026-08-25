@@ -42,4 +42,9 @@ services:
     ports:
       - "${E2E_WORKER_PORT:-4175}:4175"
     restart: "no"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4175/healthz"]
+      interval: "10s"
+      timeout: "3s"
+      retries: 3
 ...

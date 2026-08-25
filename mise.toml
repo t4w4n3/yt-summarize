@@ -12,3 +12,5 @@ shfmt = "3.12.0"               # shell formatting
 pipx = "1.8.0"                 # backend for yamllint
 yamllint = "1.37.1"            # YAML files
 hadolint = "2.12.0"            # Containerfiles/Dockerfiles
+trivy = "0.73.0"               # security scanner: vulns, secrets, misconfig
+gitleaks = "8.30.1"            # secrets scanner (worktree + git history)

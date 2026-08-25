@@ -23,8 +23,13 @@ WORKDIR /app
 # Keep the pinned pnpm version in sync with mise.toml and package.json packageManager.
 COPY package.json pnpm-lock.yaml ./
 RUN npm install -g pnpm@11.21.0 && pnpm install --frozen-lockfile --prod
+
+RUN mkdir -p /data /artifacts
 COPY src/ /app/src/
 COPY image/entrypoint-app.sh image/entrypoint-worker.sh image/entrypoint-vpn.sh /app/
 RUN chmod +x /app/entrypoint-*.sh
 
 EXPOSE 8080
+# App-only default; the worker and vpn services override/disable their healthcheck in compose.yaml.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -sf http://localhost:8080/ || exit 1

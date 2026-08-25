@@ -6,7 +6,8 @@ ARTIFACTS_DIR="${ARTIFACTS_DIR:-/artifacts}"
 mkdir -p "$DATA_DIR" "$ARTIFACTS_DIR"
 
 # Keep the host-mounted keyring read-only. GnuPG needs a writable home for sockets and metadata.
-export GNUPGHOME="${GNUPGHOME:-/run/gnupg}"
+# Default to $HOME (node user) — override with GNUPGHOME=/run/gnupg when running as root.
+export GNUPGHOME="${GNUPGHOME:-$HOME/.gnupg-runtime}"
 mkdir -p "$GNUPGHOME"
 chmod 700 "$GNUPGHOME"
 if [ -d /gnupg ]; then

@@ -1,0 +1,8 @@
+# Trivy suppressions — every entry needs a justification.
+# DS-0002 (run as non-root USER): this stack runs under rootless podman, where
+# container root maps to the host user. Host bind mounts (~/.secrets GPG keyring,
+# ~/.gnupg, e2e ./.tmp/data) are only accessible to that mapped root; switching the
+# image to a non-root USER makes them unreadable and breaks the worker + e2e smoke
+# test. Mitigations: single-user box behind tailscale, app bound to 127.0.0.1,
+# secrets mounted read-only, no other workloads share the containers.
+DS-0002

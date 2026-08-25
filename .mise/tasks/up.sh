@@ -32,7 +32,11 @@ for vol in summarize-yt_jobs-data summarize-yt_artifacts; do
   fi
 done
 
-podman-compose up -d --build
+# --force-recreate évite "container name already in use" sur les re-runs
+# idempotents : podman-compose 1.3.0 tente un create même quand l'image
+# n'a pas changé, ce qui sort 3 erreurs rouges alors que l'opération est
+# légitime. --remove-orphans nettoie les orphelins sans bruit.
+podman-compose up -d --build --force-recreate --remove-orphans
 echo
 echo "Stack started: http://localhost:${PORT:-8080}"
 podman-compose ps

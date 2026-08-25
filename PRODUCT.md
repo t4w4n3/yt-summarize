@@ -8,9 +8,9 @@ web
 
 ## Stack
 
-- Backend: Node 24 + Express + SQLite (`node:sqlite`), one container image run as two services (`app` + `worker`) under podman compose. Decided in `plan.md`.
-- Frontend: single-page vanilla HTML/CSS/JS (Markdown rendered with `marked` + `DOMPurify`). The user is open to Vite/React, but explicitly prefers the simplest path for a minimal v1; the static single-page approach from `plan.md` stands unless a concrete need appears.
-- Toolchain per job: yt-dlp → ffmpeg → OpenRouter STT API (`mistralai/voxtral-mini-transcribe`) → OpenRouter chat API (DeepSeek V4 Flash). Both paid stages are plain HTTPS calls; no agent runtime in the container. Fixed in `plan.md`.
+- Backend: Node 24 + Express + SQLite (`node:sqlite`), one container image run as two services (`app` + `worker`) under podman compose.
+- Frontend: single-page vanilla HTML/CSS/JS (Markdown rendered with `marked` + `DOMPurify`). The user is open to Vite/React, but explicitly prefers the simplest path for a minimal v1; the static single-page approach stands unless a concrete need appears.
+- Toolchain per job: yt-dlp → ffmpeg → OpenRouter STT API (`mistralai/voxtral-mini-transcribe`) → OpenRouter chat API (DeepSeek V4 Flash). Both paid stages are plain HTTPS calls; no agent runtime in the container.
 
 ## Users
 
@@ -22,7 +22,7 @@ Turn a YouTube video into a comprehensive Markdown learning summary covering "al
 
 ## Positioning
 
-The output is a study artifact, not a summary snippet: a structured document (Overview, Key Takeaways, Core Concepts, Steps & Techniques, Examples & Evidence, Action Items, Glossary, Mentioned Resources) that is proportional to video length, preserves the speaker's terminology and numbers, defines jargon, and omits empty sections rather than inventing content. A neighbor tool could not truthfully copy this without the same transcription-plus-LLM pipeline and prompt discipline.
+The output is a study artifact, not a summary snippet: a structured document (Overview, Key Takeaways with claim + rationale, Concepts & terms, Details, Opinions vs. established facts, Action items / next steps, Mentioned Resources) that is proportional to video length, preserves the speaker's terminology and numbers, defines jargon, corrects obvious transcription mis-hearings, and omits empty sections rather than inventing content. The note is written in a per-job output language (browser locale by default, English selectable). A neighbor tool could not truthfully copy this without the same transcription-plus-LLM pipeline and prompt discipline.
 
 ## Operating Context
 
@@ -39,13 +39,23 @@ The output is a study artifact, not a summary snippet: a structured document (Ov
 - No history/queue UI, no accounts, no rate limiting, no cost tracking in v1 (explicitly out of scope).
 - Not yet decided/verified: a real YouTube download on this host (YouTube bot-checks its IP; a cookies file at `~/.secrets/youtube-cookies.txt` is the documented remedy). The STT and summarization stages have been exercised against real audio via the spike.
 
+## Future Work (non-goals for v1)
+
+Carried over from the original design plan:
+
+- Subtitle (`auto-sub`) fast path as a cheaper alternative to STT (could be a config toggle later).
+- Local whisper.cpp transcription as an offline fallback (would reintroduce a build stage + model volume).
+- Multi-job queue UI, history list, per-user rate limiting.
+- Cost tracking (model token usage per job).
+- Streaming progress from yt-dlp/STT (currently stage-level only).
+
 ## Brand Commitments
 
-None. Self-hosted personal tool; no name, logo, voice, or visual identity is committed. `plan.md` is the architectural contract, not a visual one.
+None. Self-hosted personal tool; no name, logo, voice, or visual identity is committed.
 
 ## Evidence on Hand
 
-- `plan.md`: detailed architecture, API contract, prompts, compose file, and security design (the implementation contract).
+- Architecture rationale lives where it cannot rot: code comments, tests (`e2e/stack.spec.ts` is the executable API contract), and the Mermaid architecture docs served by `mise run docs`. The original design document was removed once implemented (recoverable via git history).
 - No real content yet: no sample summaries, transcripts, or validated output exist. Nothing about the pipeline's output quality has been demonstrated; future work must not fabricate user testimonials or benchmark claims.
 
 ## Product Principles

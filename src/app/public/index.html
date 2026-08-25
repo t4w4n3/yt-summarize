@@ -91,8 +91,17 @@
           <form id="summarize-form" novalidate>
             <label for="video-url">YOUTUBE URL</label>
             <div class="url-row">
-              <input id="video-url" name="url" type="url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://youtube.com/watch?v=..." aria-describedby="url-help url-error" required>
+              <input id="video-url" name="url" type="url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://youtube.com/watch?v=..." aria-describedby="url-help url-error output-lang-row" required>
               <button class="button button--primary" type="submit" id="submit-button">SUMMARIZE<span class="button-corner" aria-hidden="true">↵</span></button>
+            </div>
+            <!-- Hidden for English browsers: no choice to make. app.js fills the
+                 first option with the browser locale's native language name. -->
+            <div class="lang-row" id="output-lang-row" hidden>
+              <label for="output-lang">NOTE LANGUAGE</label>
+              <select id="output-lang" name="lang">
+                <option value=""></option>
+                <option value="en">English</option>
+              </select>
             </div>
             <p class="field-help" id="url-help">Single videos only · the original URL stays on this machine.</p>
             <p class="field-error" id="url-error" role="alert" hidden>That does not look like a YouTube video URL. Try a youtube.com or youtu.be link.</p>

@@ -78,18 +78,29 @@ function publicJob(job: JobRow | null): PublicJob | null {
 
 interface CreateBody {
   url?: unknown;
+  lang?: unknown;
+}
+
+/** Normalize the optional ISO 639-1 output language; null when invalid. */
+function normalizeLang(value: unknown): string | null {
+  if (value === undefined || value === null || value === '') return 'en';
+  if (typeof value !== 'string') return null;
+  const code = value.trim().toLowerCase();
+  return /^[a-z]{2}$/.test(code) ? code : null;
 }
 
 app.post('/api/summarize', (req: Request<object, unknown, CreateBody>, res: Response) => {
   const error = validateYouTubeUrl(req.body?.url);
   if (error) return res.status(400).json({ error });
+  const lang = normalizeLang(req.body?.lang);
+  if (!lang) return res.status(400).json({ error: 'The output language must be a two-letter ISO 639-1 code.' });
   const url = (req.body.url as string).trim();
   const videoId = extractVideoId(url);
-  const existing = videoId ? findExistingJobByVideoId(db, videoId) : null;
+  const existing = videoId ? findExistingJobByVideoId(db, videoId, lang) : null;
   if (existing) {
     return res.status(200).json({ jobId: existing.id, deduped: true });
   }
-  const job = createJob(db, crypto.randomUUID(), url, videoId);
+  const job = createJob(db, crypto.randomUUID(), url, videoId, lang);
   return res.status(201).json({ jobId: job?.id });
 });
 

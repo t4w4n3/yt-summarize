@@ -25,6 +25,8 @@ export interface StageContext {
   onHeartbeat?: () => void;
   timeoutMs?: number;
   signal?: AbortSignal;
+  /** ISO 639-1 code for the summary output language (summarize stage only). */
+  lang?: string;
 }
 
 export interface RunProcessOptions {

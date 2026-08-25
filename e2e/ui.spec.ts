@@ -25,8 +25,13 @@ interface JobMockOptions {
 function installJobMock(page: Page, { jobStates = [], createError }: JobMockOptions) {
   let pollIndex = 0;
   let posts = 0;
+  const bodies: Array<Record<string, unknown>> = [];
   page.route('**/api/summarize', (route) => {
     posts += 1;
+    try {
+      const parsed = route.request().postDataJSON();
+      if (parsed && typeof parsed === 'object') bodies.push(parsed as Record<string, unknown>);
+    } catch {}
     if (createError) {
       return route.fulfill({
         status: createError.status,
@@ -44,7 +49,7 @@ function installJobMock(page: Page, { jobStates = [], createError }: JobMockOpti
   page.route(`**/api/jobs/${JOB_ID}/result`, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(RESULT) }),
   );
-  return { posts: () => posts };
+  return { posts: () => posts, bodies: () => bodies };
 }
 
 async function gotoWithClock(page: Page) {
@@ -215,4 +220,46 @@ test('mobile layout keeps the form usable with no horizontal overflow', async ({
   await expect(page.locator('.pipeline-step')).toHaveCount(4);
   const overflow = await page.evaluate('document.documentElement.scrollWidth > window.innerWidth + 1');
   expect(overflow).toBe(false);
+});
+
+test.describe('note language for English browsers', () => {
+  test.use({ locale: 'en-US' });
+
+  test('no picker is shown and no lang field is sent', async ({ page }) => {
+    const mocks = installJobMock(page, { jobStates: [{ status: 'queued' }] });
+    await page.goto('/');
+    await expect(page.locator('#output-lang-row')).toBeHidden();
+    await page.fill('#video-url', VALID_URL);
+    await page.click('#submit-button');
+    await expect(page.locator('#output-loading')).toBeVisible();
+    expect(mocks.bodies()[0]?.lang).toBeUndefined();
+  });
+});
+
+test.describe('note language picker (non-English browser)', () => {
+  test.use({ locale: 'fr-FR' });
+
+  test('defaults to the browser locale and sends it with the job', async ({ page }) => {
+    const mocks = installJobMock(page, { jobStates: [{ status: 'queued' }] });
+    await page.goto('/');
+    await expect(page.locator('#output-lang-row')).toBeVisible();
+    const options = page.locator('#output-lang option');
+    await expect(options).toHaveCount(2);
+    await expect(options.first()).toHaveText(/français/i);
+    await expect(options.nth(1)).toHaveAttribute('value', 'en');
+    await page.fill('#video-url', VALID_URL);
+    await page.click('#submit-button');
+    await expect(page.locator('#output-loading')).toBeVisible();
+    expect(mocks.bodies()[0]?.lang).toBe('fr');
+  });
+
+  test('sends English when explicitly selected', async ({ page }) => {
+    const mocks = installJobMock(page, { jobStates: [{ status: 'queued' }] });
+    await page.goto('/');
+    await page.selectOption('#output-lang', 'en');
+    await page.fill('#video-url', VALID_URL);
+    await page.click('#submit-button');
+    await expect(page.locator('#output-loading')).toBeVisible();
+    expect(mocks.bodies()[0]?.lang).toBe('en');
+  });
 });

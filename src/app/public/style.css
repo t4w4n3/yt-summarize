@@ -294,6 +294,22 @@ label {
   align-items: stretch;
   gap: 9px;
 }
+.lang-row {
+  margin-top: 14px;
+}
+select {
+  width: 100%;
+  height: 38px;
+  padding: 0 11px;
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  color: var(--ink);
+  background: var(--paper-hi);
+  font-size: 12px;
+}
+select:focus {
+  background: #fff;
+}
 input[type="url"] {
   min-width: 0;
   flex: 1;
@@ -890,6 +906,9 @@ kbd {
     display: block;
   }
   input[type="url"] {
+    width: 100%;
+  }
+  select {
     width: 100%;
   }
   .button--primary {

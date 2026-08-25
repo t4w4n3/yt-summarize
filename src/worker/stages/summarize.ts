@@ -29,7 +29,13 @@ function extractContent(body: unknown): string | null {
 // in, Markdown out.
 export async function summarize(transcriptPath: string, context: StageContext): Promise<string> {
   const apiKey = await resolveOpenRouterKey();
-  const systemPrompt = fs.readFileSync(path.join(import.meta.dirname, '..', 'prompts', 'summarize.md'), 'utf8');
+  // The prompt ships with an {{OUTPUT_LANGUAGE}} slot filled per job; anything
+  // that isn't a clean two-letter code falls back to English.
+  const rawLang = typeof context.lang === 'string' ? context.lang.trim().toLowerCase() : '';
+  const lang = /^[a-z]{2}$/.test(rawLang) ? rawLang : 'en';
+  const systemPrompt = fs
+    .readFileSync(path.join(import.meta.dirname, '..', 'prompts', 'summarize.md'), 'utf8')
+    .replaceAll('{{OUTPUT_LANGUAGE}}', lang);
   const transcript = fs.readFileSync(transcriptPath, 'utf8');
 
   const controller = new AbortController();
@@ -39,7 +45,10 @@ export async function summarize(transcriptPath: string, context: StageContext): 
   const signal = context.signal ? AbortSignal.any([controller.signal, context.signal]) : controller.signal;
   let response: Response;
   try {
-    appendLog(context.logPath, `$ POST ${API_URL} (model=${config.llmModel}, reasoning=${config.llmThinking})`);
+    appendLog(
+      context.logPath,
+      `$ POST ${API_URL} (model=${config.llmModel}, reasoning=${config.llmThinking}, lang=${lang})`,
+    );
     response = await fetch(API_URL, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },

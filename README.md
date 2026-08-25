@@ -7,7 +7,7 @@ Self-hosted YouTube-to-learning-note workstation. Paste one YouTube video URL, t
 - [mise](https://mise.jdx.dev) — the DevEx entrypoint: pins the Node toolchain (`mise.toml`) and runs every project command below
 - Podman 5+ and `podman-compose`
 - Network access for the image build, YouTube, and OpenRouter (STT + chat)
-- Host Pi credentials following the GPG layout in `plan.md`:
+- Host GPG secrets at these exact paths:
   - `~/.secrets/openrouter.gpg`
   - `~/.gnupg/`
 - The OpenRouter account must have the **mistral** provider authorized (Settings → Provider Preferences), otherwise STT returns `404 No allowed providers are available`.
@@ -147,7 +147,7 @@ The app and worker share only the SQLite job database and the artifacts volume. 
 
 ## API
 
-- `POST /api/summarize` with `{ "url": "https://youtu.be/..." }`
+- `POST /api/summarize` with `{ "url": "https://youtu.be/...", "lang": "fr" }` — `lang` is an optional two-letter ISO 639-1 code for the note's language (default `en`; the UI pre-selects the browser locale). The same URL in a different language produces a new job.
 - `GET /api/jobs/:id`
 - `GET /api/jobs/:id/result`
 - `GET /api/jobs/:id/result.md`

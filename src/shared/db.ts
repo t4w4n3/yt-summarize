@@ -13,6 +13,7 @@ export interface JobRow {
   error: string | null;
   markdown: string | null;
   video_id: string | null;
+  lang: string | null;
   created_at: string;
   claimed_at: string | null;
   last_heartbeat_at: string | null;
@@ -68,6 +69,10 @@ export function openDatabase(): DatabaseSync {
   try {
     db.exec('CREATE INDEX IF NOT EXISTS jobs_video_id_idx ON jobs(video_id)');
   } catch {}
+  // Per-job output language (ISO 639-1); legacy rows keep NULL, read as 'en'.
+  try {
+    db.exec('ALTER TABLE jobs ADD COLUMN lang TEXT');
+  } catch {}
   try {
     const rows = db.prepare('SELECT id, url FROM jobs WHERE video_id IS NULL').all();
     const upd = db.prepare('UPDATE jobs SET video_id = ? WHERE id = ?');
@@ -81,17 +86,18 @@ export function openDatabase(): DatabaseSync {
   return db;
 }
 
-export function createJob(db: DatabaseSync, id: string, url: string, videoId?: string | null): JobRow | null {
+export function createJob(
+  db: DatabaseSync,
+  id: string,
+  url: string,
+  videoId?: string | null,
+  lang?: string | null,
+): JobRow | null {
   const timestamp = now();
   const vid = videoId || extractVideoIdFromUrl(url);
-  db.prepare(`INSERT INTO jobs (id, url, video_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`).run(
-    id,
-    url,
-    vid,
-    STATUS.QUEUED,
-    timestamp,
-    timestamp,
-  );
+  db.prepare(
+    `INSERT INTO jobs (id, url, video_id, lang, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, url, vid, lang ?? null, STATUS.QUEUED, timestamp, timestamp);
   return getJob(db, id);
 }
 
@@ -100,20 +106,22 @@ export function getJob(db: DatabaseSync, id: string): JobRow | null {
   return row ? asJobRow(row) : null;
 }
 
-export function findExistingJobByVideoId(db: DatabaseSync, videoId: string | null): JobRow | null {
+// Dedup is per video AND per output language: requesting the same video in a
+// different language must produce a new note. Legacy NULL langs count as 'en'.
+export function findExistingJobByVideoId(db: DatabaseSync, videoId: string | null, lang = 'en'): JobRow | null {
   if (!videoId) return null;
   // Prefer canonical video_id column, fallback to URL substring for legacy rows without backfill
   let row = db
     .prepare(
-      `SELECT * FROM jobs WHERE video_id = ? AND status IN ('queued','running','done') ORDER BY CASE status WHEN 'done' THEN 0 WHEN 'running' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`,
+      `SELECT * FROM jobs WHERE video_id = ? AND COALESCE(lang, 'en') = ? AND status IN ('queued','running','done') ORDER BY CASE status WHEN 'done' THEN 0 WHEN 'running' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`,
     )
-    .get(videoId);
+    .get(videoId, lang);
   if (row) return asJobRow(row);
   row = db
     .prepare(
-      `SELECT * FROM jobs WHERE video_id IS NULL AND url LIKE '%' || ? || '%' AND status IN ('queued','running','done') ORDER BY created_at DESC LIMIT 1`,
+      `SELECT * FROM jobs WHERE video_id IS NULL AND url LIKE '%' || ? || '%' AND COALESCE(lang, 'en') = ? AND status IN ('queued','running','done') ORDER BY created_at DESC LIMIT 1`,
     )
-    .get(videoId);
+    .get(videoId, lang);
   return row ? asJobRow(row) : null;
 }
 

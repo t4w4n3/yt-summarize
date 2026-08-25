@@ -55,7 +55,12 @@ export async function runPipeline(db: DatabaseSync, job: JobRow, signal: AbortSi
 
     currentStage = STAGES[3];
     updateStage(db, job.id, currentStage, 70);
-    const markdown = await summarize(transcriptPath, { ...context, timeoutMs: stageTimeoutMs(currentStage) });
+    // Legacy rows have a NULL lang column; NULL means English.
+    const markdown = await summarize(transcriptPath, {
+      ...context,
+      timeoutMs: stageTimeoutMs(currentStage),
+      lang: job.lang || 'en',
+    });
     fs.writeFileSync(path.join(jobDir, 'summary.md'), `${markdown}\n`, 'utf8');
     markDone(db, job.id, downloaded.title, markdown);
   } catch (error) {

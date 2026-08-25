@@ -26,6 +26,8 @@
   const resumeCopy = document.querySelector('#resume-copy');
   const resumeId = document.querySelector('#resume-id');
   const resumeForget = document.querySelector('#resume-forget');
+  const langRow = document.querySelector('#output-lang-row');
+  const langSelect = document.querySelector('#output-lang');
   let currentJobId = null;
   let pollTimer = null;
   let currentMarkdown = '';
@@ -68,6 +70,31 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
   }
   tickClock();
   setInterval(tickClock, 30_000);
+
+  // Note language: default to the browser locale; English browsers get no
+  // picker at all since both options would be English.
+  function detectBrowserLang() {
+    const candidates = navigator.languages?.length ? navigator.languages : [navigator.language];
+    for (const candidate of candidates) {
+      const code = (candidate || '').slice(0, 2).toLowerCase();
+      if (/^[a-z]{2}$/.test(code)) return code;
+    }
+    return 'en';
+  }
+
+  function initLanguagePicker() {
+    if (!langRow || !langSelect) return;
+    const browserLang = detectBrowserLang();
+    if (browserLang === 'en') return;
+    let label;
+    try {
+      label = new Intl.DisplayNames([browserLang], { type: 'language' }).of(browserLang);
+    } catch {}
+    langSelect.options[0].value = browserLang;
+    langSelect.options[0].textContent = label || browserLang.toUpperCase();
+    langRow.hidden = false;
+  }
+  initLanguagePicker();
 
   function isYouTubeUrl(value) {
     try {
@@ -292,7 +319,8 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       const response = await fetch('/api/summarize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        // Omitted when the picker is hidden → the server stores 'en'.
+        body: JSON.stringify({ url, lang: langRow && !langRow.hidden ? langSelect.value : undefined }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Could not create this job.');

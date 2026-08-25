@@ -55,6 +55,30 @@ test('API contract: validation, lifecycle, result, download', async ({ request }
   expect(mdRes.headers()['content-disposition']).toContain('attachment');
   expect(await mdRes.text()).toContain('## ');
 
+  // Language handling: invalid code rejected; same video + different language
+  // is a NEW job; re-requesting the same language dedupes (case-insensitive).
+  const badLang = await request.post('/api/summarize', { data: { url: VALID_URL, lang: 'frrr' } });
+  expect(badLang.status()).toBe(400);
+  const frCreated = await request.post('/api/summarize', { data: { url: VALID_URL, lang: 'fr' } });
+  expect(frCreated.status()).toBe(201);
+  const frJobId = ((await frCreated.json()) as { jobId?: string }).jobId;
+  expect(frJobId).toBeTruthy();
+  expect(frJobId).not.toBe(jobId);
+  const frDeduped = await request.post('/api/summarize', { data: { url: VALID_URL, lang: 'FR' } });
+  expect(frDeduped.status()).toBe(200);
+  const frDedupedBody = (await frDeduped.json()) as { jobId?: string; deduped?: boolean };
+  expect(frDedupedBody.deduped).toBe(true);
+  expect(frDedupedBody.jobId).toBe(frJobId);
+  await expect
+    .poll(
+      async () => {
+        const res = await request.get(`/api/jobs/${frJobId}`);
+        return ((await res.json()) as { status?: string }).status;
+      },
+      { timeout: 30_000 },
+    )
+    .toBe('done');
+
   // Unknown job
   expect((await request.get('/api/jobs/does-not-exist')).status()).toBe(404);
 });

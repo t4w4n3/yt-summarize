@@ -6,7 +6,8 @@
  * caught the 413 Multipart body exceeds the 25 MB upload limit (input_audio) bug
  * before a real YouTube run such as https://youtu.be/FSWl57UR4k0.
  *
- * Run: node --test tests/transcribe.test.ts
+ * Category: integration — outbound adapters under test (real fs, stubbed HTTP).
+ * Run: pnpm run test:integration
  */
 
 import assert from 'node:assert/strict';
@@ -15,14 +16,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
-import type { TranscribeContext } from '../src/worker/stages/transcribe.ts';
+import type { TranscribeContext } from '../../src/worker/stages/transcribe.ts';
 import {
   CHUNK_DURATION_SEC,
   MULTIPART_LIMIT,
   splitWavIntoChunks,
   splitWavManual,
   transcribe,
-} from '../src/worker/stages/transcribe.ts';
+} from '../../src/worker/stages/transcribe.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers to synthesize a valid PCM WAV without invoking ffmpeg.

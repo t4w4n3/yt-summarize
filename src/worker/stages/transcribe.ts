@@ -1,15 +1,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  alignedChunkBytes,
+  CHUNK_DURATION_SEC,
+  chooseInitialStrategy,
+  joinTranscriptParts,
+  nextAfterBase64Failure,
+  nextAfterMultipartFailure,
+} from '../../domain/transcription/policy.ts';
 import { config } from '../../shared/constants.ts';
 import * as openrouter from './openrouter.ts';
 import type { StageContext } from './process.ts';
 import { runProcess, StageError } from './process.ts';
 
-const API_URL = 'https://openrouter.ai/api/v1/audio/transcriptions';
+export { CHUNK_DURATION_SEC, MULTIPART_LIMIT } from '../../domain/transcription/policy.ts';
 
-// Keep 1 MB headroom for multipart overhead (boundaries, headers).
-export const MULTIPART_LIMIT = 24 * 1024 * 1024;
-export const CHUNK_DURATION_SEC = 600; // 10 min → ~19 MB at 16 kHz mono s16le
+const API_URL = 'https://openrouter.ai/api/v1/audio/transcriptions';
 
 /** StageContext plus dependency-injection hooks used by unit tests. */
 export interface TranscribeContext extends StageContext {
@@ -170,9 +176,8 @@ export async function splitWavManual(wavPath: string, chunkDir: string, chunkDur
     const bytesPerSec = byteRate;
     if (!bytesPerSec || !blockAlign) throw new Error('invalid wav header');
 
-    const chunkBytesRaw = bytesPerSec * chunkDurationSec;
-    // Align down to blockAlign so we never split a sample frame.
-    const chunkBytes = Math.floor(chunkBytesRaw / blockAlign) * blockAlign;
+    // Domain policy: chunk length aligned to a sample frame so we never tear samples.
+    const chunkBytes = alignedChunkBytes(bytesPerSec, blockAlign, chunkDurationSec);
     if (chunkBytes <= 0) throw new Error('chunk size 0');
 
     const dataOffset = 44;
@@ -219,12 +224,10 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
     try {
       statSize = (await fs.promises.stat(wavPath)).size;
     } catch {}
-    const isLarge = statSize > MULTIPART_LIMIT;
-
-    // Strategy:
-    // - small file: try multipart, on 413 fall through to base64, then chunking.
-    // - large file: try base64 directly (as the API suggests), on 413 fall through to chunking.
-    // Chunking is the final safety net and works for arbitrarily long audio.
+    // Domain strategy (policy.ts): small → multipart first, large → base64 first.
+    // Each failure is classified by the policy; anything that is not a known
+    // limit error is rethrown instead of falling through.
+    const initial = chooseInitialStrategy(statSize);
 
     const tryHandle = async (resp: Response): Promise<string> => {
       const { text } = await handleResponse(resp);
@@ -233,7 +236,7 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
 
     let text: string | null = null;
 
-    if (!isLarge) {
+    if (initial === 'multipart') {
       try {
         const response = await transcribeMultipart(wavPath, apiKey, signal, context.logPath);
         text = await tryHandle(response);
@@ -241,8 +244,7 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
         const details = error instanceof StageError ? error.details : '';
         const message = error instanceof Error ? error.message : String(error);
         const msg = `${message} ${details}`;
-        const is413 = msg.includes('413') || msg.includes('25 MB') || msg.includes('input_audio');
-        if (!is413) throw error;
+        if (nextAfterMultipartFailure(msg) === null) throw error;
         appendLog(context.logPath, `multipart hit 413 (size=${statSize}), retrying as base64 JSON via input_audio`);
         // fall through to base64
         text = null;
@@ -258,8 +260,7 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
         const details = error instanceof StageError ? error.details : '';
         const message = error instanceof Error ? error.message : String(error);
         const msg = `${message} ${details}`;
-        const is413 = msg.includes('413') || msg.includes('25 MB');
-        if (!is413 && statSize <= MULTIPART_LIMIT) throw error;
+        if (nextAfterBase64Failure(msg, statSize) === null) throw error;
         appendLog(
           context.logPath,
           `base64 still hit 413 or large file fallback (size=${statSize}), splitting into ${CHUNK_DURATION_SEC}s chunks`,
@@ -286,7 +287,7 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
           );
         parts.push(chunkText);
       }
-      text = parts.join('\n\n');
+      text = joinTranscriptParts(parts);
       // Clean up chunk dir (keep on failure for debugging).
       try {
         await fs.promises.rm(path.join(context.jobDir, 'chunks'), { recursive: true, force: true });

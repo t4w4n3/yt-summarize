@@ -1,0 +1,116 @@
+amends "package://github.com/jdx/hk/releases/download/v1.56.1/hk@1.56.1#/Config.pkl"
+
+// hk (jdx) — git hook manager, intégré avec mise via HK_MISE=1 (mise.toml [env])
+// `mise install` → [hooks].postinstall = "hk install --mise" installe les hooks git
+// automatiquement, wrappés avec `mise x` pour que la toolchain mise soit disponible
+// même sans `mise activate`.
+//
+// Parallélisme maximal :
+// - `mise run check` est séquentiel (doctor → lint → test → security, et chaque
+//   sous-groupe séquentiel). Ici on décompose le gate en briques atomiques
+//   indépendantes et on les lance en parallèle via hk.
+// - hk exécute les steps d'un Group en parallèle (pool + file locks) et les
+//   Groups séquentiellement. Un seul Group = tous les steps en concurrence →
+//   temps ≈ max(step) au lieu de Σ(step).
+// - Équivalent fonctionnel à `mise run check` mais beaucoup plus rapide.
+//
+// pre-commit : gate hermétique sans tokens (rapide, bloquant au commit)
+// pre-push   : même gate + tests live qui consomment des tokens OpenRouter
+//            (opt-in, lent/coûteux → déporté au push)
+
+local checkSteps = new Mapping<String, Step> {
+  ["doctor"] {
+    check = "mise run doctor"
+  }
+  ["lint-types"] {
+    check = "mise run lint-types"
+  }
+  ["lint-js"] {
+    check = "mise run lint-js"
+  }
+  ["lint-shell"] {
+    check = "mise run lint-shell"
+  }
+  ["lint-yaml"] {
+    check = "mise run lint-yaml"
+  }
+  ["lint-containerfile"] {
+    check = "mise run lint-containerfile"
+  }
+  ["lint-compose"] {
+    check = "mise run lint-compose"
+  }
+  ["test-unit"] {
+    check = "pnpm run test:unit"
+  }
+  ["test-arch"] {
+    check = "pnpm run test:arch"
+  }
+  ["test-integration"] {
+    check = "pnpm run test:integration"
+  }
+  ["test-e2e"] {
+    check = "pnpm run test:e2e"
+  }
+  ["security-audit"] {
+    check = "pnpm audit --audit-level=low"
+  }
+  ["security-trivy"] {
+    check = "trivy fs --scanners vuln,misconfig,secret --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 1 --ignore-unfixed ."
+  }
+  ["security-gitleaks-worktree"] {
+    check = "gitleaks dir --no-banner ."
+  }
+  ["security-gitleaks-history"] {
+    check = "gitleaks git --no-banner ."
+  }
+}
+
+hooks {
+  ["pre-commit"] {
+    // lecture seule → pas de fix/stash ; on veut bloquer le commit si échec
+    stash = "none"
+    steps {
+      ["check"] = new Group {
+        steps {
+          ...checkSteps
+        }
+      }
+    }
+  }
+  ["pre-push"] {
+    // même gate + live tests token-consommants
+    stash = "none"
+    steps {
+      ["check-live"] = new Group {
+        steps {
+          ...checkSteps
+          ["test-live"] {
+            check = "mise run test-live"
+          }
+        }
+      }
+    }
+  }
+  // Commandes manuelles `hk check` / `hk fix` (même gate sans live)
+  ["check"] {
+    steps {
+      ["check"] = new Group {
+        steps {
+          ...checkSteps
+        }
+      }
+    }
+  }
+  ["fix"] {
+    fix = true
+    stash = "git"
+    steps {
+      ["check"] = new Group {
+        steps {
+          ...checkSteps
+        }
+      }
+    }
+  }
+}

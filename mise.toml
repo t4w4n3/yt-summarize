@@ -14,3 +14,15 @@ yamllint = "1.37.1"            # YAML files
 hadolint = "2.12.0"            # Containerfiles/Dockerfiles
 trivy = "0.73.0"               # security scanner: vulns, secrets, misconfig
 gitleaks = "8.30.1"            # secrets scanner (worktree + git history)
+# Git hooks — hk (jdx) + pkl (config language for hk.pkl)
+hk = "1.56.1"
+pkl = "0.32.1"
+
+[env]
+# hk s'intègre avec mise : `hk install --mise` wrappe les hooks avec `mise x`
+# pour que la toolchain mise soit disponible même sans `mise activate`.
+HK_MISE = "1"
+
+[hooks]
+# Installe/met à jour les git hooks hk à chaque `mise install`.
+postinstall = "hk install --mise"

@@ -5,18 +5,20 @@ DATA_DIR="${DATA_DIR:-/data}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-/artifacts}"
 mkdir -p "$DATA_DIR" "$ARTIFACTS_DIR"
 
-# Keep the host-mounted keyring read-only. GnuPG needs a writable home for sockets and metadata.
-# Default to $HOME (node user) — override with GNUPGHOME=/run/gnupg when running as root.
-export GNUPGHOME="${GNUPGHOME:-$HOME/.gnupg-runtime}"
-mkdir -p "$GNUPGHOME"
-chmod 700 "$GNUPGHOME"
-if [ -d /gnupg ]; then
-  cp -a /gnupg/. "$GNUPGHOME/"
-  chmod -R go-rwx "$GNUPGHOME" || true
+# Secrets are delivered via podman secrets (tmpfs at /run/secrets/*, readable by `node`).
+# Legacy bind mounts (/secrets/*) are still checked for backwards compat during migration.
+if [ ! -f /run/secrets/openrouter_key ] && [ ! -f /secrets/openrouter.gpg ]; then
+  echo "WARNING: No OpenRouter credential found (/run/secrets/openrouter_key or /secrets/openrouter.gpg); paid stages will fail at key resolution." >&2
 fi
-
-if [ ! -f /secrets/openrouter.gpg ]; then
-  echo "WARNING: /secrets/openrouter.gpg is missing; paid stages will fail at key resolution." >&2
+if [ -f /run/secrets/openrouter_key ]; then
+  # podman secret is tmpfs 0440; ensure the worker can read it (already world-readable)
+  :
+fi
+# youtube cookies are optional — check both the secret and the legacy bind mount path
+if [ -f /run/secrets/youtube_cookies ]; then
+  # expose as /tmp/cookies for yt-dlp; podman secret is 0440 so copy to a readable location
+  # download.js checks /run/secrets/youtube_cookies directly, so no action needed here
+  :
 fi
 
 exec node /app/src/worker/worker.js

@@ -21,6 +21,17 @@ E2E_WORKER_PORT="${E2E_WORKER_PORT:-4175}"
 # Fresh job store. The data dir is bind-mounted (not a named volume), so
 # `down -v` won't remove it — wipe before the containers start, never after.
 rm -rf e2e/.tmp/data
+# Rootless podman maps container `node` (uid 1000) to host subuid 100000, so a
+# host dir owned by 1000 is not writable for the non-root app/worker. Make it
+# world-writable (ephemeral) or chown via podman unshare so the smoke test
+# passes for both root and non-root images.
+mkdir -p e2e/.tmp/data
+chmod 777 e2e/.tmp/data 2>/dev/null || true
+# If podman unshare is available, also chown to the mapped uid for cleanliness
+if command -v podman >/dev/null 2>&1; then
+  podman unshare chown 1000:1000 e2e/.tmp/data 2>/dev/null || true
+  chmod 777 e2e/.tmp/data 2>/dev/null || true
+fi
 
 cleanup() {
   echo "[test-containers] tearing down the stack..."

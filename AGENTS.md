@@ -47,7 +47,7 @@ Aliases: `install` (setup), `start` (up), `stop` (down), `ps` (status), `b` (bui
 ## Notes for agents
 
 - Tests: `mise run t` (or `test-ui` / `test-stack`); artifacts go to `test-results/` (gitignored).
-- The stack runs via podman-compose; secrets (`~/.secrets/openrouter.gpg`, `~/.gnupg`) are host GPG mounts, decrypted in worker memory — never put keys in `.env`.
+- The stack runs via podman-compose; secrets are host GPG-encrypted at rest (`~/.secrets/openrouter.gpg` + `~/.gnupg`, 0600/0700) and synced into podman secrets (`openrouter_key`, `youtube_cookies` at `/run/secrets/*`, tmpfs 0440) via `scripts/sync-secrets.sh` (`mise run up` does it automatically) so the non-root `node` worker can read them despite rootless UID mapping — never put keys in `.env`. Legacy bind mounts (`/secrets/*`, `/gnupg`) are still read as fallback. `app`/`worker` run as `node` (USER node), only `vpn` stays root (needs NET_ADMIN + /dev/net/tun, confined to its netns).
 - YouTube downloads go through Mullvad via a `vpn` sidecar service (compose): it brings up the WireGuard tunnel in its own netns and exposes a loopback-only SOCKS5 proxy (127.0.0.1:1080). The worker's yt-dlp uses `--proxy socks5h://…` (`MULLVAD_ENABLED`/`MULLVAD_PROXY` in `.env`) — only yt-dlp's traffic exits via the tunnel. No host routes/firewall are touched; the tunnel never leaves the sidecar's network namespace. The WireGuard config lives at `~/.local/mullvad-poc/wg0.conf` (private key, 0600). Re-scan relays when YouTube starts blocking again: `mise run mullvad scan` (then `mise run mullvad init -i <addr> -r <relay>`).
 - Local dev data dirs: `.local/` (gitignored).
 - Raw commands (`podman-compose …`, `pnpm run …`) work, but task files are the documented interface.

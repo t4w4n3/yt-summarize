@@ -6,6 +6,7 @@ services:
     build:
       context: "."
       dockerfile: "image/Dockerfile"
+    user: "node"
     command: ["/app/entrypoint-app.sh"]
     # Loopback-only: reachable solely via `tailscale serve` (https://<machine>.ts.net).
     # Never publish on all interfaces — this box has a public IP and no firewall.
@@ -22,6 +23,7 @@ services:
     build:
       context: "."
       dockerfile: "image/Dockerfile"
+    user: "node"
     command: ["/app/entrypoint-worker.sh"]
     environment:
       DATA_DIR: "/data"
@@ -40,9 +42,12 @@ services:
     volumes:
       - "jobs-data:/data"
       - "artifacts:/artifacts"
-      - "${HOME}/.secrets:/secrets:ro"        # OpenRouter key, GPG-encrypted at rest (never decrypted on disk)
-      - "${HOME}/.gnupg:/gnupg:ro"            # passphrase-less GPG keyring (read-only; copied to writable $GNUPGHOME by entrypoint)
-
+    secrets:
+      - "openrouter_key"
+      # youtube_cookies is optional — if the podman secret does not exist the
+      # worker still starts; download.js checks both /run/secrets/youtube_cookies
+      # and the legacy /secrets/youtube-cookies.txt bind mount.
+      - "youtube_cookies"
     network_mode: "host"                      # host DNS/network; required on hosts without podman's aardvark-dns
     restart: "unless-stopped"
     # Runs as non-root `node` (image default); no HTTP endpoint to probe.
@@ -53,6 +58,7 @@ services:
     build:
       context: "."
       dockerfile: "image/Dockerfile"
+    user: "root"
     command: ["/app/entrypoint-vpn.sh"]
     # Tunnel WireGuard: nécessite NET_ADMIN + /dev/net/tun (confinés au netns du sidecar).
     cap_add:
@@ -75,4 +81,10 @@ services:
 volumes:
   jobs-data:
   artifacts:
+
+secrets:
+  openrouter_key:
+    external: true
+  youtube_cookies:
+    external: true
 ...

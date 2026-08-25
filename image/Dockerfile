@@ -16,20 +16,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       bash=5.2.15-2+b13 \
     && rm -rf /var/lib/apt/lists/*
 
+# yt-dlp as a global binary so it stays on PATH for the non-root `node` user
+ENV PIPX_HOME="/opt/pipx"
+ENV PIPX_BIN_DIR="/usr/local/bin"
 RUN pipx install --pip-args="--no-cache-dir" "yt-dlp==2026.8.19"
-ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 # Keep the pinned pnpm version in sync with mise.toml and package.json packageManager.
 COPY package.json pnpm-lock.yaml ./
 RUN npm install -g pnpm@11.21.0 && pnpm install --frozen-lockfile --prod
 
-RUN mkdir -p /data /artifacts
+RUN mkdir -p /data /artifacts && chown -R node:node /app /data /artifacts
 COPY src/ /app/src/
 COPY image/entrypoint-app.sh image/entrypoint-worker.sh image/entrypoint-vpn.sh /app/
-RUN chmod +x /app/entrypoint-*.sh
+RUN chmod +x /app/entrypoint-*.sh && chown -R node:node /app
 
 EXPOSE 8080
 # App-only default; the worker and vpn services override/disable their healthcheck in compose.yaml.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -sf http://localhost:8080/ || exit 1
+USER node

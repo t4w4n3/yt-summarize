@@ -27,8 +27,31 @@ async function download(job, context) {
   }
   // YouTube bot-checks datacenter IPs; a Netscape-format cookies file (e.g. exported
   // from a logged-in browser) makes downloads reliable on those networks.
-  if (fs.existsSync('/secrets/youtube-cookies.txt')) {
-    args.push('--cookies', '/secrets/youtube-cookies.txt');
+  // Preferred: podman secret at /run/secrets/youtube_cookies (rootless-friendly).
+  // Fallback: legacy bind mount at /secrets/youtube-cookies.txt.
+  const cookiesSecret = '/run/secrets/youtube_cookies';
+  const cookiesLegacy = '/secrets/youtube-cookies.txt';
+  let cookiesPath = null;
+  if (fs.existsSync(cookiesSecret)) {
+    try {
+      const stat = fs.statSync(cookiesSecret);
+      if (stat.size > 0) {
+        const content = fs.readFileSync(cookiesSecret, 'utf8');
+        // dummy placeholder from sync script is "# empty" or sk-or-missing; skip
+        if (content.trim() && !content.includes('sk-or-missing') && content.includes('Netscape')) {
+          cookiesPath = cookiesSecret;
+        } else if (content.trim().length > 20) {
+          // any non-empty non-placeholder is treated as cookies
+          cookiesPath = cookiesSecret;
+        }
+      }
+    } catch {}
+  }
+  if (!cookiesPath && fs.existsSync(cookiesLegacy)) {
+    cookiesPath = cookiesLegacy;
+  }
+  if (cookiesPath) {
+    args.push('--cookies', cookiesPath);
   }
   args.push(job.url);
   await runProcess('yt-dlp', args, {

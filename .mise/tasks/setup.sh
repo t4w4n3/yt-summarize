@@ -17,6 +17,12 @@ pnpm install --frozen-lockfile
 pnpm exec playwright install chromium
 
 echo
+# Sync podman secrets (openrouter key + cookies) so `mise run up` can run as `node`
+if [ -x "$ROOT/scripts/sync-secrets.sh" ]; then
+  "$ROOT/scripts/sync-secrets.sh" || echo "  (secrets sync skipped — GPG source absent, placeholders created)"
+fi
+
+echo
 echo "Mullvad VPN (YouTube downloads) — paire de clés WireGuard:"
 # shellcheck source=scripts/mullvad-lib.sh
 . "$ROOT/scripts/mullvad-lib.sh"

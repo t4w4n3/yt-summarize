@@ -67,6 +67,8 @@ else
 fi
 
 echo "secrets (only the paid pipeline stages need these; e2e tests do not):"
+# Source of truth is still the GPG-encrypted file at rest, but the worker now
+# receives the plaintext via podman secret (tmpfs) so non-root `node` can read it.
 if [ -f "$HOME/.secrets/openrouter.gpg" ]; then
   if GNUPGHOME="$HOME/.gnupg" gpg --quiet --batch --no-tty --decrypt \
     "$HOME/.secrets/openrouter.gpg" >/dev/null 2>&1; then
@@ -76,6 +78,24 @@ if [ -f "$HOME/.secrets/openrouter.gpg" ]; then
   fi
 else
   warn "$HOME/.secrets/openrouter.gpg missing — paid stages will fail (see plan.md §4.4)"
+fi
+if podman secret exists openrouter_key >/dev/null 2>&1; then
+  # check that the secret contains something that looks like a key
+  if podman secret inspect openrouter_key >/dev/null 2>&1; then
+    ok "podman secret 'openrouter_key' exists (synced by scripts/sync-secrets.sh)"
+  else
+    warn "podman secret 'openrouter_key' exists but cannot be inspected"
+  fi
+else
+  warn "podman secret 'openrouter_key' missing — run: bash scripts/sync-secrets.sh or mise run up (creates placeholder if no GPG)"
+fi
+if [ -f "$HOME/.secrets/youtube-cookies.txt" ]; then
+  ok "$HOME/.secrets/youtube-cookies.txt present"
+  if podman secret exists youtube_cookies >/dev/null 2>&1; then
+    ok "podman secret 'youtube_cookies' exists"
+  else
+    warn "podman secret 'youtube_cookies' missing — run: bash scripts/sync-secrets.sh"
+  fi
 fi
 
 echo

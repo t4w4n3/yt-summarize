@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl ffmpeg gnupg iproute2 procps python3 pipx wireguard-tools bash \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pipx install --pip-args="--no-cache-dir" "yt-dlp==2025.*"
+RUN pipx install --pip-args="--no-cache-dir" "yt-dlp"
 ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app

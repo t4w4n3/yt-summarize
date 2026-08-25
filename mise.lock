@@ -31,3 +31,10 @@ url = "https://nodejs.org/dist/v24.18.1/node-v24.18.1-darwin-x64.tar.gz"
 [tools.node."platforms.windows-x64"]
 checksum = "sha256:ec56b84a7551893ab2324ebdfdc4ab974a63b4781162600b68a1293cc3e53765"
 url = "https://nodejs.org/dist/v24.18.1/node-v24.18.1-win-x64.zip"
+
+[[tools."npm:mermaid"]]
+version = "11.16.1"
+backend = "npm:mermaid"
+
+[tools."npm:mermaid".options]
+trust_policy_excludes = '["cytoscape@3.34.1"]'

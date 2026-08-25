@@ -50,6 +50,7 @@ mise is the single entrypoint for every contributor action. Task files live in
 | `mise run worker` | Run the worker locally (no container; paid stages need the stack) |
 | `mise run cookies <file>` | Install a Netscape `cookies.txt` for the worker and restart it |
 | `mise run doctor` | Verify tools, Node version, `.env`, and GPG secrets |
+| `mise run docs` | Serve the architecture docs (Mermaid diagrams) at http://localhost:8123; `--expose` also publishes them on the tailnet at `https://<machine>.ts.net:8443/` |
 
 Aliases: `install` (setup), `start` (up), `stop` (down), `ps` (status), `b` (build), `t` (test), `check` (doctor).
 

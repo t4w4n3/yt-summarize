@@ -31,6 +31,7 @@ mise run up      # build + start the stack (app + worker) → http://localhost:8
 | `mise run cookies <file>` | Install Netscape cookies.txt for the worker + restart it |
 | `mise run mullvad <mode>` | Mullvad ops: relay rotation (`scan`), config provisioning (`init`), tunnel debug (`run`/`test`/`dryrun`) — the production path is the `vpn` sidecar, no `MULLVAD_ACCOUNT` needed for the interactive flow |
 | `mise run doctor` | Verify tools, Node ≥24, `.env`, GPG secrets |
+| `mise run docs` | Serve the architecture/stack docs (Mermaid) at :8123; `--expose` publishes on the tailnet via `tailscale serve` (https 8443) |
 
 Aliases: `install` (setup), `start` (up), `stop` (down), `ps` (status), `b` (build), `t` (test), `tc` (test-containers), `check` (doctor).
 

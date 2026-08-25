@@ -1,17 +1,19 @@
-const path = require('node:path');
-const crypto = require('node:crypto');
-const express = require('express');
-const { config } = require('../shared/constants');
-const { openDatabase, createJob, getJob, findExistingJobByVideoId } = require('../shared/db');
+import crypto from 'node:crypto';
+import path from 'node:path';
+import type { NextFunction, Request, Response } from 'express';
+import express from 'express';
+import { config } from '../shared/constants.ts';
+import type { JobRow } from '../shared/db.ts';
+import { createJob, findExistingJobByVideoId, getJob, openDatabase } from '../shared/db.ts';
 
 const app = express();
 const db = openDatabase();
-const publicDir = path.join(__dirname, 'public');
+const publicDir = path.join(import.meta.dirname, 'public');
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
 
-function extractVideoId(value) {
+function extractVideoId(value: string): string | null {
   try {
     const url = new URL(value.trim());
     const hostname = url.hostname.toLowerCase();
@@ -22,9 +24,9 @@ function extractVideoId(value) {
   return null;
 }
 
-function validateYouTubeUrl(value) {
+function validateYouTubeUrl(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > 2048) return 'Enter a YouTube video URL.';
-  let url;
+  let url: URL;
   try {
     url = new URL(value);
   } catch {
@@ -49,7 +51,18 @@ function validateYouTubeUrl(value) {
   return null;
 }
 
-function publicJob(job) {
+interface PublicJob {
+  jobId: string;
+  status: JobRow['status'];
+  stage: string | null;
+  progress: number;
+  title: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function publicJob(job: JobRow | null): PublicJob | null {
   if (!job) return null;
   return {
     jobId: job.id,
@@ -63,37 +76,41 @@ function publicJob(job) {
   };
 }
 
-app.post('/api/summarize', (req, res) => {
+interface CreateBody {
+  url?: unknown;
+}
+
+app.post('/api/summarize', (req: Request<object, unknown, CreateBody>, res: Response) => {
   const error = validateYouTubeUrl(req.body?.url);
   if (error) return res.status(400).json({ error });
-  const url = req.body.url.trim();
+  const url = (req.body.url as string).trim();
   const videoId = extractVideoId(url);
   const existing = videoId ? findExistingJobByVideoId(db, videoId) : null;
   if (existing) {
     return res.status(200).json({ jobId: existing.id, deduped: true });
   }
   const job = createJob(db, crypto.randomUUID(), url, videoId);
-  return res.status(201).json({ jobId: job.id });
+  return res.status(201).json({ jobId: job?.id });
 });
 
-app.get('/api/jobs/:id', (req, res) => {
+app.get('/api/jobs/:id', (req: Request<{ id: string }>, res: Response) => {
   const job = getJob(db, req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found.' });
   return res.json(publicJob(job));
 });
 
-app.get('/api/jobs/:id/result', (req, res) => {
+app.get('/api/jobs/:id/result', (req: Request<{ id: string }>, res: Response) => {
   const job = getJob(db, req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found.' });
   if (job.status !== 'done') return res.status(409).json({ error: job.error || 'This note is not ready yet.' });
   return res.json({
     title: job.title,
     markdown: job.markdown,
-    wordCount: job.markdown.trim().split(/\s+/).filter(Boolean).length,
+    wordCount: (job.markdown ?? '').trim().split(/\s+/).filter(Boolean).length,
   });
 });
 
-app.get('/api/jobs/:id/result.md', (req, res) => {
+app.get('/api/jobs/:id/result.md', (req: Request<{ id: string }>, res: Response) => {
   const job = getJob(db, req.params.id);
   if (!job) return res.status(404).type('text').send('Job not found.');
   if (job.status !== 'done')
@@ -111,8 +128,8 @@ app.get('/api/jobs/:id/result.md', (req, res) => {
 });
 
 app.use(express.static(publicDir, { index: 'index.html' }));
-app.use((_req, res) => res.status(404).json({ error: 'Not found.' }));
-app.use((error, _req, res, _next) => {
+app.use((_req: Request, res: Response) => res.status(404).json({ error: 'Not found.' }));
+app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (error instanceof SyntaxError && 'body' in error)
     return res.status(400).json({ error: 'Request body must be valid JSON.' });
   console.error(error);
@@ -123,7 +140,7 @@ const server = app.listen(config.port, '0.0.0.0', () => {
   console.log(`Summarize YT app listening on http://0.0.0.0:${config.port}`);
 });
 
-function shutdown(signal) {
+function shutdown(signal: string): void {
   console.log(`${signal}: shutting down`);
   server.close(() => {
     db.close();

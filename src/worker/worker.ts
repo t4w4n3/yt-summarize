@@ -1,19 +1,19 @@
-const { config } = require('../shared/constants');
-const {
-  openDatabase,
+import { config } from '../shared/constants.ts';
+import {
   claimNextJob,
-  reclaimStaleJobs,
+  closeDatabase,
   getJob,
   heartbeat,
   markFailed,
-  closeDatabase,
-} = require('../shared/db');
-const { runPipeline, friendlyError } = require('./pipeline');
+  openDatabase,
+  reclaimStaleJobs,
+} from '../shared/db.ts';
+import { friendlyError, runPipeline, stageOf } from './pipeline.ts';
 
 const db = openDatabase();
 let stopping = false;
 
-async function loop() {
+async function loop(): Promise<void> {
   console.log(`Worker ready; polling every ${config.pollMs}ms`);
   while (!stopping) {
     try {
@@ -35,7 +35,7 @@ async function loop() {
         // The claimed row carries stage=NULL; attribute the failure to the
         // stage the job was actually in when it stopped.
         const current = getJob(db, job.id);
-        markFailed(db, job.id, friendlyError(error), error.stage || current?.stage || job.stage);
+        markFailed(db, job.id, friendlyError(error), stageOf(error) || current?.stage || job.stage);
       } finally {
         clearInterval(beat);
         controller.abort();
@@ -47,12 +47,13 @@ async function loop() {
   }
 }
 
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-function runWithTimeout(task, timeoutMs, controller) {
-  let timer;
-  const timeout = new Promise((_, reject) => {
+
+function runWithTimeout(task: () => Promise<void>, timeoutMs: number, controller: AbortController): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       // Abort the in-flight pipeline (kills child processes / aborts fetches)
       // so the job is actually stopped, not merely reported as failed.
@@ -60,9 +61,12 @@ function runWithTimeout(task, timeoutMs, controller) {
       reject(new Error(`Job exceeded the ${Math.round(timeoutMs / 60000)} minute limit.`));
     }, timeoutMs);
   });
-  return Promise.race([task(), timeout]).finally(() => clearTimeout(timer));
+  return Promise.race([task(), timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
 }
-function shutdown(signal) {
+
+function shutdown(signal: string): void {
   console.log(`${signal}: worker shutting down`);
   stopping = true;
   closeDatabase(db);

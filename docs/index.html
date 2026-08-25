@@ -39,13 +39,13 @@ flowchart TB
 
   subgraph VPS["VPS — one container image, podman-compose"]
     subgraph APPSVC["app service · Express :8080 (loopback-only)"]
-      API["server.js<br/>REST API + static UI"]
+      API["server.ts<br/>REST API + static UI"]
       UI["index.html · app.js · style.css<br/>vanilla single page"]
     end
 
     subgraph WKSVC["worker service · host network"]
-      LOOP["worker.js — poll loop<br/>claim · heartbeat · per-stage timeouts · re-queue stale jobs"]
-      PIPE["pipeline.js — 4 stages, one job at a time<br/>download → convert → transcribe → summarize"]
+      LOOP["worker.ts — poll loop<br/>claim · heartbeat · per-stage timeouts · re-queue stale jobs"]
+      PIPE["pipeline.ts — 4 stages, one job at a time<br/>download → convert → transcribe → summarize"]
     end
 
     subgraph VPNSVC["vpn sidecar · own network namespace"]

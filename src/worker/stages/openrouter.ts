@@ -1,13 +1,15 @@
-const fs = require('node:fs');
-const { spawn } = require('node:child_process');
-const { StageError } = require('./process');
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import { StageError } from './process.ts';
 
-// Resolve the OpenRouter API key. Preferred path is the podman secret
-// at /run/secrets/openrouter_key (tmpfs, 0440, readable by `node`).
-// Falls back to the legacy GPG-encrypted bind mount at /secrets/openrouter.gpg
-// for backwards compat during the migration window. The plaintext is kept in
-// worker memory for the lifetime of a single request and never written to disk.
-async function resolveOpenRouterKey() {
+/**
+ * Resolve the OpenRouter API key. Preferred path is the podman secret
+ * at /run/secrets/openrouter_key (tmpfs, 0440, readable by `node`).
+ * Falls back to the legacy GPG-encrypted bind mount at /secrets/openrouter.gpg
+ * for backwards compat during the migration window. The plaintext is kept in
+ * worker memory for the lifetime of a single request and never written to disk.
+ */
+export async function resolveOpenRouterKey(): Promise<string> {
   // 1) podman secret (rootless-friendly)
   const secretPath = '/run/secrets/openrouter_key';
   if (fs.existsSync(secretPath)) {
@@ -31,7 +33,9 @@ async function resolveOpenRouterKey() {
       }
     } catch (error) {
       if (error instanceof StageError) throw error;
-      throw new StageError('Could not read the OpenRouter secret.', 'pipeline', error.message);
+      if (error instanceof Error)
+        throw new StageError('Could not read the OpenRouter secret.', 'pipeline', error.message);
+      throw new StageError('Could not read the OpenRouter secret.', 'pipeline', String(error));
     }
   }
 
@@ -53,8 +57,8 @@ async function resolveOpenRouterKey() {
   );
 }
 
-function decryptViaGpg(gpgPath) {
-  return new Promise((resolve, reject) => {
+function decryptViaGpg(gpgPath: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
     const child = spawn('gpg', ['--quiet', '--batch', '--no-tty', '--decrypt', gpgPath], {
       env: { ...process.env, GNUPGHOME: process.env.GNUPGHOME || '/run/gnupg' },
     });
@@ -62,13 +66,13 @@ function decryptViaGpg(gpgPath) {
     let stderr = '';
     child.stdin.end();
     const timeout = setTimeout(() => child.kill('SIGKILL'), 30_000);
-    child.stdout.on('data', (chunk) => {
+    child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk;
     });
-    child.stderr.on('data', (chunk) => {
+    child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk;
     });
-    child.on('error', (error) => {
+    child.on('error', (error: Error) => {
       clearTimeout(timeout);
       reject(new StageError('Could not decrypt the OpenRouter key.', 'pipeline', error.message));
     });
@@ -95,5 +99,3 @@ function decryptViaGpg(gpgPath) {
     });
   });
 }
-
-module.exports = { resolveOpenRouterKey };

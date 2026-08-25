@@ -45,7 +45,7 @@ services:
     secrets:
       - "openrouter_key"
       # youtube_cookies is optional — if the podman secret does not exist the
-      # worker still starts; download.js checks both /run/secrets/youtube_cookies
+      # worker still starts; download.ts checks both /run/secrets/youtube_cookies
       # and the legacy /secrets/youtube-cookies.txt bind mount.
       - "youtube_cookies"
     network_mode: "host"                      # host DNS/network; required on hosts without podman's aardvark-dns

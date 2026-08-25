@@ -1,31 +1,43 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { config } = require('../../shared/constants');
-const { StageError } = require('./process');
-const openrouter = require('./openrouter');
+import fs from 'node:fs';
+import path from 'node:path';
+import { config } from '../../shared/constants.ts';
+import * as openrouter from './openrouter.ts';
+import type { StageContext } from './process.ts';
+import { runProcess, StageError } from './process.ts';
 
 const API_URL = 'https://openrouter.ai/api/v1/audio/transcriptions';
 
 // Keep 1 MB headroom for multipart overhead (boundaries, headers).
-const MULTIPART_LIMIT = 24 * 1024 * 1024;
-const CHUNK_DURATION_SEC = 600; // 10 min → ~19 MB at 16 kHz mono s16le
+export const MULTIPART_LIMIT = 24 * 1024 * 1024;
+export const CHUNK_DURATION_SEC = 600; // 10 min → ~19 MB at 16 kHz mono s16le
 
-function appendLog(logPath, line) {
+/** StageContext plus dependency-injection hooks used by unit tests. */
+export interface TranscribeContext extends StageContext {
+  /** Defaults to openrouter.resolveOpenRouterKey; injectable in tests. */
+  resolveKey?: () => Promise<string>;
+}
+
+function appendLog(logPath: string | undefined, line: string): void {
   if (!logPath) return;
   try {
     fs.appendFileSync(logPath, `${line}\n`, 'utf8');
   } catch {}
 }
 
-async function doFetch(url, options) {
+function doFetch(url: string, options: RequestInit): Promise<Response> {
   return fetch(url, options);
 }
 
-async function transcribeMultipart(wavPath, apiKey, signal, logPath) {
+async function transcribeMultipart(
+  wavPath: string,
+  apiKey: string,
+  signal: AbortSignal,
+  logPath: string | undefined,
+): Promise<Response> {
   const audio = await fs.promises.readFile(wavPath);
   const form = new FormData();
   form.append('model', config.sttModel);
-  form.append('file', new Blob([audio], { type: 'audio/wav' }), path.basename(wavPath));
+  form.append('file', new Blob([new Uint8Array(audio)], { type: 'audio/wav' }), path.basename(wavPath));
   appendLog(
     logPath,
     `$ POST ${API_URL} (model=${config.sttModel}, file=${path.basename(wavPath)}, ${audio.length} bytes, mode=multipart)`,
@@ -38,7 +50,12 @@ async function transcribeMultipart(wavPath, apiKey, signal, logPath) {
   });
 }
 
-async function transcribeBase64(wavPath, apiKey, signal, logPath) {
+async function transcribeBase64(
+  wavPath: string,
+  apiKey: string,
+  signal: AbortSignal,
+  logPath: string | undefined,
+): Promise<Response> {
   const audio = await fs.promises.readFile(wavPath);
   const b64 = audio.toString('base64');
   appendLog(
@@ -53,9 +70,18 @@ async function transcribeBase64(wavPath, apiKey, signal, logPath) {
   });
 }
 
-async function handleResponse(response) {
-  const body = await response.json().catch(() => ({}));
-  const text = typeof body.text === 'string' ? body.text.trim() : '';
+interface TranscribePayload {
+  text?: unknown;
+}
+
+async function handleResponse(response: Response): Promise<{ text: string }> {
+  let body: TranscribePayload | null = null;
+  try {
+    body = (await response.json()) as TranscribePayload;
+  } catch {
+    body = {};
+  }
+  const text = typeof body?.text === 'string' ? body.text.trim() : '';
   if (!response.ok || !text) {
     throw new StageError(
       `Transcription failed (HTTP ${response.status}).`,
@@ -63,14 +89,18 @@ async function handleResponse(response) {
       JSON.stringify(body).slice(0, 1000),
     );
   }
-  return { text, body };
+  return { text };
 }
 
 // Split a 16 kHz mono s16le WAV into ~CHUNK_DURATION_SEC chunks by slicing
 // the PCM data and rewriting a valid WAV header per chunk. This avoids a
 // hard ffmpeg dependency and works in unit tests with synthetic WAVs.
 // Falls back to ffmpeg segment if the header is non-standard.
-async function splitWavIntoChunks(wavPath, jobDir, chunkDurationSec = CHUNK_DURATION_SEC) {
+export async function splitWavIntoChunks(
+  wavPath: string,
+  jobDir: string,
+  chunkDurationSec = CHUNK_DURATION_SEC,
+): Promise<string[]> {
   const chunkDir = path.join(jobDir, 'chunks');
   await fs.promises.mkdir(chunkDir, { recursive: true });
 
@@ -78,12 +108,12 @@ async function splitWavIntoChunks(wavPath, jobDir, chunkDurationSec = CHUNK_DURA
   try {
     const chunks = await splitWavManual(wavPath, chunkDir, chunkDurationSec);
     if (chunks.length > 0) return chunks;
-  } catch (e) {
-    appendLog(path.join(jobDir, 'stage.log'), `manual split failed (${e.message}), falling back to ffmpeg`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendLog(path.join(jobDir, 'stage.log'), `manual split failed (${message}), falling back to ffmpeg`);
   }
 
   // Fallback: ffmpeg segment
-  const { runProcess } = require('./process');
   const pattern = path.join(chunkDir, 'chunk_%03d.wav');
   // -f segment requires a muxer; pcm_s16le + wav works with segment.
   await runProcess(
@@ -115,7 +145,7 @@ async function splitWavIntoChunks(wavPath, jobDir, chunkDurationSec = CHUNK_DURA
   return files.map((f) => path.join(chunkDir, f));
 }
 
-async function splitWavManual(wavPath, chunkDir, chunkDurationSec) {
+export async function splitWavManual(wavPath: string, chunkDir: string, chunkDurationSec: number): Promise<string[]> {
   const stat = await fs.promises.stat(wavPath);
   if (stat.size < 44) throw new Error('file too small to be wav');
 
@@ -147,7 +177,7 @@ async function splitWavManual(wavPath, chunkDir, chunkDurationSec) {
 
     const dataOffset = 44;
     const dataEnd = dataOffset + dataSize;
-    const files = [];
+    const files: string[] = [];
     let offset = dataOffset;
     let index = 0;
     while (offset < dataEnd) {
@@ -175,45 +205,45 @@ async function splitWavManual(wavPath, chunkDir, chunkDurationSec) {
   }
 }
 
-async function transcribe(wavPath, context) {
-  const apiKey = await openrouter.resolveOpenRouterKey();
+export async function transcribe(wavPath: string, context: TranscribeContext): Promise<string> {
+  const resolveKey = context.resolveKey ?? openrouter.resolveOpenRouterKey;
+  const apiKey = await resolveKey();
 
   const controller = new AbortController();
   const timeoutMs = context.timeoutMs || 25 * 60 * 1000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const signal = context.signal ? AbortSignal.any([controller.signal, context.signal]) : controller.signal;
 
-  let response;
-  let stat;
   try {
+    let statSize = 0;
     try {
-      stat = await fs.promises.stat(wavPath);
-    } catch {
-      stat = { size: 0 };
-    }
-    const isLarge = stat.size > MULTIPART_LIMIT;
+      statSize = (await fs.promises.stat(wavPath)).size;
+    } catch {}
+    const isLarge = statSize > MULTIPART_LIMIT;
 
     // Strategy:
     // - small file: try multipart, on 413 fall through to base64, then chunking.
     // - large file: try base64 directly (as the API suggests), on 413 fall through to chunking.
     // Chunking is the final safety net and works for arbitrarily long audio.
 
-    const tryHandle = async (resp) => {
+    const tryHandle = async (resp: Response): Promise<string> => {
       const { text } = await handleResponse(resp);
       return text;
     };
 
-    let text = null;
+    let text: string | null = null;
 
     if (!isLarge) {
       try {
-        response = await transcribeMultipart(wavPath, apiKey, signal, context.logPath);
+        const response = await transcribeMultipart(wavPath, apiKey, signal, context.logPath);
         text = await tryHandle(response);
       } catch (error) {
-        const msg = `${error.message} ${error.details || ''}`;
+        const details = error instanceof StageError ? error.details : '';
+        const message = error instanceof Error ? error.message : String(error);
+        const msg = `${message} ${details}`;
         const is413 = msg.includes('413') || msg.includes('25 MB') || msg.includes('input_audio');
         if (!is413) throw error;
-        appendLog(context.logPath, `multipart hit 413 (size=${stat.size}), retrying as base64 JSON via input_audio`);
+        appendLog(context.logPath, `multipart hit 413 (size=${statSize}), retrying as base64 JSON via input_audio`);
         // fall through to base64
         text = null;
       }
@@ -222,15 +252,17 @@ async function transcribe(wavPath, context) {
     if (text === null) {
       // For large files or small files that got 413, try base64 JSON.
       try {
-        response = await transcribeBase64(wavPath, apiKey, signal, context.logPath);
+        const response = await transcribeBase64(wavPath, apiKey, signal, context.logPath);
         text = await tryHandle(response);
       } catch (error) {
-        const msg = `${error.message} ${error.details || ''}`;
+        const details = error instanceof StageError ? error.details : '';
+        const message = error instanceof Error ? error.message : String(error);
+        const msg = `${message} ${details}`;
         const is413 = msg.includes('413') || msg.includes('25 MB');
-        if (!is413 && stat.size <= MULTIPART_LIMIT) throw error;
+        if (!is413 && statSize <= MULTIPART_LIMIT) throw error;
         appendLog(
           context.logPath,
-          `base64 still hit 413 or large file fallback (size=${stat.size}), splitting into ${CHUNK_DURATION_SEC}s chunks`,
+          `base64 still hit 413 or large file fallback (size=${statSize}), splitting into ${CHUNK_DURATION_SEC}s chunks`,
         );
         text = null;
       }
@@ -241,7 +273,7 @@ async function transcribe(wavPath, context) {
       const chunkPaths = await splitWavIntoChunks(wavPath, context.jobDir, CHUNK_DURATION_SEC);
       if (chunkPaths.length === 0) throw new StageError('Could not split audio for transcription.', 'transcribing');
       appendLog(context.logPath, `split into ${chunkPaths.length} chunk(s), transcribing sequentially`);
-      const parts = [];
+      const parts: string[] = [];
       for (const chunkPath of chunkPaths) {
         appendLog(context.logPath, `transcribing chunk ${path.basename(chunkPath)}`);
         const chunkResp = await transcribeMultipart(chunkPath, apiKey, signal, context.logPath);
@@ -270,14 +302,14 @@ async function transcribe(wavPath, context) {
       throw new StageError('The job was cancelled.', 'transcribing');
     }
     if (error instanceof StageError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    const name = error instanceof Error ? error.name : '';
     throw new StageError(
-      error.name === 'AbortError' ? 'Transcription timed out.' : 'The transcription API could not be reached.',
+      name === 'AbortError' ? 'Transcription timed out.' : 'The transcription API could not be reached.',
       'transcribing',
-      error.message,
+      message,
     );
   } finally {
     clearTimeout(timeout);
   }
 }
-
-module.exports = { transcribe, MULTIPART_LIMIT, CHUNK_DURATION_SEC, splitWavIntoChunks, splitWavManual };

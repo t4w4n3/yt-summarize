@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { readFile, stat } from 'node:fs/promises';
 // Tiny dependency-free static server for the docs site (node:http).
 // Binds 127.0.0.1 by default — exposure happens via `tailscale serve` (see
 // .mise/tasks/docs.sh --expose), never on the public interface.
+import { readFile, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';
 
@@ -10,7 +10,7 @@ const ROOT = join(import.meta.dirname ?? process.cwd(), '..', 'docs');
 const PORT = Number(process.env.DOCS_PORT || 8123);
 const HOST = process.env.DOCS_HOST || '127.0.0.1';
 
-const MIME = {
+const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
@@ -23,9 +23,19 @@ const MIME = {
   '.ico': 'image/x-icon',
 };
 
+interface HttpError extends Error {
+  status?: number;
+}
+
+function http(status: number, message: string): HttpError {
+  const e = new Error(message) as HttpError;
+  e.status = status;
+  return e;
+}
+
 const server = createServer(async (req, res) => {
   try {
-    const urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    const urlPath = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname);
     let file = urlPath === '/' ? '/index.html' : urlPath;
     file = normalize(file).replace(/^\.\./, ''); // no traversal
     const abs = join(ROOT, file);
@@ -33,7 +43,7 @@ const server = createServer(async (req, res) => {
 
     const info = await stat(abs).catch(() => null);
     if (info?.isDirectory()) {
-      const redirect = new URL(req.url, 'http://x');
+      const redirect = new URL(req.url ?? '/', 'http://x');
       if (!redirect.pathname.endsWith('/')) {
         res.writeHead(301, { Location: `${redirect.pathname}/` });
         return res.end();
@@ -44,22 +54,16 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': MIME[extname(file)] || 'application/octet-stream' });
     res.end(body);
   } catch (error) {
-    const status = error?.status || 500;
+    const status = (error as HttpError)?.status || 500;
     if (status === 404) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       return res.end('Not found.');
     }
     console.error(error);
     res.writeHead(status, { 'Content-Type': 'text/plain' });
-    res.end(error?.message || 'Server error.');
+    res.end((error as Error)?.message || 'Server error.');
   }
 });
-
-function http(status, message) {
-  const e = new Error(message);
-  e.status = status;
-  return e;
-}
 
 server.listen(PORT, HOST, () => {
   console.log(`Docs: http://${HOST}:${PORT}/  (root ${ROOT})`);

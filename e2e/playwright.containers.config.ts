@@ -1,5 +1,5 @@
-const path = require('node:path');
-const { defineConfig } = require('@playwright/test');
+import path from 'node:path';
+import { defineConfig } from '@playwright/test';
 
 // Runs the stack specs against the REAL container image (see
 // e2e/compose.e2e.yaml) instead of host processes. The stack lifecycle is
@@ -9,16 +9,16 @@ const { defineConfig } = require('@playwright/test');
 
 const appUrl = `http://127.0.0.1:${process.env.E2E_PORT || 4174}`;
 
-module.exports = defineConfig({
-  testDir: __dirname,
-  testMatch: /stack\.spec\.js/,
+export default defineConfig({
+  testDir: import.meta.dirname,
+  testMatch: /stack\.spec\.ts/,
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 2 : 0,
   reporter: [['list']],
-  outputDir: path.join(__dirname, '..', 'test-results'),
+  outputDir: path.join(import.meta.dirname, '..', 'test-results'),
   use: {
     baseURL: appUrl,
     trace: 'retain-on-failure',

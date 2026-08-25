@@ -1,5 +1,5 @@
 // Fake pipeline worker for e2e tests.
-// Reuses the real job store (src/shared/db.js) and walks each claimed job
+// Reuses the real job store (src/shared/db.ts) and walks each claimed job
 // through the same 4 stages the container worker would, then marks it done
 // with canned output. No yt-dlp, ffmpeg, gpg, or OpenRouter involved.
 //
@@ -9,9 +9,9 @@
 //   FAKE_STAGE_DELAY_MS  per-stage delay (default 250)
 //   FAKE_POLL_MS      claim loop interval (default 150)
 
-const http = require('node:http');
-const { openDatabase, claimNextJob, updateStage, heartbeat, markDone, markFailed } = require('../src/shared/db');
-const { STAGES } = require('../src/shared/constants');
+import http from 'node:http';
+import { STAGES } from '../src/shared/constants.ts';
+import { claimNextJob, heartbeat, markDone, markFailed, openDatabase, updateStage } from '../src/shared/db.ts';
 
 const HEALTH_PORT = Number(process.env.FAKE_WORKER_PORT || 4175);
 const STAGE_DELAY_MS = Number(process.env.FAKE_STAGE_DELAY_MS || 250);
@@ -39,7 +39,7 @@ const MARKDOWN = [
   '',
 ].join('\n');
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const db = openDatabase();
 
@@ -47,12 +47,13 @@ http
   .createServer((req, res) => {
     if (req.url === '/healthz') return res.writeHead(200).end('ok');
     res.writeHead(404).end();
+    return;
   })
   .listen(HEALTH_PORT, '0.0.0.0', () => {
     console.log(`[fake-worker] health check on :${HEALTH_PORT}`);
   });
 
-async function run() {
+async function run(): Promise<void> {
   for (;;) {
     const job = claimNextJob(db);
     if (job) {
@@ -65,8 +66,9 @@ async function run() {
         markDone(db, job.id, TITLE, MARKDOWN);
         console.log(`[fake-worker] completed ${job.id}`);
       } catch (error) {
-        markFailed(db, job.id, error.message, 'pipeline');
-        console.error(`[fake-worker] failed ${job.id}: ${error.message}`);
+        const message = error instanceof Error ? error.message : String(error);
+        markFailed(db, job.id, message, 'pipeline');
+        console.error(`[fake-worker] failed ${job.id}: ${message}`);
       }
     }
     await delay(POLL_MS);
@@ -75,7 +77,7 @@ async function run() {
 
 run();
 
-function shutdown() {
+function shutdown(): void {
   console.log('[fake-worker] shutting down');
   db.close();
   process.exit(0);

@@ -17,4 +17,4 @@ fi
 cp /mullvad/wg0.conf /tmp/wg0.conf
 chmod 600 /tmp/wg0.conf
 wg-quick up /tmp/wg0.conf
-exec node /app/src/vpn/socks5.js
+exec node /app/src/vpn/socks5.ts

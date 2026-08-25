@@ -1,23 +1,37 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { config, STAGES, stageTimeoutMs } = require('../shared/constants');
-const { updateStage, heartbeat, markDone } = require('../shared/db');
-const { StageError } = require('./stages/process');
-const { download } = require('./stages/download');
-const { convert } = require('./stages/convert');
-const { transcribe } = require('./stages/transcribe');
-const { summarize } = require('./stages/summarize');
+import fs from 'node:fs';
+import path from 'node:path';
+import type { DatabaseSync } from 'node:sqlite';
+import { config, STAGES, stageTimeoutMs } from '../shared/constants.ts';
+import type { JobRow } from '../shared/db.ts';
+import { heartbeat, markDone, updateStage } from '../shared/db.ts';
+import { convert } from './stages/convert.ts';
+import { download } from './stages/download.ts';
+import { StageError } from './stages/process.ts';
+import { summarize } from './stages/summarize.ts';
+import { transcribe } from './stages/transcribe.ts';
 
-async function runPipeline(db, job, signal) {
+/**
+ * Any error escaping the pipeline carries the stage it failed in, so the
+ * worker can attribute failures even for non-StageError exceptions.
+ */
+export type StagedError = Error & { stage?: string | null };
+
+export function stageOf(error: unknown): string | null {
+  if (error instanceof StageError) return error.stage;
+  if (error instanceof Error) return (error as StagedError).stage ?? null;
+  return null;
+}
+
+export async function runPipeline(db: DatabaseSync, job: JobRow, signal: AbortSignal): Promise<void> {
   const jobDir = path.join(config.artifactsDir, job.id);
   fs.mkdirSync(jobDir, { recursive: true });
   const logPath = path.join(jobDir, 'stage.log');
   const onHeartbeat = () => heartbeat(db, job.id);
   const context = { jobDir, logPath, onHeartbeat, timeoutMs: stageTimeoutMs('downloading'), signal };
-  let audioPath;
-  let wavPath;
-  let transcriptPath;
-  let currentStage = null;
+  let audioPath: string | undefined;
+  let wavPath: string | undefined;
+  let transcriptPath: string | undefined;
+  let currentStage: string | null = null;
 
   try {
     currentStage = STAGES[0];
@@ -45,8 +59,19 @@ async function runPipeline(db, job, signal) {
     fs.writeFileSync(path.join(jobDir, 'summary.md'), `${markdown}\n`, 'utf8');
     markDone(db, job.id, downloaded.title, markdown);
   } catch (error) {
-    error.stage = error.stage || currentStage;
-    throw error;
+    if (error instanceof StageError) {
+      // Keep an existing stage; only fill it in when the pipeline got far
+      // enough to enter a stage. A null currentStage stays null so the DB
+      // keeps storing NULL for pre-pipeline failures.
+      if (!error.stage && currentStage !== null) error.stage = currentStage;
+      throw error;
+    }
+    if (error instanceof Error) {
+      const staged = error as StagedError;
+      staged.stage = staged.stage || currentStage;
+      throw staged;
+    }
+    throw new StageError(String(error), currentStage || 'pipeline');
   } finally {
     try {
       if (audioPath) fs.rmSync(audioPath, { force: true });
@@ -57,7 +82,7 @@ async function runPipeline(db, job, signal) {
   }
 }
 
-function friendlyError(error) {
+export function friendlyError(error: unknown): string {
   if (error instanceof StageError) {
     const detail = error.details ? ` ${error.details.slice(-600)}` : '';
     if (error.stage === 'downloading')
@@ -67,7 +92,7 @@ function friendlyError(error) {
       return 'The summarizer could not resolve the OpenRouter credential. Check the GPG mounts and worker logs.';
     return `${error.message}${detail}`;
   }
-  return error?.message || 'The worker stopped unexpectedly.';
+  if (error instanceof Error && error.message) return error.message;
+  if (error instanceof Error) return 'The worker stopped unexpectedly.';
+  return typeof error === 'string' && error ? error : 'The worker stopped unexpectedly.';
 }
-
-module.exports = { runPipeline, friendlyError };

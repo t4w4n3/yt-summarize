@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+import { expect, test } from '@playwright/test';
 
 // Full-stack contract tests: real app server + fake worker + real SQLite DB.
 // Jobs run through the actual queue; the browser test drives the real UI with
@@ -25,7 +25,8 @@ test('API contract: validation, lifecycle, result, download', async ({ request }
   // Create a job
   const created = await request.post('/api/summarize', { data: { url: VALID_URL } });
   expect(created.status()).toBe(201);
-  const { jobId } = await created.json();
+  const createdBody = (await created.json()) as { jobId?: string };
+  const jobId = createdBody.jobId;
   expect(jobId).toBeTruthy();
 
   // Lifecycle: queued → running → done (fake worker completes it)
@@ -33,7 +34,7 @@ test('API contract: validation, lifecycle, result, download', async ({ request }
     .poll(
       async () => {
         const res = await request.get(`/api/jobs/${jobId}`);
-        return (await res.json()).status;
+        return ((await res.json()) as { status?: string }).status;
       },
       { timeout: 30_000 },
     )
@@ -42,7 +43,7 @@ test('API contract: validation, lifecycle, result, download', async ({ request }
   // Result
   const resultRes = await request.get(`/api/jobs/${jobId}/result`);
   expect(resultRes.status()).toBe(200);
-  const result = await resultRes.json();
+  const result = (await resultRes.json()) as { title?: string; markdown?: string; wordCount?: number };
   expect(result.title).toBeTruthy();
   expect(result.markdown).toContain('## ');
   expect(result.wordCount).toBeGreaterThan(0);

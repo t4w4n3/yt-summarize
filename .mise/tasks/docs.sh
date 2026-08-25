@@ -45,7 +45,7 @@ mkdir -p .local
 stop_server # avoid a stale server on a different port
 
 if [ "${usage_background:-false}" = "true" ]; then
-  nohup node scripts/docs-server.mjs >"$LOG_FILE" 2>&1 &
+  nohup node scripts/docs-server.ts >"$LOG_FILE" 2>&1 &
   echo "$!" >"$PID_FILE"
   sleep 1
   if ! kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
@@ -56,7 +56,7 @@ if [ "${usage_background:-false}" = "true" ]; then
   echo "Docs server running in background (pid $(cat "$PID_FILE")) → http://${DOCS_HOST}:${DOCS_PORT}/"
 else
   echo "Serving on http://${DOCS_HOST}:${DOCS_PORT}/  (Ctrl-C to stop)"
-  DOCS_PORT="$DOCS_PORT" node scripts/docs-server.mjs
+  DOCS_PORT="$DOCS_PORT" node scripts/docs-server.ts
   exit 0
 fi
 

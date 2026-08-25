@@ -1,12 +1,29 @@
-const fs = require('node:fs');
-const { DatabaseSync } = require('node:sqlite');
-const { STATUS, config, dbPath } = require('./constants');
+import fs from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+import type { JobStatus } from './constants.ts';
+import { config, dbPath, STATUS } from './constants.ts';
 
-function now() {
+export interface JobRow {
+  id: string;
+  url: string;
+  status: JobStatus;
+  stage: string | null;
+  progress: number;
+  title: string | null;
+  error: string | null;
+  markdown: string | null;
+  video_id: string | null;
+  created_at: string;
+  claimed_at: string | null;
+  last_heartbeat_at: string | null;
+  updated_at: string;
+}
+
+function now(): string {
   return new Date().toISOString();
 }
 
-function extractVideoIdFromUrl(value) {
+export function extractVideoIdFromUrl(value: string): string | null {
   try {
     const url = new URL(value);
     const hostname = url.hostname.toLowerCase();
@@ -17,7 +34,11 @@ function extractVideoIdFromUrl(value) {
   return null;
 }
 
-function openDatabase() {
+function asJobRow(row: unknown): JobRow {
+  return row as JobRow;
+}
+
+export function openDatabase(): DatabaseSync {
   fs.mkdirSync(config.dataDir, { recursive: true });
   const db = new DatabaseSync(dbPath());
   db.exec(`
@@ -51,14 +72,16 @@ function openDatabase() {
     const rows = db.prepare('SELECT id, url FROM jobs WHERE video_id IS NULL').all();
     const upd = db.prepare('UPDATE jobs SET video_id = ? WHERE id = ?');
     for (const row of rows) {
-      const vid = extractVideoIdFromUrl(row.url);
-      if (vid) upd.run(vid, row.id);
+      const legacy = row as { id?: unknown; url?: unknown };
+      if (typeof legacy.id !== 'string' || typeof legacy.url !== 'string') continue;
+      const vid = extractVideoIdFromUrl(legacy.url);
+      if (vid) upd.run(vid, legacy.id);
     }
   } catch {}
   return db;
 }
 
-function createJob(db, id, url, videoId) {
+export function createJob(db: DatabaseSync, id: string, url: string, videoId?: string | null): JobRow | null {
   const timestamp = now();
   const vid = videoId || extractVideoIdFromUrl(url);
   db.prepare(`INSERT INTO jobs (id, url, video_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`).run(
@@ -72,11 +95,12 @@ function createJob(db, id, url, videoId) {
   return getJob(db, id);
 }
 
-function getJob(db, id) {
-  return db.prepare('SELECT * FROM jobs WHERE id = ?').get(id) || null;
+export function getJob(db: DatabaseSync, id: string): JobRow | null {
+  const row = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
+  return row ? asJobRow(row) : null;
 }
 
-function findExistingJobByVideoId(db, videoId) {
+export function findExistingJobByVideoId(db: DatabaseSync, videoId: string | null): JobRow | null {
   if (!videoId) return null;
   // Prefer canonical video_id column, fallback to URL substring for legacy rows without backfill
   let row = db
@@ -84,29 +108,31 @@ function findExistingJobByVideoId(db, videoId) {
       `SELECT * FROM jobs WHERE video_id = ? AND status IN ('queued','running','done') ORDER BY CASE status WHEN 'done' THEN 0 WHEN 'running' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`,
     )
     .get(videoId);
-  if (row) return row;
+  if (row) return asJobRow(row);
   row = db
     .prepare(
       `SELECT * FROM jobs WHERE video_id IS NULL AND url LIKE '%' || ? || '%' AND status IN ('queued','running','done') ORDER BY created_at DESC LIMIT 1`,
     )
     .get(videoId);
-  return row || null;
+  return row ? asJobRow(row) : null;
 }
 
-function claimNextJob(db) {
+export function claimNextJob(db: DatabaseSync): JobRow | null {
   db.exec('BEGIN IMMEDIATE');
   try {
-    const row = db.prepare(`SELECT id FROM jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1`).get();
-    if (!row) {
+    const next = db.prepare(`SELECT id FROM jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1`).get() as
+      | { id?: unknown }
+      | undefined;
+    if (!next || typeof next.id !== 'string') {
       db.exec('COMMIT');
       return null;
     }
     const timestamp = now();
     db.prepare(
       `UPDATE jobs SET status = ?, stage = ?, progress = 0, claimed_at = ?, last_heartbeat_at = ?, updated_at = ? WHERE id = ?`,
-    ).run(STATUS.RUNNING, null, timestamp, timestamp, timestamp, row.id);
+    ).run(STATUS.RUNNING, null, timestamp, timestamp, timestamp, next.id);
     db.exec('COMMIT');
-    return getJob(db, row.id);
+    return getJob(db, next.id);
   } catch (error) {
     try {
       db.exec('ROLLBACK');
@@ -115,20 +141,21 @@ function claimNextJob(db) {
   }
 }
 
-function reclaimStaleJobs(db, staleAfterMs) {
+export function reclaimStaleJobs(db: DatabaseSync, staleAfterMs: number): number {
   const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
   const timestamp = now();
-  return db
+  const result = db
     .prepare(`
     UPDATE jobs
     SET status = ?, stage = NULL, progress = 0, claimed_at = NULL,
         last_heartbeat_at = NULL, error = NULL, updated_at = ?
     WHERE status = ? AND COALESCE(last_heartbeat_at, claimed_at, updated_at) < ?
   `)
-    .run(STATUS.QUEUED, timestamp, STATUS.RUNNING, cutoff).changes;
+    .run(STATUS.QUEUED, timestamp, STATUS.RUNNING, cutoff);
+  return Number(result.changes);
 }
 
-function updateStage(db, id, stage, progress) {
+export function updateStage(db: DatabaseSync, id: string, stage: string, progress: number): void {
   const timestamp = now();
   db.prepare('UPDATE jobs SET stage = ?, progress = ?, updated_at = ? WHERE id = ? AND status = ?').run(
     stage,
@@ -139,7 +166,7 @@ function updateStage(db, id, stage, progress) {
   );
 }
 
-function heartbeat(db, id) {
+export function heartbeat(db: DatabaseSync, id: string): void {
   const timestamp = now();
   db.prepare('UPDATE jobs SET last_heartbeat_at = ?, updated_at = ? WHERE id = ? AND status = ?').run(
     timestamp,
@@ -149,34 +176,20 @@ function heartbeat(db, id) {
   );
 }
 
-function markDone(db, id, title, markdown) {
+export function markDone(db: DatabaseSync, id: string, title: string | null, markdown: string): void {
   const timestamp = now();
   db.prepare(
     `UPDATE jobs SET status = ?, stage = NULL, progress = 100, title = ?, markdown = ?, error = NULL, last_heartbeat_at = NULL, updated_at = ? WHERE id = ? AND status = ?`,
   ).run(STATUS.DONE, title || null, markdown, timestamp, id, STATUS.RUNNING);
 }
 
-function markFailed(db, id, error, stage) {
+export function markFailed(db: DatabaseSync, id: string, error: string, stage: string | null): void {
   const timestamp = now();
   db.prepare(
     `UPDATE jobs SET status = ?, stage = ?, error = ?, last_heartbeat_at = NULL, updated_at = ? WHERE id = ? AND status = ?`,
   ).run(STATUS.FAILED, stage || null, error, timestamp, id, STATUS.RUNNING);
 }
 
-function closeDatabase(db) {
+export function closeDatabase(db: DatabaseSync): void {
   db.close();
 }
-
-module.exports = {
-  openDatabase,
-  createJob,
-  getJob,
-  findExistingJobByVideoId,
-  claimNextJob,
-  reclaimStaleJobs,
-  updateStage,
-  heartbeat,
-  markDone,
-  markFailed,
-  closeDatabase,
-};

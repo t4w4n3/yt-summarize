@@ -4,16 +4,18 @@
   "private": true,
   "packageManager": "pnpm@11.21.0",
   "description": "Self-hosted YouTube learning-summary workstation",
-  "main": "src/app/server.js",
+  "type": "module",
+  "main": "src/app/server.ts",
   "scripts": {
-    "start": "node src/app/server.js",
-    "start:worker": "node src/worker/worker.js",
-    "test:e2e": "playwright test --config e2e/playwright.config.js",
-    "test:e2e:ui": "playwright test --config e2e/playwright.config.js e2e/ui.spec.js",
-    "test:e2e:stack": "playwright test --config e2e/playwright.config.js e2e/stack.spec.js",
-    "test:e2e:containers": "playwright test --config e2e/playwright.containers.config.js",
-    "test:unit": "node --test tests/transcribe.test.js",
-    "test": "pnpm run test:unit && pnpm run test:e2e"
+    "start": "node src/app/server.ts",
+    "start:worker": "node src/worker/worker.ts",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "test:e2e:ui": "playwright test --config e2e/playwright.config.ts e2e/ui.spec.ts",
+    "test:e2e:stack": "playwright test --config e2e/playwright.config.ts e2e/stack.spec.ts",
+    "test:e2e:containers": "playwright test --config e2e/playwright.containers.config.ts",
+    "test:unit": "node --test tests/transcribe.test.ts",
+    "test": "pnpm run typecheck && pnpm run test:unit && pnpm run test:e2e"
   },
   "engines": {
     "node": ">=24"
@@ -22,6 +24,9 @@
     "express": "^5.1.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1"
+    "@playwright/test": "^1.62.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.13.3",
+    "typescript": "^7.0.2"
   }
 }

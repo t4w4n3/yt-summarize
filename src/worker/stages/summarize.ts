@@ -1,24 +1,35 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { config } = require('../../shared/constants');
-const { StageError } = require('./process');
-const { resolveOpenRouterKey } = require('./openrouter');
+import fs from 'node:fs';
+import path from 'node:path';
+import { config } from '../../shared/constants.ts';
+import { resolveOpenRouterKey } from './openrouter.ts';
+import type { StageContext } from './process.ts';
+import { StageError } from './process.ts';
 
 const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-function appendLog(logPath, line) {
+function appendLog(logPath: string | undefined, line: string): void {
   if (!logPath) return;
   try {
     fs.appendFileSync(logPath, `${line}\n`, 'utf8');
   } catch {}
 }
 
+/** Pull choices[0].message.content out of an untyped JSON body, defensively. */
+function extractContent(body: unknown): string | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const choices = (body as { choices?: unknown }).choices;
+  if (!Array.isArray(choices) || choices.length === 0) return null;
+  const first = choices[0] as { message?: { content?: unknown } } | null;
+  const content = first?.message?.content;
+  return typeof content === 'string' ? content : null;
+}
+
 // The summarizer is a single text-in/text-out HTTPS call, exactly like the
 // transcription stage. No agent runtime is needed: system prompt + transcript
 // in, Markdown out.
-async function summarize(transcriptPath, context) {
+export async function summarize(transcriptPath: string, context: StageContext): Promise<string> {
   const apiKey = await resolveOpenRouterKey();
-  const systemPrompt = fs.readFileSync(path.join(__dirname, '..', 'prompts', 'summarize.md'), 'utf8');
+  const systemPrompt = fs.readFileSync(path.join(import.meta.dirname, '..', 'prompts', 'summarize.md'), 'utf8');
   const transcript = fs.readFileSync(transcriptPath, 'utf8');
 
   const controller = new AbortController();
@@ -26,7 +37,7 @@ async function summarize(transcriptPath, context) {
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   // The stage timeout and the job-level cancellation both abort the fetch.
   const signal = context.signal ? AbortSignal.any([controller.signal, context.signal]) : controller.signal;
-  let response;
+  let response: Response;
   try {
     appendLog(context.logPath, `$ POST ${API_URL} (model=${config.llmModel}, reasoning=${config.llmThinking})`);
     response = await fetch(API_URL, {
@@ -49,18 +60,23 @@ async function summarize(transcriptPath, context) {
     if (context.signal?.aborted) {
       throw new StageError('The job was cancelled.', 'summarizing');
     }
+    const message = error instanceof Error ? error.message : String(error);
+    const name = error instanceof Error ? error.name : '';
     throw new StageError(
-      error.name === 'AbortError' ? 'Summarization timed out.' : 'The summarization API could not be reached.',
+      name === 'AbortError' ? 'Summarization timed out.' : 'The summarization API could not be reached.',
       'summarizing',
-      error.message,
+      message,
     );
   } finally {
     clearTimeout(timeout);
   }
 
-  const body = await response.json().catch(() => ({}));
-  const content = body?.choices?.[0]?.message?.content;
-  let markdown = typeof content === 'string' ? content.trim() : '';
+  let body: unknown = {};
+  try {
+    body = await response.json();
+  } catch {}
+  let markdown = extractContent(body);
+  markdown = markdown ? markdown.trim() : '';
   if (!response.ok || !markdown) {
     throw new StageError(
       `Summarization failed (HTTP ${response.status}).`,
@@ -71,5 +87,3 @@ async function summarize(transcriptPath, context) {
   if (markdown.startsWith('```markdown') && markdown.endsWith('```')) markdown = markdown.slice(11, -3).trim();
   return markdown;
 }
-
-module.exports = { summarize };

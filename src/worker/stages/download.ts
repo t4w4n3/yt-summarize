@@ -1,8 +1,14 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { runProcess, StageError } = require('./process');
+import fs from 'node:fs';
+import path from 'node:path';
+import type { StageContext } from './process.ts';
+import { runProcess, StageError } from './process.ts';
 
-async function download(job, context) {
+export interface DownloadResult {
+  audioPath: string;
+  title: string;
+}
+
+export async function download(job: { url: string }, context: StageContext): Promise<DownloadResult> {
   const output = path.join(context.jobDir, 'audio.%(ext)s');
   const titlePath = path.join(context.jobDir, '.title');
   const args = [
@@ -31,7 +37,7 @@ async function download(job, context) {
   // Fallback: legacy bind mount at /secrets/youtube-cookies.txt.
   const cookiesSecret = '/run/secrets/youtube_cookies';
   const cookiesLegacy = '/secrets/youtube-cookies.txt';
-  let cookiesPath = null;
+  let cookiesPath: string | null = null;
   if (fs.existsSync(cookiesSecret)) {
     try {
       const stat = fs.statSync(cookiesSecret);
@@ -69,5 +75,3 @@ async function download(job, context) {
   } catch {}
   return { audioPath: path.join(context.jobDir, audioFile), title: title.slice(0, 500) };
 }
-
-module.exports = { download };

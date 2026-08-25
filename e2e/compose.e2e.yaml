@@ -4,7 +4,7 @@
 #
 # The app service is the REAL shipped artifact (same image/Dockerfile and
 # entrypoints as compose.yaml), but the worker runs the hermetic fake pipeline
-# (e2e/fake-worker.js) instead of the real one — so no yt-dlp/ffmpeg/gnupg and
+# (e2e/fake-worker.ts) instead of the real one — so no yt-dlp/ffmpeg/gnupg and
 # NO secret mounts. Job data is bind-mounted under e2e/.tmp/data (gitignored)
 # so tests start clean and you can inspect it on the host after a failure.
 #
@@ -34,13 +34,13 @@ services:
       context: ".."
       dockerfile: "image/Dockerfile"
     user: "node"
-    command: ["node", "/app/e2e/fake-worker.js"]
+    command: ["node", "/app/e2e/fake-worker.ts"]
     environment:
       DATA_DIR: "/data"
       FAKE_WORKER_PORT: "4175"
     volumes:
       - "./.tmp/data:/data"
-      - "./fake-worker.js:/app/e2e/fake-worker.js:ro"
+      - "./fake-worker.ts:/app/e2e/fake-worker.ts:ro"
     ports:
       - "${E2E_WORKER_PORT:-4175}:4175"
     restart: "no"

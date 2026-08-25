@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    // Node 24 runs .ts natively (type stripping) — no emit, no build step.
+    "noEmit": true,
+    // Type stripping only supports erasable syntax (no enums/namespaces/parameter properties).
+    "erasableSyntaxOnly": true,
+    // Relative imports must spell out the real on-disk filename: './db.ts'.
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src", "tests", "e2e", "scripts"]
+}

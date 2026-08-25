@@ -17,8 +17,8 @@ fi
 # youtube cookies are optional — check both the secret and the legacy bind mount path
 if [ -f /run/secrets/youtube_cookies ]; then
   # expose as /tmp/cookies for yt-dlp; podman secret is 0440 so copy to a readable location
-  # download.js checks /run/secrets/youtube_cookies directly, so no action needed here
+  # download.ts checks /run/secrets/youtube_cookies directly, so no action needed here
   :
 fi
 
-exec node /app/src/worker/worker.js
+exec node /app/src/worker/worker.ts

@@ -122,8 +122,8 @@ cmd_dryrun() {
   rm -f "$TMP_CONF" /tmp/.mullvad-poc-ka /tmp/.mullvad-poc-kb /tmp/.mullvad-poc-kb.pub
   umask 077
   mullvad_refresh_relays
-  node "$ROOT/scripts/wgkey.js" >/tmp/.mullvad-poc-ka
-  node "$ROOT/scripts/wgkey.js" >/tmp/.mullvad-poc-kb
+  node "$ROOT/scripts/wgkey.ts" >/tmp/.mullvad-poc-ka
+  node "$ROOT/scripts/wgkey.ts" >/tmp/.mullvad-poc-kb
   sed -n '2p' /tmp/.mullvad-poc-kb >/tmp/.mullvad-poc-kb.pub
   RELAY_IP="$(
     python3 - "$RELAY" <<'PY'

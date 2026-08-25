@@ -1,7 +1,8 @@
-const path = require('node:path');
-const { runProcess } = require('./process');
+import path from 'node:path';
+import type { StageContext } from './process.ts';
+import { runProcess } from './process.ts';
 
-async function convert(audioPath, context) {
+export async function convert(audioPath: string, context: StageContext): Promise<string> {
   const wavPath = path.join(context.jobDir, 'audio.wav');
   await runProcess(
     'ffmpeg',
@@ -30,5 +31,3 @@ async function convert(audioPath, context) {
   );
   return wavPath;
 }
-
-module.exports = { convert };

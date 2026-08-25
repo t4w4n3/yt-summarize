@@ -47,8 +47,7 @@
       "quoteStyle": "single",
       "semicolons": "always",
       "trailingCommas": "all"
-    },
-    "globals": []
+    }
   },
   "json": {
     "formatter": {

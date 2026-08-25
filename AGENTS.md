@@ -32,7 +32,8 @@ mise run up      # build + start the stack (app + worker) → http://localhost:8
 | `mise run mullvad <mode>` | Mullvad ops: relay rotation (`scan`), config provisioning (`init`), tunnel debug (`run`/`test`/`dryrun`) — the production path is the `vpn` sidecar, no `MULLVAD_ACCOUNT` needed for the interactive flow |
 | `mise run backup` | Back up both volumes (SQLite job DB + artifacts) to `~/.local/backups` |
 | `mise run restore <file> [-y]` | Restore both volumes from a `summarize-yt-*.tar.gz` backup (stops + restarts the stack) |
-| `mise run lint [--fix] [--changed]` | Run every linter — Biome (JS/TS/JSON), shellcheck+shfmt (shell), yamllint strict, hadolint (Containerfile), podman-compose config |
+| `mise run lint [--fix] [--changed]` | Run every linter — tsc typecheck, Biome (JS/TS/JSON), shellcheck+shfmt (shell), yamllint strict, hadolint (Containerfile), podman-compose config |
+| `mise run lint-types` | Typecheck all TypeScript with `tsc --noEmit` (strict, erasable-syntax-only) |
 | `mise run lint-js [--fix] [--changed]` | Lint/format JS, TS and JSON with Biome (recommended rules + assist, error-on-warnings) |
 | `mise run lint-shell [--fix] [--changed]` | shellcheck (`--severity=style --enable=all`) + shfmt formatting check on shell scripts |
 | `mise run lint-yaml [--changed]` | yamllint in strict mode (warnings fail) on all YAML files |

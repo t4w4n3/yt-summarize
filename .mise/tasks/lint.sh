@@ -12,7 +12,7 @@ ARGS=()
 [ "${usage_changed:-}" = "true" ] && ARGS+=(--changed)
 
 status=0
-for task in lint-js lint-shell lint-yaml lint-containerfile lint-compose; do
+for task in lint-types lint-js lint-shell lint-yaml lint-containerfile lint-compose; do
   echo "── mise run $task ${ARGS[*]:-}"
   mise run "$task" ${ARGS+"${ARGS[@]}"} || status=1
 done

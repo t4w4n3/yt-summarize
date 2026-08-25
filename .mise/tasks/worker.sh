@@ -9,7 +9,7 @@ cd "$ROOT"
 
 mkdir -p "$usage_data_dir" "$usage_artifacts_dir"
 echo "NOTE: paid stages decrypt the OpenRouter key from /secrets (a container mount); a local worker marks"
-echo "      transcribe/summarize jobs failed. Use this task to iterate on db.js/worker.js only."
+echo "      transcribe/summarize jobs failed. Use this task to iterate on db.ts/worker.ts only."
 echo "      For the real pipeline run: mise run up"
 echo "Local worker: data=$usage_data_dir artifacts=$usage_artifacts_dir"
-DATA_DIR="$usage_data_dir" ARTIFACTS_DIR="$usage_artifacts_dir" node src/worker/worker.js
+DATA_DIR="$usage_data_dir" ARTIFACTS_DIR="$usage_artifacts_dir" node src/worker/worker.ts

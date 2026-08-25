@@ -1,5 +1,6 @@
-const fs = require('node:fs');
-const { test, expect } = require('@playwright/test');
+import fs from 'node:fs';
+import type { Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 // Hermetic UI tests: the API is mocked with page.route, and the page clock is
 // used to drive the app's 2-second polling deterministically. No real backend
@@ -16,7 +17,12 @@ const RESULT = {
   wordCount: 14,
 };
 
-function installJobMock(page, { jobStates, createError } = {}) {
+interface JobMockOptions {
+  jobStates?: Array<Record<string, unknown>>;
+  createError?: { status: number; error: string };
+}
+
+function installJobMock(page: Page, { jobStates = [], createError }: JobMockOptions) {
   let pollIndex = 0;
   let posts = 0;
   page.route('**/api/summarize', (route) => {
@@ -31,7 +37,7 @@ function installJobMock(page, { jobStates, createError } = {}) {
     return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ jobId: JOB_ID }) });
   });
   page.route(`**/api/jobs/${JOB_ID}`, (route) => {
-    const state = jobStates[Math.min(pollIndex, jobStates.length - 1)];
+    const state = jobStates[Math.min(pollIndex, jobStates.length - 1)] ?? {};
     pollIndex += 1;
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state) });
   });
@@ -41,7 +47,7 @@ function installJobMock(page, { jobStates, createError } = {}) {
   return { posts: () => posts };
 }
 
-async function gotoWithClock(page) {
+async function gotoWithClock(page: Page) {
   await page.clock.install();
   await page.goto('/');
 }
@@ -207,6 +213,6 @@ test('mobile layout keeps the form usable with no horizontal overflow', async ({
   await expect(page.locator('#video-url')).toBeVisible();
   await expect(page.locator('#submit-button')).toBeVisible();
   await expect(page.locator('.pipeline-step')).toHaveCount(4);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  const overflow = await page.evaluate('document.documentElement.scrollWidth > window.innerWidth + 1');
   expect(overflow).toBe(false);
 });

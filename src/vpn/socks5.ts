@@ -2,8 +2,9 @@
 // Tout son trafic sort par le tunnel Mullvad (route par défaut via wg0 dans le
 // netns du sidecar). Le worker pointe yt-dlp dessus: --proxy socks5h://127.0.0.1:1080
 // (socks5h = le nom d'hôte est résolu PAR le proxy, donc DNS aussi via le tunnel).
-const net = require('node:net');
-const dns = require('node:dns');
+
+import dns from 'node:dns';
+import net from 'node:net';
 
 const PORT = Number(process.env.SOCKS_PORT || 1080);
 const HOST = process.env.SOCKS_HOST || '0.0.0.0';
@@ -18,14 +19,20 @@ try {
   resolver.setServers([MULLVAD_DNS]);
 } catch {}
 
-async function resolveHost(host) {
+async function resolveHost(host: string): Promise<string> {
   if (net.isIP(host)) return host;
   const ips = await resolver.resolve4(host);
-  if (!ips.length) throw new Error(`no A record for ${host}`);
-  return ips[0];
+  const first = ips[0];
+  if (!first) throw new Error(`no A record for ${host}`);
+  return first;
 }
 
-function parseAddress(buf, offset) {
+interface SocksAddress {
+  host: string;
+  addrLen: number;
+}
+
+function parseAddress(buf: Buffer, offset: number): SocksAddress | null {
   const atyp = buf[offset];
   if (atyp === 0x01) {
     // IPv4
@@ -34,12 +41,12 @@ function parseAddress(buf, offset) {
   }
   if (atyp === 0x03) {
     // domaine
-    const len = buf[offset + 1];
-    return { host: buf.slice(offset + 2, offset + 2 + len).toString('utf8'), addrLen: len + 2 };
+    const len = buf[offset + 1] ?? 0;
+    return { host: buf.subarray(offset + 2, offset + 2 + len).toString('utf8'), addrLen: len + 2 };
   }
   if (atyp === 0x04) {
     // IPv6
-    const groups = [];
+    const groups: string[] = [];
     for (let i = 0; i < 16; i += 2) groups.push(buf.readUInt16BE(offset + 1 + i).toString(16));
     return { host: groups.join(':'), addrLen: 17 };
   }
@@ -48,10 +55,10 @@ function parseAddress(buf, offset) {
 
 const server = net.createServer((socket) => {
   socket.on('error', () => {});
-  socket.once('data', (greeting) => {
+  socket.once('data', (greeting: Buffer) => {
     if (greeting.length < 2 || greeting[0] !== 0x05) return socket.destroy();
     socket.write(Buffer.from([0x05, 0x00])); // seule méthode acceptée: no-auth
-    socket.once('data', async (request) => {
+    socket.once('data', async (request: Buffer) => {
       try {
         if (request.length < 7 || request[0] !== 0x05 || request[1] !== 0x01) {
           return socket.destroy(); // on ne fait que CONNECT
@@ -64,11 +71,12 @@ const server = net.createServer((socket) => {
         // process (rejet non géré dans ce listener async).
         if (request.length < 3 + addr.addrLen + 2) return socket.destroy();
         const port = request.readUInt16BE(3 + addr.addrLen);
-        let ip;
+        let ip: string;
         try {
           ip = await resolveHost(addr.host); // DNS via le tunnel (10.64.0.1)
         } catch (error) {
-          console.error(`CONNECT ${addr.host}:${port} — DNS via le tunnel impossible (${error.message})`);
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(`CONNECT ${addr.host}:${port} — DNS via le tunnel impossible (${message})`);
           return socket.destroy();
         }
         const remote = net.connect({ port, host: ip }, () => {
@@ -81,7 +89,8 @@ const server = net.createServer((socket) => {
       } catch (error) {
         // Défense en profondeur: une requête malformée coupe la connexion,
         // jamais le process du sidecar.
-        console.error(`Requête SOCKS5 malformée ignorée: ${error.message}`);
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Requête SOCKS5 malformée ignorée: ${message}`);
         socket.destroy();
       }
     });

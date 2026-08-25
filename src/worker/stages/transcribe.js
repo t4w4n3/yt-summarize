@@ -12,7 +12,9 @@ const CHUNK_DURATION_SEC = 600; // 10 min → ~19 MB at 16 kHz mono s16le
 
 function appendLog(logPath, line) {
   if (!logPath) return;
-  try { fs.appendFileSync(logPath, `${line}\n`, 'utf8'); } catch {}
+  try {
+    fs.appendFileSync(logPath, `${line}\n`, 'utf8');
+  } catch {}
 }
 
 async function doFetch(url, options) {
@@ -24,10 +26,13 @@ async function transcribeMultipart(wavPath, apiKey, signal, logPath) {
   const form = new FormData();
   form.append('model', config.sttModel);
   form.append('file', new Blob([audio], { type: 'audio/wav' }), path.basename(wavPath));
-  appendLog(logPath, `$ POST ${API_URL} (model=${config.sttModel}, file=${path.basename(wavPath)}, ${audio.length} bytes, mode=multipart)`);
+  appendLog(
+    logPath,
+    `$ POST ${API_URL} (model=${config.sttModel}, file=${path.basename(wavPath)}, ${audio.length} bytes, mode=multipart)`,
+  );
   return doFetch(API_URL, {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}` },
+    headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
     signal,
   });
@@ -36,10 +41,13 @@ async function transcribeMultipart(wavPath, apiKey, signal, logPath) {
 async function transcribeBase64(wavPath, apiKey, signal, logPath) {
   const audio = await fs.promises.readFile(wavPath);
   const b64 = audio.toString('base64');
-  appendLog(logPath, `$ POST ${API_URL} (model=${config.sttModel}, file=${path.basename(wavPath)}, ${audio.length} bytes, mode=base64:input_audio)`);
+  appendLog(
+    logPath,
+    `$ POST ${API_URL} (model=${config.sttModel}, file=${path.basename(wavPath)}, ${audio.length} bytes, mode=base64:input_audio)`,
+  );
   return doFetch(API_URL, {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: config.sttModel, input_audio: b64 }),
     signal,
   });
@@ -49,7 +57,11 @@ async function handleResponse(response) {
   const body = await response.json().catch(() => ({}));
   const text = typeof body.text === 'string' ? body.text.trim() : '';
   if (!response.ok || !text) {
-    throw new StageError(`Transcription failed (HTTP ${response.status}).`, 'transcribing', JSON.stringify(body).slice(0, 1000));
+    throw new StageError(
+      `Transcription failed (HTTP ${response.status}).`,
+      'transcribing',
+      JSON.stringify(body).slice(0, 1000),
+    );
   }
   return { text, body };
 }
@@ -74,19 +86,33 @@ async function splitWavIntoChunks(wavPath, jobDir, chunkDurationSec = CHUNK_DURA
   const { runProcess } = require('./process');
   const pattern = path.join(chunkDir, 'chunk_%03d.wav');
   // -f segment requires a muxer; pcm_s16le + wav works with segment.
-  await runProcess('ffmpeg', [
-    '-hide_banner', '-loglevel', 'error', '-y',
-    '-i', wavPath,
-    '-f', 'segment',
-    '-segment_time', String(chunkDurationSec),
-    '-reset_timestamps', '1',
-    '-c:a', 'pcm_s16le',
-    '-ar', '16000',
-    '-ac', '1',
-    pattern,
-  ], { stage: 'transcribing', timeoutMs: 5 * 60 * 1000 });
-  const files = (await fs.promises.readdir(chunkDir)).filter(f => f.endsWith('.wav')).sort();
-  return files.map(f => path.join(chunkDir, f));
+  await runProcess(
+    'ffmpeg',
+    [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-y',
+      '-i',
+      wavPath,
+      '-f',
+      'segment',
+      '-segment_time',
+      String(chunkDurationSec),
+      '-reset_timestamps',
+      '1',
+      '-c:a',
+      'pcm_s16le',
+      '-ar',
+      '16000',
+      '-ac',
+      '1',
+      pattern,
+    ],
+    { stage: 'transcribing', timeoutMs: 5 * 60 * 1000 },
+  );
+  const files = (await fs.promises.readdir(chunkDir)).filter((f) => f.endsWith('.wav')).sort();
+  return files.map((f) => path.join(chunkDir, f));
 }
 
 async function splitWavManual(wavPath, chunkDir, chunkDurationSec) {
@@ -102,11 +128,11 @@ async function splitWavManual(wavPath, chunkDir, chunkDurationSec) {
       throw new Error('not a RIFF/WAVE file');
     }
     const audioFormat = header.readUInt16LE(20);
-    const numChannels = header.readUInt16LE(22);
-    const sampleRate = header.readUInt32LE(24);
+    const _numChannels = header.readUInt16LE(22);
+    const _sampleRate = header.readUInt32LE(24);
     const byteRate = header.readUInt32LE(28);
     const blockAlign = header.readUInt16LE(32);
-    const bitsPerSample = header.readUInt16LE(34);
+    const _bitsPerSample = header.readUInt16LE(34);
     const dataSize = header.readUInt32LE(40);
 
     if (audioFormat !== 1) throw new Error(`unsupported audioFormat ${audioFormat} (only PCM)`);
@@ -160,7 +186,11 @@ async function transcribe(wavPath, context) {
   let response;
   let stat;
   try {
-    try { stat = await fs.promises.stat(wavPath); } catch { stat = { size: 0 }; }
+    try {
+      stat = await fs.promises.stat(wavPath);
+    } catch {
+      stat = { size: 0 };
+    }
     const isLarge = stat.size > MULTIPART_LIMIT;
 
     // Strategy:
@@ -198,7 +228,10 @@ async function transcribe(wavPath, context) {
         const msg = `${error.message} ${error.details || ''}`;
         const is413 = msg.includes('413') || msg.includes('25 MB');
         if (!is413 && stat.size <= MULTIPART_LIMIT) throw error;
-        appendLog(context.logPath, `base64 still hit 413 or large file fallback (size=${stat.size}), splitting into ${CHUNK_DURATION_SEC}s chunks`);
+        appendLog(
+          context.logPath,
+          `base64 still hit 413 or large file fallback (size=${stat.size}), splitting into ${CHUNK_DURATION_SEC}s chunks`,
+        );
         text = null;
       }
     }
@@ -213,12 +246,19 @@ async function transcribe(wavPath, context) {
         appendLog(context.logPath, `transcribing chunk ${path.basename(chunkPath)}`);
         const chunkResp = await transcribeMultipart(chunkPath, apiKey, signal, context.logPath);
         const { text: chunkText } = await handleResponse(chunkResp);
-        if (!chunkText) throw new StageError(`Transcription failed (HTTP ${chunkResp.status}).`, 'transcribing', `empty chunk ${path.basename(chunkPath)}`);
+        if (!chunkText)
+          throw new StageError(
+            `Transcription failed (HTTP ${chunkResp.status}).`,
+            'transcribing',
+            `empty chunk ${path.basename(chunkPath)}`,
+          );
         parts.push(chunkText);
       }
       text = parts.join('\n\n');
       // Clean up chunk dir (keep on failure for debugging).
-      try { await fs.promises.rm(path.join(context.jobDir, 'chunks'), { recursive: true, force: true }); } catch {}
+      try {
+        await fs.promises.rm(path.join(context.jobDir, 'chunks'), { recursive: true, force: true });
+      } catch {}
     }
 
     const transcriptPath = path.join(context.jobDir, 'transcript.txt');

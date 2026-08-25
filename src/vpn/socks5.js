@@ -14,7 +14,9 @@ const MULLVAD_DNS = process.env.MULLVAD_DNS || '10.64.0.1';
 // Pas de fallback vers le résolveur système: la requête DNS fuirait hors du
 // tunnel (garantie de confidentialité du sidecar).
 const resolver = new dns.promises.Resolver();
-try { resolver.setServers([MULLVAD_DNS]); } catch {}
+try {
+  resolver.setServers([MULLVAD_DNS]);
+} catch {}
 
 async function resolveHost(host) {
   if (net.isIP(host)) return host;
@@ -25,15 +27,18 @@ async function resolveHost(host) {
 
 function parseAddress(buf, offset) {
   const atyp = buf[offset];
-  if (atyp === 0x01) { // IPv4
+  if (atyp === 0x01) {
+    // IPv4
     const host = `${buf[offset + 1]}.${buf[offset + 2]}.${buf[offset + 3]}.${buf[offset + 4]}`;
     return { host, addrLen: 5 };
   }
-  if (atyp === 0x03) { // domaine
+  if (atyp === 0x03) {
+    // domaine
     const len = buf[offset + 1];
     return { host: buf.slice(offset + 2, offset + 2 + len).toString('utf8'), addrLen: len + 2 };
   }
-  if (atyp === 0x04) { // IPv6
+  if (atyp === 0x04) {
+    // IPv6
     const groups = [];
     for (let i = 0; i < 16; i += 2) groups.push(buf.readUInt16BE(offset + 1 + i).toString(16));
     return { host: groups.join(':'), addrLen: 17 };

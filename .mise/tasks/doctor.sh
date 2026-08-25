@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 fail=0
-ok()   { printf '  ok:   %s\n' "$1"; }
+ok() { printf '  ok:   %s\n' "$1"; }
 warn() { printf '  WARN: %s\n' "$1"; }
 
 echo "mise:"
@@ -69,7 +69,7 @@ fi
 echo "secrets (only the paid pipeline stages need these; e2e tests do not):"
 if [ -f "$HOME/.secrets/openrouter.gpg" ]; then
   if GNUPGHOME="$HOME/.gnupg" gpg --quiet --batch --no-tty --decrypt \
-      "$HOME/.secrets/openrouter.gpg" >/dev/null 2>&1; then
+    "$HOME/.secrets/openrouter.gpg" >/dev/null 2>&1; then
     ok "$HOME/.secrets/openrouter.gpg decrypts with the host keyring"
   else
     warn "$HOME/.secrets/openrouter.gpg present but does not decrypt with $HOME/.gnupg"

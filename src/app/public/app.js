@@ -72,34 +72,61 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
   function isYouTubeUrl(value) {
     try {
       const url = new URL(value);
-      const hosts = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be', 'www.youtu.be'];
-      return ['http:', 'https:'].includes(url.protocol) && hosts.includes(url.hostname.toLowerCase()) && (url.hostname.includes('youtu.be') ? url.pathname.length > 1 : url.pathname === '/watch' && url.searchParams.has('v'));
-    } catch { return false; }
+      const hosts = [
+        'youtube.com',
+        'www.youtube.com',
+        'm.youtube.com',
+        'music.youtube.com',
+        'youtu.be',
+        'www.youtu.be',
+      ];
+      return (
+        ['http:', 'https:'].includes(url.protocol) &&
+        hosts.includes(url.hostname.toLowerCase()) &&
+        (url.hostname.includes('youtu.be')
+          ? url.pathname.length > 1
+          : url.pathname === '/watch' && url.searchParams.has('v'))
+      );
+    } catch {
+      return false;
+    }
   }
 
   function setBusy(busy) {
     document.body.classList.toggle('is-busy', busy);
     input.disabled = busy;
     submitButton.disabled = busy;
-    submitButton.innerHTML = busy ? 'WORKING<span class="button-corner" aria-hidden="true">…</span>' : 'SUMMARIZE<span class="button-corner" aria-hidden="true">↵</span>';
+    submitButton.innerHTML = busy
+      ? 'WORKING<span class="button-corner" aria-hidden="true">…</span>'
+      : 'SUMMARIZE<span class="button-corner" aria-hidden="true">↵</span>';
   }
 
   function setJobRef(id) {
     if (!jobRef) return;
-    if (!id) { jobRef.hidden = true; jobRef.textContent = ''; return; }
+    if (!id) {
+      jobRef.hidden = true;
+      jobRef.textContent = '';
+      return;
+    }
     jobRef.hidden = false;
     jobRef.textContent = `JOB ${id.slice(0, 8)}`;
     jobRef.title = id;
   }
 
   function saveJobId(id) {
-    try { localStorage.setItem(STORAGE_KEY, id); } catch {}
-    try { history.replaceState(null, '', `#${id}`); } catch {}
+    try {
+      localStorage.setItem(STORAGE_KEY, id);
+    } catch {}
+    try {
+      history.replaceState(null, '', `#${id}`);
+    } catch {}
     setJobRef(id);
   }
 
   function clearStoredJobId() {
-    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {}
     try {
       if (location.hash) history.replaceState(null, '', location.pathname + location.search);
     } catch {}
@@ -124,8 +151,11 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     resumeBar.hidden = false;
     if (resumeCopy && copy) resumeCopy.textContent = copy;
     if (resumeId) {
-      if (id) { resumeId.hidden = false; resumeId.textContent = id.slice(0, 8); resumeId.title = id; }
-      else resumeId.hidden = true;
+      if (id) {
+        resumeId.hidden = false;
+        resumeId.textContent = id.slice(0, 8);
+        resumeId.title = id;
+      } else resumeId.hidden = true;
     }
   }
 
@@ -140,7 +170,9 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     errorPanel.hidden = true;
     urlError.hidden = true;
     input.removeAttribute('aria-invalid');
-    steps.forEach(step => step.classList.remove('is-active', 'is-done'));
+    steps.forEach((step) => {
+      step.classList.remove('is-active', 'is-done');
+    });
     queueState.textContent = 'EMPTY';
     footerState.textContent = 'IDLE';
     wordCount.textContent = 'NO WORDS';
@@ -154,7 +186,9 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     toast.textContent = message;
     toast.hidden = false;
     window.clearTimeout(showToast.timer);
-    showToast.timer = window.setTimeout(() => { toast.hidden = true; }, 3200);
+    showToast.timer = window.setTimeout(() => {
+      toast.hidden = true;
+    }, 3200);
   }
 
   function setStage(stage) {
@@ -187,17 +221,44 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
   }
 
   function markdownToHtml(markdown) {
-    const escape = value => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char]);
+    const escapeHtml = (value) =>
+      value.replace(
+        /[&<>"']/g,
+        (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char],
+      );
     const lines = markdown.split(/\r?\n/);
     let html = '';
     let listTag = null;
-    const closeList = () => { if (listTag) { html += `</${listTag}>`; listTag = null; } };
+    const closeList = () => {
+      if (listTag) {
+        html += `</${listTag}>`;
+        listTag = null;
+      }
+    };
     for (const line of lines) {
-      if (line.startsWith('## ')) { closeList(); html += `<h2>${escape(line.slice(3))}</h2>`; }
-      else if (line.startsWith('- ')) { if (listTag !== 'ul') { closeList(); html += '<ul>'; listTag = 'ul'; } html += `<li>${inline(escape(line.slice(2)))}</li>`; }
-      else if (/^\d+\. /.test(line)) { if (listTag !== 'ol') { closeList(); html += '<ol>'; listTag = 'ol'; } html += `<li>${inline(escape(line.replace(/^\d+\. /, '')))}</li>`; }
-      else if (!line.trim()) { closeList(); }
-      else { closeList(); html += `<p>${inline(escape(line))}</p>`; }
+      if (line.startsWith('## ')) {
+        closeList();
+        html += `<h2>${escapeHtml(line.slice(3))}</h2>`;
+      } else if (line.startsWith('- ')) {
+        if (listTag !== 'ul') {
+          closeList();
+          html += '<ul>';
+          listTag = 'ul';
+        }
+        html += `<li>${inline(escapeHtml(line.slice(2)))}</li>`;
+      } else if (/^\d+\. /.test(line)) {
+        if (listTag !== 'ol') {
+          closeList();
+          html += '<ol>';
+          listTag = 'ol';
+        }
+        html += `<li>${inline(escapeHtml(line.replace(/^\d+\. /, '')))}</li>`;
+      } else if (!line.trim()) {
+        closeList();
+      } else {
+        closeList();
+        html += `<p>${inline(escapeHtml(line))}</p>`;
+      }
     }
     closeList();
     return html;
@@ -228,7 +289,11 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     queueState.textContent = '1 QUEUED';
     footerState.textContent = 'QUEUED';
     try {
-      const response = await fetch('/api/summarize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+      const response = await fetch('/api/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Could not create this job.');
       currentJobId = data.jobId;
@@ -253,8 +318,16 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       const response = await fetch(`/api/jobs/${encodeURIComponent(currentJobId)}`);
       const job = await response.json();
       if (!response.ok) throw new Error(job.error || 'Could not read job status.');
-      if (job.status === 'queued') { queueState.textContent = '1 QUEUED'; footerState.textContent = 'QUEUED'; statusMessage.textContent = 'QUEUED — waiting for the worker'; return; }
-      if (job.status === 'running') { setStage(job.stage); return; }
+      if (job.status === 'queued') {
+        queueState.textContent = '1 QUEUED';
+        footerState.textContent = 'QUEUED';
+        statusMessage.textContent = 'QUEUED — waiting for the worker';
+        return;
+      }
+      if (job.status === 'running') {
+        setStage(job.stage);
+        return;
+      }
       window.clearInterval(pollTimer);
       pollTimer = null;
       if (job.status === 'done') return finish(job);
@@ -266,7 +339,7 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     }
   }
 
-  async function finish(job) {
+  async function finish(_job) {
     try {
       const response = await fetch(`/api/jobs/${encodeURIComponent(currentJobId)}/result`);
       const result = await response.json();
@@ -281,7 +354,10 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       noteContent.hidden = false;
       hideResumeBar();
       setBusy(false);
-      steps.forEach(step => { step.classList.remove('is-active'); step.classList.add('is-done'); });
+      steps.forEach((step) => {
+        step.classList.remove('is-active');
+        step.classList.add('is-done');
+      });
       queueState.textContent = 'COMPLETE';
       footerState.textContent = 'DONE';
       wordCount.textContent = `${result.wordCount || result.markdown.split(/\s+/).length} WORDS`;
@@ -315,7 +391,10 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     const blob = new Blob([currentMarkdown], { type: 'text/markdown;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `${(noteTitle.textContent || 'study-note').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}.md`;
+    link.download = `${(noteTitle.textContent || 'study-note')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')}.md`;
     link.click();
     URL.revokeObjectURL(link.href);
   }
@@ -390,7 +469,7 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       showError(job.error || 'Le run précédent a échoué.');
       showResumeBar(stored, 'Run précédent en erreur —');
       setBusy(false);
-    } catch (error) {
+    } catch (_error) {
       clearStoredJobId();
       hideResumeBar();
       resetPanels();
@@ -407,17 +486,25 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     jobRef.style.cursor = 'pointer';
     jobRef.addEventListener('click', async () => {
       if (!currentJobId) return;
-      try { await navigator.clipboard.writeText(currentJobId); showToast('Job ID copié.'); } catch { showToast(currentJobId); }
+      try {
+        await navigator.clipboard.writeText(currentJobId);
+        showToast('Job ID copié.');
+      } catch {
+        showToast(currentJobId);
+      }
     });
   }
-  document.addEventListener('click', event => {
+  document.addEventListener('click', (event) => {
     const action = event.target.closest('[data-action]')?.dataset.action;
     if (action === 'reset') reset();
     if (action === 'about') showToast('Summarize YT turns one video into one durable Markdown study note.');
   });
-  document.addEventListener('keydown', event => {
+  document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') reset();
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') { event.preventDefault(); download(); }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') {
+      event.preventDefault();
+      download();
+    }
   });
 
   resumeStoredJob();

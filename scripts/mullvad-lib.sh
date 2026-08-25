@@ -17,13 +17,13 @@ mullvad_keygen() {
   umask 077
   mkdir -p "$MULLVAD_DIR"
   if [ ! -f "$MULLVAD_DIR/privkey" ]; then
-    node "$MULLVAD_LIB_DIR/wgkey.js" > "$MULLVAD_DIR/.keys.new"
-    sed -n '1p' "$MULLVAD_DIR/.keys.new" > "$MULLVAD_DIR/privkey"
-    sed -n '2p' "$MULLVAD_DIR/.keys.new" > "$MULLVAD_DIR/pubkey"
+    node "$MULLVAD_LIB_DIR/wgkey.js" >"$MULLVAD_DIR/.keys.new"
+    sed -n '1p' "$MULLVAD_DIR/.keys.new" >"$MULLVAD_DIR/privkey"
+    sed -n '2p' "$MULLVAD_DIR/.keys.new" >"$MULLVAD_DIR/pubkey"
     rm -f "$MULLVAD_DIR/.keys.new"
     echo "Paire de clés WireGuard générée dans $MULLVAD_DIR/ (0600)."
   elif [ ! -f "$MULLVAD_DIR/pubkey" ]; then
-    node "$MULLVAD_LIB_DIR/wgkey.js" pubkey < "$MULLVAD_DIR/privkey" > "$MULLVAD_DIR/pubkey"
+    node "$MULLVAD_LIB_DIR/wgkey.js" pubkey <"$MULLVAD_DIR/privkey" >"$MULLVAD_DIR/pubkey"
   fi
   chmod 600 "$MULLVAD_DIR/privkey" "$MULLVAD_DIR/pubkey"
   umask "$old_umask"
@@ -74,7 +74,7 @@ mullvad_build_conf() { # $1 = adresse de tunnel (10.x.x.x/32), $2 = relais
     return 1
   fi
   umask 077
-  cat > "$MULLVAD_CONF" <<EOF
+  cat >"$MULLVAD_CONF" <<EOF
 [Interface]
 PrivateKey = $(cat "$MULLVAD_DIR/privkey")
 Address = $addr

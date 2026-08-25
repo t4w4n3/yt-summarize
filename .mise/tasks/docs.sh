@@ -42,11 +42,11 @@ if [ "${1:-}" = "stop" ]; then
 fi
 
 mkdir -p .local
-stop_server   # avoid a stale server on a different port
+stop_server # avoid a stale server on a different port
 
 if [ "${usage_background:-false}" = "true" ]; then
-  nohup node scripts/docs-server.mjs > "$LOG_FILE" 2>&1 &
-  echo "$!" > "$PID_FILE"
+  nohup node scripts/docs-server.mjs >"$LOG_FILE" 2>&1 &
+  echo "$!" >"$PID_FILE"
   sleep 1
   if ! kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
     echo "docs server failed to start — log: $LOG_FILE" >&2

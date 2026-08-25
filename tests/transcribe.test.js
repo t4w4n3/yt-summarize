@@ -23,8 +23,8 @@ function writeSyntheticWav(filePath, dataBytes) {
   const sampleRate = 16000;
   const numChannels = 1;
   const bitsPerSample = 16;
-  const byteRate = sampleRate * numChannels * bitsPerSample / 8; // 32000
-  const blockAlign = numChannels * bitsPerSample / 8; // 2
+  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8; // 32000
+  const blockAlign = (numChannels * bitsPerSample) / 8; // 2
   const dataSize = dataBytes;
   const header = Buffer.alloc(44);
   header.write('RIFF', 0);
@@ -52,7 +52,7 @@ function tmpDir() {
 describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
   let transcribe;
   let MULTIPART_LIMIT;
-  let CHUNK_DURATION_SEC;
+  let _CHUNK_DURATION_SEC;
   let originalFetch;
 
   beforeEach(() => {
@@ -73,7 +73,7 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
     const mod = require('../src/worker/stages/transcribe');
     transcribe = mod.transcribe;
     MULTIPART_LIMIT = mod.MULTIPART_LIMIT;
-    CHUNK_DURATION_SEC = mod.CHUNK_DURATION_SEC;
+    _CHUNK_DURATION_SEC = mod.CHUNK_DURATION_SEC;
     originalFetch = global.fetch;
   });
 
@@ -118,7 +118,7 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
     };
 
     let sawJson = false;
-    global.fetch = async (url, opts) => {
+    global.fetch = async (_url, opts) => {
       if (opts.headers['Content-Type'] === 'application/json') {
         sawJson = true;
         const body = JSON.parse(opts.body);
@@ -150,7 +150,7 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
     fs.promises.stat = async (p) => (p === wav ? { size: MULTIPART_LIMIT } : origStat(p));
 
     let usedMultipart = false;
-    global.fetch = async (url, opts) => {
+    global.fetch = async (_url, opts) => {
       if (opts.body instanceof FormData) usedMultipart = true;
       return { ok: true, status: 200, json: async () => ({ text: 'boundary ok' }) };
     };
@@ -173,7 +173,7 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
     fs.promises.stat = async (p) => (p === wav ? { size: MULTIPART_LIMIT + 1 } : origStat(p));
 
     let usedJson = false;
-    global.fetch = async (url, opts) => {
+    global.fetch = async (_url, opts) => {
       if (opts.headers['Content-Type'] === 'application/json') usedJson = true;
       return { ok: true, status: 200, json: async () => ({ text: 'just over' }) };
     };
@@ -193,13 +193,20 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
     writeSyntheticWav(wav, 1024 * 1024);
 
     let call = 0;
-    global.fetch = async (url, opts) => {
+    global.fetch = async (_url, opts) => {
       call += 1;
       if (call === 1) {
         assert.ok(opts.body instanceof FormData);
         return {
-          ok: false, status: 413,
-          json: async () => ({ error: { message: 'Multipart body exceeds the 25 MB upload limit. Send larger files as base64 JSON via input_audio.', code: 413 } }),
+          ok: false,
+          status: 413,
+          json: async () => ({
+            error: {
+              message:
+                'Multipart body exceeds the 25 MB upload limit. Send larger files as base64 JSON via input_audio.',
+              code: 413,
+            },
+          }),
         };
       }
       // retry must be JSON via input_audio
@@ -234,12 +241,13 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
     };
 
     let fetchCalls = 0;
-    global.fetch = async (url, opts) => {
+    global.fetch = async (_url, opts) => {
       fetchCalls += 1;
       if (opts.headers['Content-Type'] === 'application/json') {
         // Simulate base64 still too large
         return {
-          ok: false, status: 413,
+          ok: false,
+          status: 413,
           json: async () => ({ error: { message: 'Multipart body exceeds the 25 MB upload limit.', code: 413 } }),
         };
       }

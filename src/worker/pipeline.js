@@ -32,8 +32,12 @@ async function runPipeline(db, job, signal) {
     currentStage = STAGES[2];
     updateStage(db, job.id, currentStage, 45);
     transcriptPath = await transcribe(wavPath, { ...context, timeoutMs: stageTimeoutMs(currentStage) });
-    try { fs.rmSync(audioPath, { force: true }); } catch {}
-    try { fs.rmSync(wavPath, { force: true }); } catch {}
+    try {
+      fs.rmSync(audioPath, { force: true });
+    } catch {}
+    try {
+      fs.rmSync(wavPath, { force: true });
+    } catch {}
 
     currentStage = STAGES[3];
     updateStage(db, job.id, currentStage, 70);
@@ -44,17 +48,23 @@ async function runPipeline(db, job, signal) {
     error.stage = error.stage || currentStage;
     throw error;
   } finally {
-    try { if (audioPath) fs.rmSync(audioPath, { force: true }); } catch {}
-    try { if (wavPath) fs.rmSync(wavPath, { force: true }); } catch {}
+    try {
+      if (audioPath) fs.rmSync(audioPath, { force: true });
+    } catch {}
+    try {
+      if (wavPath) fs.rmSync(wavPath, { force: true });
+    } catch {}
   }
 }
 
 function friendlyError(error) {
   if (error instanceof StageError) {
     const detail = error.details ? ` ${error.details.slice(-600)}` : '';
-    if (error.stage === 'downloading') return `YouTube could not provide this video. Check that it is public and the URL is correct.${detail}`;
+    if (error.stage === 'downloading')
+      return `YouTube could not provide this video. Check that it is public and the URL is correct.${detail}`;
     if (error.stage === 'transcribing' && error.message.includes('model is missing')) return error.message;
-    if (error.stage === 'summarizing' && /credential|auth|api key|401|403/i.test(`${error.message} ${detail}`)) return 'The summarizer could not resolve the OpenRouter credential. Check the GPG mounts and worker logs.';
+    if (error.stage === 'summarizing' && /credential|auth|api key|401|403/i.test(`${error.message} ${detail}`))
+      return 'The summarizer could not resolve the OpenRouter credential. Check the GPG mounts and worker logs.';
     return `${error.message}${detail}`;
   }
   return error?.message || 'The worker stopped unexpectedly.';

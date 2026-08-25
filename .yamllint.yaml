@@ -1,0 +1,57 @@
+---
+# Maximum-strictness yamllint config.
+# Run with `yamllint -s` so warnings also fail the build.
+extends: "default"
+
+# Generated / machine-managed YAML is out of scope for yamllint.
+ignore: |
+  mise.lock
+  pnpm-lock.yaml
+
+rules:
+  braces:
+    level: "error"
+  brackets:
+    level: "error"
+  colons:
+    level: "error"
+  commas:
+    level: "error"
+  comments:
+    level: "error"
+    require-starting-space: true
+  comments-indentation:
+    level: "error"
+  document-end:
+    level: "error"
+  document-start:
+    level: "error"
+  empty-lines:
+    level: "error"
+  hyphens:
+    level: "error"
+  indentation:
+    level: "error"
+    indent-sequences: true
+  key-duplicates:
+    level: "error"
+  key-ordering: "disable"
+  line-length:
+    level: "error"
+    max: 140
+    allow-non-breakable-words: true
+  new-line-at-end-of-file:
+    level: "error"
+  new-lines:
+    level: "error"
+    type: "unix"
+  octal-values:
+    level: "error"
+  quoted-strings:
+    level: "error"
+    quote-type: "double"
+  trailing-spaces:
+    level: "error"
+  truthy:
+    level: "error"
+...

@@ -44,8 +44,8 @@ function runProcess(command, args, options = {}) {
     };
     if (signal) signal.addEventListener('abort', onAbort, { once: true });
 
-    log?.write(`\n$ ${command} ${args.map(arg => JSON.stringify(arg)).join(' ')}\n`);
-    child.stdout.on('data', chunk => {
+    log?.write(`\n$ ${command} ${args.map((arg) => JSON.stringify(arg)).join(' ')}\n`);
+    child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
       stdout += text;
       if (stdout.length > 25 * 1024 * 1024) {
@@ -54,19 +54,32 @@ function runProcess(command, args, options = {}) {
       }
       log?.write(text);
     });
-    child.stderr.on('data', chunk => { const text = chunk.toString(); stderr += text; log?.write(text); });
-    child.on('error', error => finish(reject, new StageError(`${stage} could not start: ${error.message}`, stage)));
+    child.stderr.on('data', (chunk) => {
+      const text = chunk.toString();
+      stderr += text;
+      log?.write(text);
+    });
+    child.on('error', (error) => finish(reject, new StageError(`${stage} could not start: ${error.message}`, stage)));
     child.on('close', (code, signal) => {
       if (settled) return;
       const result = { code, signal, stdout, stderr, durationMs: Date.now() - started };
       if (code === 0) return finish(resolve, result);
       const detail = (stderr || stdout).trim().split('\n').slice(-8).join('\n');
-      finish(reject, new StageError(`${stage} failed${code == null ? ` (${signal || 'terminated'})` : ` with exit code ${code}`}.`, stage, detail));
+      finish(
+        reject,
+        new StageError(
+          `${stage} failed${code == null ? ` (${signal || 'terminated'})` : ` with exit code ${code}`}.`,
+          stage,
+          detail,
+        ),
+      );
     });
 
     if (inputPath) {
       const input = fs.createReadStream(inputPath);
-      input.on('error', error => { child.stdin.destroy(error); });
+      input.on('error', (error) => {
+        child.stdin.destroy(error);
+      });
       input.pipe(child.stdin);
     } else {
       child.stdin.end();

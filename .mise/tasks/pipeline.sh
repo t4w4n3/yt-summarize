@@ -39,6 +39,7 @@ while :; do
       echo "Job failed: ${ERROR:-unknown error}" >&2
       exit 1
       ;;
+    *) : ;; # pending/running — keep polling
   esac
   sleep 2
 done

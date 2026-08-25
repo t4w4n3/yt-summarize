@@ -1,0 +1,9 @@
+---
+# Maximum-strictness hadolint config: even style-level findings fail the build.
+failure-threshold: "style"
+override:
+  error:
+    # Pin base image tags explicitly (no :latest).
+    - "DL3007"
+ignored: []
+...

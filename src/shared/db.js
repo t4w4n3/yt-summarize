@@ -41,8 +41,12 @@ function openDatabase() {
     CREATE INDEX IF NOT EXISTS jobs_status_created_idx ON jobs(status, created_at);
   `);
   // Deduplication support: store canonical video_id and backfill legacy rows
-  try { db.exec('ALTER TABLE jobs ADD COLUMN video_id TEXT'); } catch {}
-  try { db.exec('CREATE INDEX IF NOT EXISTS jobs_video_id_idx ON jobs(video_id)'); } catch {}
+  try {
+    db.exec('ALTER TABLE jobs ADD COLUMN video_id TEXT');
+  } catch {}
+  try {
+    db.exec('CREATE INDEX IF NOT EXISTS jobs_video_id_idx ON jobs(video_id)');
+  } catch {}
   try {
     const rows = db.prepare('SELECT id, url FROM jobs WHERE video_id IS NULL').all();
     const upd = db.prepare('UPDATE jobs SET video_id = ? WHERE id = ?');
@@ -57,8 +61,14 @@ function openDatabase() {
 function createJob(db, id, url, videoId) {
   const timestamp = now();
   const vid = videoId || extractVideoIdFromUrl(url);
-  db.prepare(`INSERT INTO jobs (id, url, video_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
-    .run(id, url, vid, STATUS.QUEUED, timestamp, timestamp);
+  db.prepare(`INSERT INTO jobs (id, url, video_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    id,
+    url,
+    vid,
+    STATUS.QUEUED,
+    timestamp,
+    timestamp,
+  );
   return getJob(db, id);
 }
 
@@ -69,9 +79,17 @@ function getJob(db, id) {
 function findExistingJobByVideoId(db, videoId) {
   if (!videoId) return null;
   // Prefer canonical video_id column, fallback to URL substring for legacy rows without backfill
-  let row = db.prepare(`SELECT * FROM jobs WHERE video_id = ? AND status IN ('queued','running','done') ORDER BY CASE status WHEN 'done' THEN 0 WHEN 'running' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`).get(videoId);
+  let row = db
+    .prepare(
+      `SELECT * FROM jobs WHERE video_id = ? AND status IN ('queued','running','done') ORDER BY CASE status WHEN 'done' THEN 0 WHEN 'running' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`,
+    )
+    .get(videoId);
   if (row) return row;
-  row = db.prepare(`SELECT * FROM jobs WHERE video_id IS NULL AND url LIKE '%' || ? || '%' AND status IN ('queued','running','done') ORDER BY created_at DESC LIMIT 1`).get(videoId);
+  row = db
+    .prepare(
+      `SELECT * FROM jobs WHERE video_id IS NULL AND url LIKE '%' || ? || '%' AND status IN ('queued','running','done') ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get(videoId);
   return row || null;
 }
 
@@ -84,12 +102,15 @@ function claimNextJob(db) {
       return null;
     }
     const timestamp = now();
-    db.prepare(`UPDATE jobs SET status = ?, stage = ?, progress = 0, claimed_at = ?, last_heartbeat_at = ?, updated_at = ? WHERE id = ?`)
-      .run(STATUS.RUNNING, null, timestamp, timestamp, timestamp, row.id);
+    db.prepare(
+      `UPDATE jobs SET status = ?, stage = ?, progress = 0, claimed_at = ?, last_heartbeat_at = ?, updated_at = ? WHERE id = ?`,
+    ).run(STATUS.RUNNING, null, timestamp, timestamp, timestamp, row.id);
     db.exec('COMMIT');
     return getJob(db, row.id);
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
 }
@@ -97,40 +118,65 @@ function claimNextJob(db) {
 function reclaimStaleJobs(db, staleAfterMs) {
   const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
   const timestamp = now();
-  return db.prepare(`
+  return db
+    .prepare(`
     UPDATE jobs
     SET status = ?, stage = NULL, progress = 0, claimed_at = NULL,
         last_heartbeat_at = NULL, error = NULL, updated_at = ?
     WHERE status = ? AND COALESCE(last_heartbeat_at, claimed_at, updated_at) < ?
-  `).run(STATUS.QUEUED, timestamp, STATUS.RUNNING, cutoff).changes;
+  `)
+    .run(STATUS.QUEUED, timestamp, STATUS.RUNNING, cutoff).changes;
 }
 
 function updateStage(db, id, stage, progress) {
   const timestamp = now();
-  db.prepare('UPDATE jobs SET stage = ?, progress = ?, updated_at = ? WHERE id = ? AND status = ?')
-    .run(stage, progress, timestamp, id, STATUS.RUNNING);
+  db.prepare('UPDATE jobs SET stage = ?, progress = ?, updated_at = ? WHERE id = ? AND status = ?').run(
+    stage,
+    progress,
+    timestamp,
+    id,
+    STATUS.RUNNING,
+  );
 }
 
 function heartbeat(db, id) {
   const timestamp = now();
-  db.prepare('UPDATE jobs SET last_heartbeat_at = ?, updated_at = ? WHERE id = ? AND status = ?')
-    .run(timestamp, timestamp, id, STATUS.RUNNING);
+  db.prepare('UPDATE jobs SET last_heartbeat_at = ?, updated_at = ? WHERE id = ? AND status = ?').run(
+    timestamp,
+    timestamp,
+    id,
+    STATUS.RUNNING,
+  );
 }
 
 function markDone(db, id, title, markdown) {
   const timestamp = now();
-  db.prepare(`UPDATE jobs SET status = ?, stage = NULL, progress = 100, title = ?, markdown = ?, error = NULL, last_heartbeat_at = NULL, updated_at = ? WHERE id = ? AND status = ?`)
-    .run(STATUS.DONE, title || null, markdown, timestamp, id, STATUS.RUNNING);
+  db.prepare(
+    `UPDATE jobs SET status = ?, stage = NULL, progress = 100, title = ?, markdown = ?, error = NULL, last_heartbeat_at = NULL, updated_at = ? WHERE id = ? AND status = ?`,
+  ).run(STATUS.DONE, title || null, markdown, timestamp, id, STATUS.RUNNING);
 }
 
 function markFailed(db, id, error, stage) {
   const timestamp = now();
-  db.prepare(`UPDATE jobs SET status = ?, stage = ?, error = ?, last_heartbeat_at = NULL, updated_at = ? WHERE id = ? AND status = ?`)
-    .run(STATUS.FAILED, stage || null, error, timestamp, id, STATUS.RUNNING);
+  db.prepare(
+    `UPDATE jobs SET status = ?, stage = ?, error = ?, last_heartbeat_at = NULL, updated_at = ? WHERE id = ? AND status = ?`,
+  ).run(STATUS.FAILED, stage || null, error, timestamp, id, STATUS.RUNNING);
 }
 
 function closeDatabase(db) {
   db.close();
 }
 
-module.exports = { openDatabase, createJob, getJob, findExistingJobByVideoId, claimNextJob, reclaimStaleJobs, updateStage, heartbeat, markDone, markFailed, closeDatabase };
+module.exports = {
+  openDatabase,
+  createJob,
+  getJob,
+  findExistingJobByVideoId,
+  claimNextJob,
+  reclaimStaleJobs,
+  updateStage,
+  heartbeat,
+  markDone,
+  markFailed,
+  closeDatabase,
+};

@@ -10,37 +10,34 @@ const VALID_URL = 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
 
 const RESULT = {
   title: 'The real e2e video',
-  markdown: [
-    '## Overview',
-    '',
-    'A test overview paragraph.',
-    '',
-    '## Key Takeaways',
-    '',
-    '- One',
-    '- Two',
-    '',
-  ].join('\n'),
+  markdown: ['## Overview', '', 'A test overview paragraph.', '', '## Key Takeaways', '', '- One', '- Two', ''].join(
+    '\n',
+  ),
   wordCount: 14,
 };
 
 function installJobMock(page, { jobStates, createError } = {}) {
   let pollIndex = 0;
   let posts = 0;
-  page.route('**/api/summarize', route => {
+  page.route('**/api/summarize', (route) => {
     posts += 1;
     if (createError) {
-      return route.fulfill({ status: createError.status, contentType: 'application/json', body: JSON.stringify({ error: createError.error }) });
+      return route.fulfill({
+        status: createError.status,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: createError.error }),
+      });
     }
     return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ jobId: JOB_ID }) });
   });
-  page.route(`**/api/jobs/${JOB_ID}`, route => {
+  page.route(`**/api/jobs/${JOB_ID}`, (route) => {
     const state = jobStates[Math.min(pollIndex, jobStates.length - 1)];
     pollIndex += 1;
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state) });
   });
-  page.route(`**/api/jobs/${JOB_ID}/result`, route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(RESULT) }));
+  page.route(`**/api/jobs/${JOB_ID}/result`, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(RESULT) }),
+  );
   return { posts: () => posts };
 }
 
@@ -130,7 +127,9 @@ test('walks a job through all four stages to a rendered note', async ({ page }) 
 
 test('surfaces a failed job and offers a reset', async ({ page }) => {
   await gotoWithClock(page);
-  installJobMock(page, { jobStates: [{ status: 'failed', error: 'YouTube said: Sign in to confirm you are not a bot.' }] });
+  installJobMock(page, {
+    jobStates: [{ status: 'failed', error: 'YouTube said: Sign in to confirm you are not a bot.' }],
+  });
   await page.fill('#video-url', VALID_URL);
   await page.click('#submit-button');
   await expect(page.locator('#output-error')).toBeVisible();
@@ -156,7 +155,9 @@ test('shows the server error when job creation is rejected', async ({ page }) =>
   await page.fill('#video-url', VALID_URL);
   await page.click('#submit-button');
   await expect(page.locator('#output-error')).toBeVisible();
-  await expect(page.locator('#output-error-copy')).toHaveText('Only youtube.com and youtu.be video URLs are supported.');
+  await expect(page.locator('#output-error-copy')).toHaveText(
+    'Only youtube.com and youtu.be video URLs are supported.',
+  );
   await expect(page.locator('#footer-state')).toHaveText('ERROR');
 });
 

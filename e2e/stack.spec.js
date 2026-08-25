@@ -10,7 +10,12 @@ const VALID_URL = 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
 
 test('API contract: validation, lifecycle, result, download', async ({ request }) => {
   // Server-side validation
-  for (const bad of ['https://example.com/video', 'https://youtu.be/', 'not a url', 'https://user:pass@www.youtube.com/watch?v=jNQXAC9IVRw']) {
+  for (const bad of [
+    'https://example.com/video',
+    'https://youtu.be/',
+    'not a url',
+    'https://user:pass@www.youtube.com/watch?v=jNQXAC9IVRw',
+  ]) {
     const res = await request.post('/api/summarize', { data: { url: bad } });
     expect(res.status(), `expected 400 for ${bad}`).toBe(400);
   }
@@ -24,10 +29,15 @@ test('API contract: validation, lifecycle, result, download', async ({ request }
   expect(jobId).toBeTruthy();
 
   // Lifecycle: queued → running → done (fake worker completes it)
-  await expect.poll(async () => {
-    const res = await request.get(`/api/jobs/${jobId}`);
-    return (await res.json()).status;
-  }, { timeout: 30_000 }).toBe('done');
+  await expect
+    .poll(
+      async () => {
+        const res = await request.get(`/api/jobs/${jobId}`);
+        return (await res.json()).status;
+      },
+      { timeout: 30_000 },
+    )
+    .toBe('done');
 
   // Result
   const resultRes = await request.get(`/api/jobs/${jobId}/result`);

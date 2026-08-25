@@ -88,8 +88,9 @@ cmd_init() {
       echo "L'enregistrement a échoué (compte invalide ? réseau ?)." >&2
       exit 1
     }
-    echo "$RESP" > "$STATE_DIR/register.json"
-    ADDR="$(python3 - "$STATE_DIR/register.json" <<'PY'
+    echo "$RESP" >"$STATE_DIR/register.json"
+    ADDR="$(
+      python3 - "$STATE_DIR/register.json" <<'PY'
 import json, sys
 try:
     data = json.load(open(sys.argv[1]))
@@ -98,7 +99,7 @@ except Exception as e:
 addrs = data.get('addresses') or []
 print(', '.join(addrs))
 PY
-)"
+    )"
     if [ -z "$ADDR" ]; then
       echo "Réponse API inattendue (pas d'addresses):" >&2
       cat "$STATE_DIR/register.json" >&2
@@ -121,10 +122,11 @@ cmd_dryrun() {
   rm -f "$TMP_CONF" /tmp/.mullvad-poc-ka /tmp/.mullvad-poc-kb /tmp/.mullvad-poc-kb.pub
   umask 077
   mullvad_refresh_relays
-  node "$ROOT/scripts/wgkey.js" > /tmp/.mullvad-poc-ka
-  node "$ROOT/scripts/wgkey.js" > /tmp/.mullvad-poc-kb
-  sed -n '2p' /tmp/.mullvad-poc-kb > /tmp/.mullvad-poc-kb.pub
-  RELAY_IP="$(python3 - "$RELAY" <<'PY'
+  node "$ROOT/scripts/wgkey.js" >/tmp/.mullvad-poc-ka
+  node "$ROOT/scripts/wgkey.js" >/tmp/.mullvad-poc-kb
+  sed -n '2p' /tmp/.mullvad-poc-kb >/tmp/.mullvad-poc-kb.pub
+  RELAY_IP="$(
+    python3 - "$RELAY" <<'PY'
 import json, sys
 relay = sys.argv[1]
 data = json.load(open('/tmp/mullvad-relays.json'))
@@ -133,9 +135,12 @@ for r in data:
         print(r.get('ipv4_addr_in') or '')
         break
 PY
-)"
-  [ -n "$RELAY_IP" ] || { echo "Relais $RELAY introuvable dans /tmp/mullvad-relays.json" >&2; exit 1; }
-  cat > "$TMP_CONF" <<EOF
+  )"
+  [ -n "$RELAY_IP" ] || {
+    echo "Relais $RELAY introuvable dans /tmp/mullvad-relays.json" >&2
+    exit 1
+  }
+  cat >"$TMP_CONF" <<EOF
 [Interface]
 PrivateKey = $(sed -n '1p' /tmp/.mullvad-poc-ka)
 Address = 10.99.0.2/32
@@ -179,6 +184,7 @@ EOF
 cmd_test() {
   # Test en conditions réelles (nécessite le compte Mullvad + init fait).
   # Affiche l'IP de sortie via le tunnel puis simule un download yt-dlp.
+  # shellcheck disable=SC2016  # intentional: $@ must expand inside the container's sh, not here
   podman_vpn_run sh -c '
     echo "IP de sortie via Mullvad: $(curl -s --max-time 15 https://api.ipify.org)"
     exec "$@"
@@ -199,7 +205,10 @@ cmd_scan() {
   # Teste une liste de relais (même clé/adresse) pour trouver une IP de sortie
   # non blacklistée par YouTube. Le blacklistage évolue: relance régulièrement.
   mullvad_refresh_relays
-  [ -f "$STATE_DIR/privkey" ] || { echo "Pas de clé privée ($STATE_DIR/privkey)." >&2; exit 1; }
+  [ -f "$STATE_DIR/privkey" ] || {
+    echo "Pas de clé privée ($STATE_DIR/privkey)." >&2
+    exit 1
+  }
   local relays=(
     fr-mrs-wg-001 fr-bod-wg-001 se-got-wg-001 no-osl-wg-001 fi-hel-wg-001
     ch-zrh-wg-201 gb-mnc-wg-201 us-atl-wg-001 us-dal-wg-001 us-bos-wg-001
@@ -211,10 +220,13 @@ cmd_scan() {
     local RIP RPUB
     RIP="$(mullvad_relay_field "$R" ipv4)"
     RPUB="$(mullvad_relay_field "$R" pubkey)"
-    [ -n "$RIP" ] && [ -n "$RPUB" ] || { echo "$R | (introuvable dans la liste)"; continue; }
+    [ -n "$RIP" ] && [ -n "$RPUB" ] || {
+      echo "$R | (introuvable dans la liste)"
+      continue
+    }
     local TMP="/tmp/mullvad-scan-$R.conf"
     umask 077
-    cat > "$TMP" <<EOF
+    cat >"$TMP" <<EOF
 [Interface]
 PrivateKey = $(cat "$STATE_DIR/privkey")
 Address = $(sed -n 's/^Address = //p' "$CONF" 2>/dev/null || echo '10.0.0.1/32')
@@ -229,6 +241,7 @@ AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25
 EOF
     local RESULT CODE EXIT
+    # shellcheck disable=SC2016  # intentional: no host expansion wanted inside the test container
     RESULT="$(timeout 60 podman run --rm --cap-add NET_ADMIN --device /dev/net/tun --dns "$VPN_DNS" \
       -v "$TMP:/cfg/wg0.conf:ro" "$(pick_image)" \
       sh -c 'wg-quick up /cfg/wg0.conf >/dev/null 2>&1 || exit 2
@@ -239,7 +252,7 @@ EOF
     CODE="${RESULT##*|}"
     EXIT="${RESULT%|*}"
     case "$CODE" in
-      200|301|302|303) echo "$R | $EXIT | $CODE | ✅ PASS" ;;
+      200 | 301 | 302 | 303) echo "$R | $EXIT | $CODE | ✅ PASS" ;;
       *) echo "$R | $EXIT | $CODE | ❌ blacklisté" ;;
     esac
     rm -f "$TMP"
@@ -266,11 +279,14 @@ cmd_status() {
 }
 
 case "$MODE" in
-  run)    cmd_run "$@" ;;
-  test)   cmd_test "$@" ;;
-  init)   cmd_init ;;
-  scan)   cmd_scan ;;
+  run) cmd_run "$@" ;;
+  test) cmd_test "$@" ;;
+  init) cmd_init ;;
+  scan) cmd_scan ;;
   dryrun) cmd_dryrun ;;
   status) cmd_status ;;
-  *) echo "Mode inconnu: $MODE (run|test|init|scan|dryrun|status)" >&2; exit 1 ;;
+  *)
+    echo "Mode inconnu: $MODE (run|test|init|scan|dryrun|status)" >&2
+    exit 1
+    ;;
 esac

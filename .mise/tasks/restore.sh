@@ -8,8 +8,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 ARCHIVE="${usage_file:?Usage: mise run restore <backup.tar.gz> [--yes]}"
-[ -f "$ARCHIVE" ] || { echo "No such file: $ARCHIVE" >&2; exit 1; }
-tar tzf "$ARCHIVE" 2>/dev/null | grep -qx 'jobs.db' || { echo "$ARCHIVE does not look like a summarize-yt backup (missing jobs.db)." >&2; exit 1; }
+[ -f "$ARCHIVE" ] || {
+  echo "No such file: $ARCHIVE" >&2
+  exit 1
+}
+tar tzf "$ARCHIVE" 2>/dev/null | grep -qx 'jobs.db' || {
+  echo "$ARCHIVE does not look like a summarize-yt backup (missing jobs.db)." >&2
+  exit 1
+}
 
 if [ "${usage_yes:-false}" != "true" ]; then
   read -r -p "This REPLACES the jobs database and every artifact with the backup. Type 'restore' to confirm: " answer

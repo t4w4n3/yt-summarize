@@ -39,7 +39,7 @@ const MARKDOWN = [
   '',
 ].join('\n');
 
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const db = openDatabase();
 

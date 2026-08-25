@@ -5,3 +5,10 @@
 [tools]
 node = "24.18.1"
 pnpm = "11.21.0"
+# Lint toolchain — used by the `lint*` mise tasks.
+"npm:@biomejs/biome" = "2.5.7" # JS/TS/JSON: lint + format
+shellcheck = "0.11.0"          # shell scripts
+shfmt = "3.12.0"               # shell formatting
+pipx = "1.8.0"                 # backend for yamllint
+yamllint = "1.37.1"            # YAML files
+hadolint = "2.12.0"            # Containerfiles/Dockerfiles

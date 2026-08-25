@@ -1,5 +1,13 @@
 const { config } = require('../shared/constants');
-const { openDatabase, claimNextJob, reclaimStaleJobs, getJob, heartbeat, markFailed, closeDatabase } = require('../shared/db');
+const {
+  openDatabase,
+  claimNextJob,
+  reclaimStaleJobs,
+  getJob,
+  heartbeat,
+  markFailed,
+  closeDatabase,
+} = require('../shared/db');
 const { runPipeline, friendlyError } = require('./pipeline');
 
 const db = openDatabase();
@@ -12,7 +20,10 @@ async function loop() {
       const reclaimed = reclaimStaleJobs(db, config.staleAfterMs);
       if (reclaimed) console.log(`Re-queued ${reclaimed} stale job(s)`);
       const job = claimNextJob(db);
-      if (!job) { await sleep(config.pollMs); continue; }
+      if (!job) {
+        await sleep(config.pollMs);
+        continue;
+      }
       console.log(`Starting ${job.id}`);
       const controller = new AbortController();
       const beat = setInterval(() => heartbeat(db, job.id), 10000);
@@ -36,7 +47,9 @@ async function loop() {
   }
 }
 
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 function runWithTimeout(task, timeoutMs, controller) {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -57,4 +70,8 @@ function shutdown(signal) {
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
-loop().catch(error => { console.error(error); closeDatabase(db); process.exit(1); });
+loop().catch((error) => {
+  console.error(error);
+  closeDatabase(db);
+  process.exit(1);
+});

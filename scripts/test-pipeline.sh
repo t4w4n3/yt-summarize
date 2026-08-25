@@ -10,5 +10,5 @@ fi
 curl --fail --silent --show-error \
   -H 'Content-Type: application/json' \
   -d "$(node -e 'process.stdout.write(JSON.stringify({url: process.argv[1]}))' "$URL")" \
-  http://localhost:${PORT:-8080}/api/summarize
+  http://localhost:"${PORT:-8080}"/api/summarize
 printf '\nPoll the returned jobId with GET /api/jobs/:id.\n'

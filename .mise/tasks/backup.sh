@@ -14,7 +14,10 @@ JOBS_VOL="$VOL_ROOT/summarize-yt_jobs-data/_data"
 ART_VOL="$VOL_ROOT/summarize-yt_artifacts/_data"
 
 for v in "$JOBS_VOL" "$ART_VOL"; do
-  [ -d "$v" ] || { echo "Volume $v not found — is the stack up? Run \`mise run up\` first." >&2; exit 1; }
+  [ -d "$v" ] || {
+    echo "Volume $v not found — is the stack up? Run \`mise run up\` first." >&2
+    exit 1
+  }
 done
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -35,8 +38,9 @@ PY
 
 tar czf "$ARCHIVE" -C "$TMP" jobs.db -C "$ART_VOL" .
 
-# Prune old backups, keep the newest $KEEP.
-ls -1t "$BACKUP_DIR"/summarize-yt-*.tar.gz 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -f
+# Prune old backups, keep the newest $KEEP (mtime order, GNU find).
+find "$BACKUP_DIR" -maxdepth 1 -name 'summarize-yt-*.tar.gz' -printf '%T@\t%p\n' 2>/dev/null \
+  | sort -rn | tail -n +$((KEEP + 1)) | cut -f2- | xargs -r rm -f
 
 N_JOBS="$(python3 -c "
 import sqlite3

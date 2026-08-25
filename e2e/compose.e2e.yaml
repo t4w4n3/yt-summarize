@@ -1,3 +1,4 @@
+---
 # e2e/compose.e2e.yaml
 # Container smoke-test stack, driven by `mise run test-containers`.
 #
@@ -10,13 +11,13 @@
 # Standalone (not an overlay of compose.yaml) on purpose: podman-compose
 # concatenates ports/volumes from base files, which would keep the worker's
 # secrets mounts and clash with the dev stack's 8080 mapping.
-name: summarize-yt-e2e
+name: "summarize-yt-e2e"
 
 services:
   app:
     build:
-      context: ..
-      dockerfile: image/Dockerfile
+      context: ".."
+      dockerfile: "image/Dockerfile"
     command: ["/app/entrypoint-app.sh"]
     ports:
       - "${E2E_PORT:-4174}:8080"
@@ -24,20 +25,21 @@ services:
       PORT: "8080"
       DATA_DIR: "/data"
     volumes:
-      - ./.tmp/data:/data
+      - "./.tmp/data:/data"
     restart: "no"
 
   worker:
     build:
-      context: ..
-      dockerfile: image/Dockerfile
+      context: ".."
+      dockerfile: "image/Dockerfile"
     command: ["node", "/app/e2e/fake-worker.js"]
     environment:
       DATA_DIR: "/data"
       FAKE_WORKER_PORT: "4175"
     volumes:
-      - ./.tmp/data:/data
-      - ./fake-worker.js:/app/e2e/fake-worker.js:ro
+      - "./.tmp/data:/data"
+      - "./fake-worker.js:/app/e2e/fake-worker.js:ro"
     ports:
       - "${E2E_WORKER_PORT:-4175}:4175"
     restart: "no"
+...

@@ -21,12 +21,14 @@ function dbPath() {
 }
 
 function stageTimeoutMs(stage) {
-  return {
-    downloading: 10 * 60 * 1000,
-    converting: 15 * 60 * 1000,
-    transcribing: 25 * 60 * 1000,
-    summarizing: 10 * 60 * 1000,
-  }[stage] || config.jobTimeoutMs;
+  return (
+    {
+      downloading: 10 * 60 * 1000,
+      converting: 15 * 60 * 1000,
+      transcribing: 25 * 60 * 1000,
+      summarizing: 10 * 60 * 1000,
+    }[stage] || config.jobTimeoutMs
+  );
 }
 
 module.exports = { STAGES, STATUS, config, dbPath, stageTimeoutMs };

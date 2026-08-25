@@ -1,5 +1,7 @@
 # Development toolchain, managed by mise.
 # `mise install` / `mise run <task>` ensures this version is available to every task.
-# Keep in sync with image/Dockerfile (node:24-bookworm-slim) and package.json engines (>=24).
+# Keep node in sync with image/Dockerfile (node:24-bookworm-slim) and package.json engines (>=24).
+# Keep pnpm in sync with package.json packageManager and the pnpm install line in image/Dockerfile.
 [tools]
 node = "24.18.1"
+pnpm = "11.21.0"

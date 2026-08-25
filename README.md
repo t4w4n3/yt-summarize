@@ -18,7 +18,7 @@ The API key is not stored in `.env`, the image, or a volume. The worker mounts t
 
 ```bash
 mise install     # one-time: installs the pinned Node version (node 24, same as the container)
-mise run setup   # one-time: creates .env, runs npm ci, installs the Playwright browser
+mise run setup   # one-time: creates .env, runs pnpm install, installs the Playwright browser
 mise run up      # builds and starts the stack (app + worker)
 ```
 
@@ -32,7 +32,7 @@ mise is the single entrypoint for every contributor action. Task files live in
 
 | Command | What it does |
 |---|---|
-| `mise run setup` | One-time setup: `.env` from `.env.example`, npm deps, Playwright browser |
+| `mise run setup` | One-time setup: `.env` from `.env.example`, pnpm deps, Playwright browser |
 | `mise run up` | Build + start the stack (`podman-compose up -d --build`) |
 | `mise run build` | Build the container image only |
 | `mise run status` | Show container status (`podman-compose ps`) |
@@ -63,7 +63,7 @@ mise run clean --yes        # reset the whole stack, no prompt
 mise run app -p 9000        # local UI iteration on port 9000
 ```
 
-The raw commands (`podman-compose …`, `npm run test:e2e`) remain available, but
+The raw commands (`podman-compose …`, `pnpm run test:e2e`) remain available, but
 the task files under `.mise/tasks/` are the documented interface.
 
 ## Config

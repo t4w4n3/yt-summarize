@@ -44,4 +44,4 @@ done
 
 echo "[test-containers] running stack specs against the container stack..."
 export E2E_PORT E2E_WORKER_PORT
-npm run test:e2e:containers
+pnpm run test:e2e:containers

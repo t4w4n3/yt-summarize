@@ -26,10 +26,10 @@ else
   warn "node >= 24 required, got $(node --version 2>/dev/null || echo 'none')"
   fail=1
 fi
-if npm --version >/dev/null 2>&1; then
-  ok "npm $(npm --version)"
+if pnpm --version >/dev/null 2>&1; then
+  ok "pnpm $(pnpm --version)"
 else
-  warn "npm missing"
+  warn "pnpm missing (provided by mise — see mise.toml)"
   fail=1
 fi
 

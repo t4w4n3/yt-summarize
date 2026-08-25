@@ -5,7 +5,7 @@ Mise is the DevEx entrypoint. Every contributor action is a task file in `.mise/
 ## Quick start
 
 ```bash
-mise run setup   # .env, npm ci, Playwright browser (first time)
+mise run setup   # .env, pnpm install, Playwright browser (first time)
 mise run up      # build + start the stack (app + worker) → http://localhost:8080
 ```
 
@@ -13,7 +13,7 @@ mise run up      # build + start the stack (app + worker) → http://localhost:8
 
 | Command | Description |
 |---|---|
-| `mise run setup` | One-time setup: `.env`, npm deps, Playwright browser |
+| `mise run setup` | One-time setup: `.env`, pnpm deps, Playwright browser |
 | `mise run up` | Build + start the stack |
 | `mise run build` | Build the image only |
 | `mise run status` | `podman-compose ps` |
@@ -41,4 +41,4 @@ Aliases: `install` (setup), `start` (up), `stop` (down), `ps` (status), `b` (bui
 - The stack runs via podman-compose; secrets (`~/.secrets/openrouter.gpg`, `~/.gnupg`) are host GPG mounts, decrypted in worker memory — never put keys in `.env`.
 - YouTube downloads go through Mullvad via a `vpn` sidecar service (compose): it brings up the WireGuard tunnel in its own netns and exposes a loopback-only SOCKS5 proxy (127.0.0.1:1080). The worker's yt-dlp uses `--proxy socks5h://…` (`MULLVAD_ENABLED`/`MULLVAD_PROXY` in `.env`) — only yt-dlp's traffic exits via the tunnel. No host routes/firewall are touched; the tunnel never leaves the sidecar's network namespace. The WireGuard config lives at `~/.local/mullvad-poc/wg0.conf` (private key, 0600). Re-scan relays when YouTube starts blocking again: `mise run mullvad scan` (then `mise run mullvad init -i <addr> -r <relay>`).
 - Local dev data dirs: `.local/` (gitignored).
-- Raw commands (`podman-compose …`, `npm run …`) work, but task files are the documented interface.
+- Raw commands (`podman-compose …`, `pnpm run …`) work, but task files are the documented interface.

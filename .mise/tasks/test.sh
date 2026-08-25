@@ -6,4 +6,4 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-npm run test:e2e
+pnpm run test:e2e

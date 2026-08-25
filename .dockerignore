@@ -1,5 +1,7 @@
 node_modules
 npm-debug.log
+pnpm-debug.log
+.pnpm-store
 .git
 .gitignore
 .playwright-cli

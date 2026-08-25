@@ -36,7 +36,13 @@ done
 # idempotents : podman-compose 1.3.0 tente un create même quand l'image
 # n'a pas changé, ce qui sort 3 erreurs rouges alors que l'opération est
 # légitime. --remove-orphans nettoie les orphelins sans bruit.
-podman-compose up -d --build --force-recreate --remove-orphans
+# CACHE_BUST force l'invalidation du layer COPY src/ quand HEAD bouge
+# (le cache podman réutilisait l'ancien src même après git pull).
+CACHE_BUST="$(git rev-parse HEAD 2>/dev/null || date +%s)"
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  CACHE_BUST="${CACHE_BUST}-dirty-$(git status --porcelain 2>/dev/null | sha256sum | cut -c1-8)"
+fi
+podman-compose up -d --build --build-arg "CACHE_BUST=${CACHE_BUST}" --force-recreate --remove-orphans
 echo
 echo "Stack started: http://localhost:${PORT:-8080}"
 podman-compose ps

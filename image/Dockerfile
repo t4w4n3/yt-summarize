@@ -27,6 +27,8 @@ COPY package.json pnpm-lock.yaml ./
 RUN npm install -g pnpm@11.21.0 && pnpm install --frozen-lockfile --prod
 
 RUN mkdir -p /data /artifacts && chown -R node:node /app /data /artifacts
+# Bust cache when git HEAD moves so `COPY src/` is never stale (podman layer cache bug).
+ARG CACHE_BUST=""
 COPY src/ /app/src/
 COPY image/entrypoint-app.sh image/entrypoint-worker.sh image/entrypoint-vpn.sh /app/
 RUN chmod +x /app/entrypoint-*.sh && chown -R node:node /app

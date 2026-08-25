@@ -32,7 +32,7 @@ mise run up      # build + start the stack (app + worker) → http://localhost:8
 | `mise run mullvad <mode>` | Mullvad ops: relay rotation (`scan`), config provisioning (`init`), tunnel debug (`run`/`test`/`dryrun`) — the production path is the `vpn` sidecar, no `MULLVAD_ACCOUNT` needed for the interactive flow |
 | `mise run backup` | Back up both volumes (SQLite job DB + artifacts) to `~/.local/backups` |
 | `mise run restore <file> [-y]` | Restore both volumes from a `summarize-yt-*.tar.gz` backup (stops + restarts the stack) |
-| `mise run lint [--fix] [--changed]` | Run every linter — tsc typecheck, Biome (JS/TS/JSON), shellcheck+shfmt (shell), yamllint strict, hadolint (Containerfile), podman-compose config |
+| `mise run lint [--fix] [--changed] [--fail-fast/-ff]` | Run every linter — tsc typecheck, Biome (JS/TS/JSON), shellcheck+shfmt (shell), yamllint strict, hadolint (Containerfile), podman-compose config |
 | `mise run lint-types` | Typecheck all TypeScript with `tsc --noEmit` (strict, erasable-syntax-only) |
 | `mise run lint-js [--fix] [--changed]` | Lint/format JS, TS and JSON with Biome (recommended rules + assist, error-on-warnings) |
 | `mise run lint-shell [--fix] [--changed]` | shellcheck (`--severity=style --enable=all`) + shfmt formatting check on shell scripts |
@@ -40,10 +40,11 @@ mise run up      # build + start the stack (app + worker) → http://localhost:8
 | `mise run lint-containerfile [--changed]` | hadolint on Containerfiles/Dockerfiles (failure-threshold: style) |
 | `mise run lint-compose [--changed]` | Validate compose files render with podman-compose |
 | `mise run security` | Run every security check: pnpm audit, Trivy (vulns/secrets/misconfig), Gitleaks (working tree + git history) |
+| `mise run check` | Full gate: doctor + lint + test + security |
 | `mise run doctor` | Verify tools, Node ≥24, `.env`, GPG secrets |
 | `mise run docs` | Serve the architecture/stack docs (Mermaid) at :8123; `--expose` publishes on the tailnet via `tailscale serve` (https 8443) |
 
-Aliases: `install` (setup), `start` (up), `stop` (down), `ps` (status), `b` (build), `t` (test), `tc` (test-containers), `check` (doctor).
+Aliases: `install` (setup), `start` (up), `stop` (down), `ps` (status), `b` (build), `t` (test), `tc` (test-containers).
 
 ## Notes for agents
 

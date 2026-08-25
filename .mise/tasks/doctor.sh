@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 #MISE description="Check prerequisites: tools, Node version, .env, GPG secrets"
-#MISE alias="check"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"

@@ -8,6 +8,7 @@ import {
   nextAfterBase64Failure,
   nextAfterMultipartFailure,
 } from '../../domain/transcription/policy.ts';
+import type { AudioSplitterPort, SpeechToTextPort, TranscriptionAttempt } from '../../domain/transcription/ports.ts';
 import { config } from '../../shared/constants.ts';
 import * as openrouter from './openrouter.ts';
 import type { StageContext } from './process.ts';
@@ -17,10 +18,14 @@ export { CHUNK_DURATION_SEC, MULTIPART_LIMIT } from '../../domain/transcription/
 
 const API_URL = 'https://openrouter.ai/api/v1/audio/transcriptions';
 
-/** StageContext plus dependency-injection hooks used by unit tests. */
+/** StageContext plus dependency-injection hooks used by unit tests and for contract coupling. */
 export interface TranscribeContext extends StageContext {
   /** Defaults to openrouter.resolveOpenRouterKey; injectable in tests. */
   resolveKey?: () => Promise<string>;
+  /** Speech-to-text port — defaults to OpenRouter HTTPS adapter. Injected in unit tests via fakes. */
+  stt?: SpeechToTextPort;
+  /** Audio splitter port — defaults to manual PCM slicing + ffmpeg fallback. */
+  splitter?: AudioSplitterPort;
 }
 
 function appendLog(logPath: string | undefined, line: string): void {
@@ -34,7 +39,7 @@ function doFetch(url: string, options: RequestInit): Promise<Response> {
   return fetch(url, options);
 }
 
-async function transcribeMultipart(
+async function transcribeMultipartRaw(
   wavPath: string,
   apiKey: string,
   signal: AbortSignal,
@@ -56,7 +61,7 @@ async function transcribeMultipart(
   });
 }
 
-async function transcribeBase64(
+async function transcribeBase64Raw(
   wavPath: string,
   apiKey: string,
   signal: AbortSignal,
@@ -76,26 +81,62 @@ async function transcribeBase64(
   });
 }
 
-interface TranscribePayload {
-  text?: unknown;
-}
-
-async function handleResponse(response: Response): Promise<{ text: string }> {
-  let body: TranscribePayload | null = null;
+async function responseToAttempt(response: Response): Promise<TranscriptionAttempt> {
+  let body: unknown = {};
+  let raw = '';
   try {
-    body = (await response.json()) as TranscribePayload;
+    body = await response.json();
+    raw = JSON.stringify(body).slice(0, 1000);
   } catch {
     body = {};
+    raw = '';
   }
-  const text = typeof body?.text === 'string' ? body.text.trim() : '';
-  if (!response.ok || !text) {
-    throw new StageError(
-      `Transcription failed (HTTP ${response.status}).`,
-      'transcribing',
-      JSON.stringify(body).slice(0, 1000),
-    );
-  }
-  return { text };
+  const text = typeof (body as { text?: unknown })?.text === 'string' ? (body as { text: string }).text.trim() : '';
+  const ok = response.ok && !!text;
+  // errorDetails must contain the body for policy classification (413 / 25 MB / input_audio)
+  // and the HTTP status so that even empty bodies with 413 are detected.
+  const errorDetails = ok ? '' : `${raw} HTTP ${response.status}`.trim();
+  return {
+    httpStatus: response.status,
+    ok,
+    text,
+    errorDetails: errorDetails || raw,
+  };
+}
+
+function createDefaultStt(logPath: string | undefined): SpeechToTextPort {
+  return {
+    async attemptMultipart(wavPath, apiKey, signal): Promise<TranscriptionAttempt> {
+      try {
+        const response = await transcribeMultipartRaw(wavPath, apiKey, signal, logPath);
+        return await responseToAttempt(response);
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') throw error;
+        const message = error instanceof Error ? error.message : String(error);
+        // Network / file read errors become a failed attempt so policy can decide.
+        // Throw only for abort — let caller handle retry classification.
+        return { httpStatus: 0, ok: false, text: '', errorDetails: message };
+      }
+    },
+    async attemptBase64(wavPath, apiKey, signal): Promise<TranscriptionAttempt> {
+      try {
+        const response = await transcribeBase64Raw(wavPath, apiKey, signal, logPath);
+        return await responseToAttempt(response);
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') throw error;
+        const message = error instanceof Error ? error.message : String(error);
+        return { httpStatus: 0, ok: false, text: '', errorDetails: message };
+      }
+    },
+  };
+}
+
+function createDefaultSplitter(): AudioSplitterPort {
+  return {
+    async splitIntoChunks(wavPath, jobDir, chunkDurationSec): Promise<string[]> {
+      return splitWavIntoChunks(wavPath, jobDir, chunkDurationSec);
+    },
+  };
 }
 
 // Split a 16 kHz mono s16le WAV into ~CHUNK_DURATION_SEC chunks by slicing
@@ -219,6 +260,13 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const signal = context.signal ? AbortSignal.any([controller.signal, context.signal]) : controller.signal;
 
+  // Contract coupling: injected fakes in unit tests, default adapters in production.
+  // This is the Balanced Coupling fix — high-strength intrusive fetch/fs is now
+  // behind a weak contract (SpeechToTextPort / AudioSplitterPort), so
+  // high-distance (core, volatile STT provider) is balanced by low strength.
+  const stt: SpeechToTextPort = context.stt ?? createDefaultStt(context.logPath);
+  const splitter: AudioSplitterPort = context.splitter ?? createDefaultSplitter();
+
   try {
     let statSize = 0;
     try {
@@ -229,38 +277,40 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
     // limit error is rethrown instead of falling through.
     const initial = chooseInitialStrategy(statSize);
 
-    const tryHandle = async (resp: Response): Promise<string> => {
-      const { text } = await handleResponse(resp);
-      return text;
-    };
-
     let text: string | null = null;
 
     if (initial === 'multipart') {
-      try {
-        const response = await transcribeMultipart(wavPath, apiKey, signal, context.logPath);
-        text = await tryHandle(response);
-      } catch (error) {
-        const details = error instanceof StageError ? error.details : '';
-        const message = error instanceof Error ? error.message : String(error);
-        const msg = `${message} ${details}`;
-        if (nextAfterMultipartFailure(msg) === null) throw error;
+      const attempt = await stt.attemptMultipart(wavPath, apiKey, signal);
+      if (attempt.ok) {
+        text = attempt.text;
+      } else {
+        const combined = `${attempt.errorDetails} HTTP ${attempt.httpStatus}`;
+        if (nextAfterMultipartFailure(combined) === null) {
+          throw new StageError(
+            `Transcription failed (HTTP ${attempt.httpStatus || 0}).`,
+            'transcribing',
+            attempt.errorDetails,
+          );
+        }
         appendLog(context.logPath, `multipart hit 413 (size=${statSize}), retrying as base64 JSON via input_audio`);
-        // fall through to base64
         text = null;
       }
     }
 
     if (text === null) {
       // For large files or small files that got 413, try base64 JSON.
-      try {
-        const response = await transcribeBase64(wavPath, apiKey, signal, context.logPath);
-        text = await tryHandle(response);
-      } catch (error) {
-        const details = error instanceof StageError ? error.details : '';
-        const message = error instanceof Error ? error.message : String(error);
-        const msg = `${message} ${details}`;
-        if (nextAfterBase64Failure(msg, statSize) === null) throw error;
+      const attempt = await stt.attemptBase64(wavPath, apiKey, signal);
+      if (attempt.ok) {
+        text = attempt.text;
+      } else {
+        const combined = `${attempt.errorDetails} HTTP ${attempt.httpStatus}`;
+        if (nextAfterBase64Failure(combined, statSize) === null) {
+          throw new StageError(
+            `Transcription failed (HTTP ${attempt.httpStatus || 0}).`,
+            'transcribing',
+            attempt.errorDetails,
+          );
+        }
         appendLog(
           context.logPath,
           `base64 still hit 413 or large file fallback (size=${statSize}), splitting into ${CHUNK_DURATION_SEC}s chunks`,
@@ -271,21 +321,21 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
 
     if (text === null) {
       // Final fallback: chunk and transcribe sequentially.
-      const chunkPaths = await splitWavIntoChunks(wavPath, context.jobDir, CHUNK_DURATION_SEC);
+      const chunkPaths = await splitter.splitIntoChunks(wavPath, context.jobDir, CHUNK_DURATION_SEC);
       if (chunkPaths.length === 0) throw new StageError('Could not split audio for transcription.', 'transcribing');
       appendLog(context.logPath, `split into ${chunkPaths.length} chunk(s), transcribing sequentially`);
       const parts: string[] = [];
       for (const chunkPath of chunkPaths) {
         appendLog(context.logPath, `transcribing chunk ${path.basename(chunkPath)}`);
-        const chunkResp = await transcribeMultipart(chunkPath, apiKey, signal, context.logPath);
-        const { text: chunkText } = await handleResponse(chunkResp);
-        if (!chunkText)
+        const chunkAttempt = await stt.attemptMultipart(chunkPath, apiKey, signal);
+        if (!chunkAttempt.ok || !chunkAttempt.text) {
           throw new StageError(
-            `Transcription failed (HTTP ${chunkResp.status}).`,
+            `Transcription failed (HTTP ${chunkAttempt.httpStatus || 0}).`,
             'transcribing',
-            `empty chunk ${path.basename(chunkPath)}`,
+            chunkAttempt.errorDetails || `empty chunk ${path.basename(chunkPath)}`,
           );
-        parts.push(chunkText);
+        }
+        parts.push(chunkAttempt.text);
       }
       text = joinTranscriptParts(parts);
       // Clean up chunk dir (keep on failure for debugging).
@@ -305,11 +355,11 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
     if (error instanceof StageError) throw error;
     const message = error instanceof Error ? error.message : String(error);
     const name = error instanceof Error ? error.name : '';
-    throw new StageError(
-      name === 'AbortError' ? 'Transcription timed out.' : 'The transcription API could not be reached.',
-      'transcribing',
-      message,
-    );
+    // Abort from the internal timeout controller
+    if (name === 'AbortError') {
+      throw new StageError('Transcription timed out.', 'transcribing', message);
+    }
+    throw new StageError('The transcription API could not be reached.', 'transcribing', message);
   } finally {
     clearTimeout(timeout);
   }

@@ -26,7 +26,7 @@ function now(): string {
 
 export function extractVideoIdFromUrl(value: string): string | null {
   try {
-    const url = new URL(value);
+    const url = new URL(value.trim());
     const hostname = url.hostname.toLowerCase();
     const isShort = hostname.endsWith('youtu.be');
     const id = isShort ? url.pathname.slice(1).split('/')[0] : url.searchParams.get('v');

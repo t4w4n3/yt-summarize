@@ -4,7 +4,7 @@ import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
 import { config } from '../shared/constants.ts';
 import type { JobRow } from '../shared/db.ts';
-import { createJob, findExistingJobByVideoId, getJob, openDatabase } from '../shared/db.ts';
+import { createJob, extractVideoIdFromUrl, findExistingJobByVideoId, getJob, openDatabase } from '../shared/db.ts';
 
 const app = express();
 const db = openDatabase();
@@ -12,17 +12,6 @@ const publicDir = path.join(import.meta.dirname, 'public');
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
-
-function extractVideoId(value: string): string | null {
-  try {
-    const url = new URL(value.trim());
-    const hostname = url.hostname.toLowerCase();
-    const isShort = hostname.endsWith('youtu.be');
-    const id = isShort ? url.pathname.slice(1).split('/')[0] : url.searchParams.get('v');
-    if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) return id;
-  } catch {}
-  return null;
-}
 
 function validateYouTubeUrl(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > 2048) return 'Enter a YouTube video URL.';
@@ -95,7 +84,7 @@ app.post('/api/summarize', (req: Request<object, unknown, CreateBody>, res: Resp
   const lang = normalizeLang(req.body?.lang);
   if (!lang) return res.status(400).json({ error: 'The output language must be a two-letter ISO 639-1 code.' });
   const url = (req.body.url as string).trim();
-  const videoId = extractVideoId(url);
+  const videoId = extractVideoIdFromUrl(url);
   const existing = videoId ? findExistingJobByVideoId(db, videoId, lang) : null;
   if (existing) {
     return res.status(200).json({ jobId: existing.id, deduped: true });

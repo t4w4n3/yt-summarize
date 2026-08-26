@@ -2,7 +2,7 @@
 
 **Project:** `summarize-yt` — self-hosted YouTube → study-note workstation (Node 24, Express, SQLite, yt-dlp/ffmpeg, OpenRouter)
 **Date:** 2026-08-26
-**Branch:** `main` → `1db1f3a` (`refactor(coupling): balance transcription via ports and unify video-id extraction`)
+**Branch:** `main` → `1db1f3a` → `e892630` (`refactor(coupling): split shared constants, unify secrets, document shared-DB — P3-P5`)
 **Method:** Test-first (red → green → refactor), Balanced Coupling model (strength × distance × volatility)
 **Gate:** `mise` hermetic gate — `typecheck + unit + arch (archunit) + integration + e2e (Playwright) + security + lint`
 

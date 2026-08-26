@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { describe, it } from 'node:test';
+import { describe, it, mock } from 'node:test';
+import { OpenRouterSecretError, resolveOpenRouterKey } from '../../src/shared/secrets.ts';
 
 // P4 — shared/secrets.ts single contract, eliminates duplicated fs.existsSync + placeholder logic.
 describe('P4 — shared/secrets single contract', () => {
@@ -10,6 +11,46 @@ describe('P4 — shared/secrets single contract', () => {
     assert.equal(typeof secrets.resolveOpenRouterKey, 'function');
     // Optional: generic resolveSecret is acceptable alternative
     // but at least these two must exist
+  });
+
+  it('uses a stable typed error for invalid OpenRouter secret contents', () => {
+    const cause = new Error('invalid fixture');
+    const error = new OpenRouterSecretError('invalid secret', 'invalid-secret', { cause });
+    assert.equal(error.code, 'invalid-secret');
+    assert.equal(error.cause, cause);
+    assert.equal(error.name, 'OpenRouterSecretError');
+  });
+
+  it('preserves the typed error when the podman secret is invalid', async () => {
+    mock.method(fs, 'existsSync', (filePath: fs.PathLike) => filePath.toString() === '/run/secrets/openrouter_key');
+    mock.method(fs, 'readFileSync', () => 'not-an-openrouter-key');
+    try {
+      await assert.rejects(resolveOpenRouterKey(), (error: unknown) => {
+        if (!(error instanceof OpenRouterSecretError)) return false;
+        assert.equal(error.code, 'invalid-secret');
+        return true;
+      });
+    } finally {
+      mock.restoreAll();
+    }
+  });
+
+  it('recognizes only real Netscape cookie files, not a length-based placeholder', async () => {
+    const { resolveYouTubeCookiesPath } = await import('../../src/shared/secrets.ts');
+    const files = new Map<string, string>([['/run/secrets/youtube_cookies', '# empty - no cookies\n']]);
+    mock.method(fs, 'existsSync', (filePath: fs.PathLike) => files.has(filePath.toString()));
+    mock.method(fs, 'statSync', () => ({ size: 21 }) as fs.Stats);
+    mock.method(fs, 'readFileSync', (filePath: fs.PathLike) => files.get(filePath.toString()) ?? '');
+    try {
+      assert.equal(resolveYouTubeCookiesPath(), null);
+      files.set(
+        '/run/secrets/youtube_cookies',
+        '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tFALSE\t0\tSID\tvalue\n',
+      );
+      assert.equal(resolveYouTubeCookiesPath(), '/run/secrets/youtube_cookies');
+    } finally {
+      mock.restoreAll();
+    }
   });
 
   it('download.ts delegates to shared/secrets (no duplicated placeholder logic)', () => {
@@ -31,6 +72,12 @@ describe('P4 — shared/secrets single contract', () => {
     // After consolidation it lives only in shared/secrets.ts; openrouter.ts should not have duplicate validation
     const count = (src.match(/\/run\/secrets\/openrouter_key/g) || []).length;
     assert.ok(count <= 1, `openrouter.ts should not duplicate secret path logic (found ${count} occurrences)`);
+  });
+
+  it('openrouter.ts classifies shared secret failures without message substring coupling', () => {
+    const src = fs.readFileSync('src/worker/stages/openrouter.ts', 'utf8');
+    assert.match(src, /OpenRouterSecretError/);
+    assert.doesNotMatch(src, /message\.includes\(/);
   });
 
   it('shared/secrets.ts owns the placeholder + path knowledge exactly once', () => {

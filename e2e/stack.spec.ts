@@ -22,6 +22,12 @@ test('API contract: validation, lifecycle, result, download', async ({ request }
   const noBody = await request.post('/api/summarize', { data: {} });
   expect(noBody.status()).toBe(400);
 
+  const oversized = await request.post('/api/summarize', {
+    data: { url: VALID_URL, padding: 'x'.repeat(20 * 1024) },
+  });
+  expect(oversized.status()).toBe(413);
+  expect(((await oversized.json()) as { error?: string }).error).toBe('Request body too large.');
+
   // Create a job
   const created = await request.post('/api/summarize', { data: { url: VALID_URL } });
   expect(created.status()).toBe(201);

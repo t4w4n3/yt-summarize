@@ -10,27 +10,42 @@ const OPENROUTER_SECRET_PATH = '/run/secrets/openrouter_key';
 const OPENROUTER_LEGACY_GPG = '/secrets/openrouter.gpg';
 const COOKIES_SECRET_PATH = '/run/secrets/youtube_cookies';
 const COOKIES_LEGACY_PATH = '/secrets/youtube-cookies.txt';
+const COOKIES_PLACEHOLDER = '# empty - no cookies';
+const NETSCAPE_COOKIE_HEADER = '# Netscape HTTP Cookie File';
+
+export type OpenRouterSecretErrorCode = 'invalid-secret' | 'decryption-failed';
+
+/** Stable failure type for OpenRouter credential resolution across module boundaries. */
+export class OpenRouterSecretError extends Error {
+  readonly code: OpenRouterSecretErrorCode;
+
+  constructor(message: string, code: OpenRouterSecretErrorCode, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'OpenRouterSecretError';
+    this.code = code;
+  }
+}
+
+function isNetscapeCookiesFile(content: string): boolean {
+  const lines = content.split(/\r?\n/).map((line) => line.trim());
+  if (!lines.includes(NETSCAPE_COOKIE_HEADER) || lines.includes(COOKIES_PLACEHOLDER)) return false;
+  return lines.some((line) => {
+    if (!line || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) return false;
+    return line.split('\t').length === 7;
+  });
+}
 
 /**
  * Resolve the YouTube cookies file path for yt-dlp.
  * Returns the podman secret path if it contains a real Netscape cookies file,
  * otherwise the legacy bind-mount path, otherwise null.
- * Placeholder handling (sk-or-missing, # empty) lives here exactly once.
  */
 export function resolveYouTubeCookiesPath(): string | null {
   if (fs.existsSync(COOKIES_SECRET_PATH)) {
-    try {
-      const stat = fs.statSync(COOKIES_SECRET_PATH);
-      if (stat.size > 0) {
-        const content = fs.readFileSync(COOKIES_SECRET_PATH, 'utf8');
-        if (content.trim() && !content.includes('sk-or-missing') && content.includes('Netscape')) {
-          return COOKIES_SECRET_PATH;
-        }
-        if (content.trim().length > 20) {
-          return COOKIES_SECRET_PATH;
-        }
-      }
-    } catch {}
+    const stat = fs.statSync(COOKIES_SECRET_PATH);
+    if (stat.size > 0 && isNetscapeCookiesFile(fs.readFileSync(COOKIES_SECRET_PATH, 'utf8'))) {
+      return COOKIES_SECRET_PATH;
+    }
   }
   if (fs.existsSync(COOKIES_LEGACY_PATH)) {
     return COOKIES_LEGACY_PATH;
@@ -42,34 +57,32 @@ export function resolveYouTubeCookiesPath(): string | null {
  * Resolve the OpenRouter API key.
  * Tries podman secret → legacy GPG → env var.
  * Returns the key string when found, null when missing (placeholder counts as missing).
- * Throws a plain Error when the podman secret exists but contains an invalid
- * non-placeholder value, or when GPG decryption fails — callers (worker layer)
- * wrap this into a StageError so `shared` never depends on `worker`.
+ * Throws an OpenRouterSecretError when a configured secret is invalid or GPG
+ * decryption fails — callers (worker layer) translate this at the stage boundary
+ * so `shared` never depends on `worker`.
  */
 export async function resolveOpenRouterKey(): Promise<string | null> {
   // 1) podman secret (rootless-friendly, tmpfs 0440)
   if (fs.existsSync(OPENROUTER_SECRET_PATH)) {
-    try {
-      const raw = fs.readFileSync(OPENROUTER_SECRET_PATH, 'utf8');
-      const key =
-        raw
-          .trim()
-          .split('\n')
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .at(-1) || '';
-      if (!key) {
-        // empty file → treat as missing, fall through
-      } else if (key.includes('sk-or-missing')) {
-        // dummy placeholder from sync-secrets.sh → treat as missing
-      } else if (key.startsWith('sk-or-')) {
-        return key;
-      } else {
-        throw new Error(`secret at ${OPENROUTER_SECRET_PATH} did not contain a valid sk-or- key`);
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('did not contain')) throw error;
-      throw new Error(error instanceof Error ? error.message : String(error));
+    const raw = fs.readFileSync(OPENROUTER_SECRET_PATH, 'utf8');
+    const key =
+      raw
+        .trim()
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .at(-1) || '';
+    if (!key) {
+      // empty file → treat as missing, fall through
+    } else if (key.includes('sk-or-missing')) {
+      // dummy placeholder from sync-secrets.sh → treat as missing
+    } else if (key.startsWith('sk-or-')) {
+      return key;
+    } else {
+      throw new OpenRouterSecretError(
+        `secret at ${OPENROUTER_SECRET_PATH} did not contain a valid sk-or- key`,
+        'invalid-secret',
+      );
     }
   }
 
@@ -103,7 +116,11 @@ function decryptViaGpg(gpgPath: string): Promise<string> {
     });
     child.on('error', (error: Error) => {
       clearTimeout(timeout);
-      reject(new Error(`Could not decrypt the OpenRouter key: ${error.message}`));
+      reject(
+        new OpenRouterSecretError(`Could not decrypt the OpenRouter key: ${error.message}`, 'decryption-failed', {
+          cause: error,
+        }),
+      );
     });
     child.on('close', (code) => {
       clearTimeout(timeout);
@@ -115,7 +132,15 @@ function decryptViaGpg(gpgPath: string): Promise<string> {
           .filter(Boolean)
           .at(-1) || '';
       if (code !== 0 || !key.startsWith('sk-or-')) {
-        reject(new Error(`Could not resolve the OpenRouter credential. ${stderr.trim().slice(-400)}`));
+        const detail = stderr.trim().slice(-400);
+        const cause = new Error(detail || `gpg exited with code ${code ?? 'unknown'}`);
+        reject(
+          new OpenRouterSecretError(
+            'Could not resolve the OpenRouter credential from the legacy encrypted secret.',
+            'decryption-failed',
+            { cause },
+          ),
+        );
       } else {
         resolve(key);
       }

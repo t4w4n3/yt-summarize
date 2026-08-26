@@ -32,9 +32,12 @@
   let pollTimer = null;
   let currentMarkdown = '';
   let lastDeduped = false;
+  let consecutivePollFailures = 0;
 
   const STORAGE_KEY = 'summarize-yt:lastJobId';
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const POLL_INTERVAL_MS = 2000;
+  const MAX_POLL_FAILURES = 3;
 
   const demoMarkdown = `## Overview
 
@@ -218,6 +221,14 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     }, 3200);
   }
 
+  function errorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  function errorStatus(error) {
+    return error && typeof error === 'object' && 'status' in error ? error.status : undefined;
+  }
+
   function setStage(stage) {
     const stageIndex = ['downloading', 'converting', 'transcribing', 'summarizing'].indexOf(stage);
     steps.forEach((step, index) => {
@@ -312,6 +323,7 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     loading.hidden = false;
     hideResumeBar();
     setBusy(true);
+    consecutivePollFailures = 0;
     statusMessage.textContent = 'QUEUED — waiting for the worker';
     queueState.textContent = '1 QUEUED';
     footerState.textContent = 'QUEUED';
@@ -326,9 +338,10 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       if (!response.ok) throw new Error(data.error || 'Could not create this job.');
       currentJobId = data.jobId;
       lastDeduped = !!data.deduped;
+      consecutivePollFailures = 0;
       saveJobId(currentJobId);
       if (pollTimer) window.clearInterval(pollTimer);
-      pollTimer = window.setInterval(pollStatus, 2000);
+      pollTimer = window.setInterval(pollStatus, POLL_INTERVAL_MS);
       if (data.deduped) {
         statusMessage.textContent = 'TROUVÉ — résumé déjà disponible';
         loadingCopy.textContent = 'TROUVÉ — ouverture instantanée…';
@@ -336,7 +349,7 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       }
       await pollStatus();
     } catch (error) {
-      showError(error.message);
+      showError(errorMessage(error));
     }
   }
 
@@ -345,7 +358,12 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     try {
       const response = await fetch(`/api/jobs/${encodeURIComponent(currentJobId)}`);
       const job = await response.json();
-      if (!response.ok) throw new Error(job.error || 'Could not read job status.');
+      if (!response.ok) {
+        const statusError = new Error(job.error || 'Could not read job status.');
+        statusError.status = response.status;
+        throw statusError;
+      }
+      consecutivePollFailures = 0;
       if (job.status === 'queued') {
         queueState.textContent = '1 QUEUED';
         footerState.textContent = 'QUEUED';
@@ -361,9 +379,24 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       if (job.status === 'done') return finish(job);
       showError(job.error || 'The worker stopped before the note was ready.');
     } catch (error) {
+      if (errorStatus(error) === 404) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
+        clearStoredJobId();
+        showError(errorMessage(error));
+        return;
+      }
+      consecutivePollFailures += 1;
+      if (consecutivePollFailures < MAX_POLL_FAILURES) {
+        const retryCopy = `RECONNECTING — retry ${consecutivePollFailures}/${MAX_POLL_FAILURES}…`;
+        statusMessage.textContent = retryCopy;
+        footerState.textContent = 'RETRYING';
+        loadingCopy.textContent = retryCopy;
+        return;
+      }
       window.clearInterval(pollTimer);
       pollTimer = null;
-      showError(error.message);
+      showError(errorMessage(error));
     }
   }
 
@@ -397,7 +430,7 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
         showToast('Study note ready.');
       }
     } catch (error) {
-      showError(error.message);
+      showError(errorMessage(error));
     }
   }
 
@@ -430,6 +463,7 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
   function reset() {
     if (pollTimer) window.clearInterval(pollTimer);
     pollTimer = null;
+    consecutivePollFailures = 0;
     setBusy(false);
     input.value = '';
     clearStoredJobId();
@@ -440,6 +474,7 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
   function forgetResume() {
     if (pollTimer) window.clearInterval(pollTimer);
     pollTimer = null;
+    consecutivePollFailures = 0;
     clearStoredJobId();
     setBusy(false);
     resetPanels();
@@ -459,6 +494,7 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     errorPanel.hidden = true;
     loading.hidden = false;
     setBusy(true);
+    consecutivePollFailures = 0;
     queueState.textContent = 'RESTORING';
     footerState.textContent = 'RESTORING';
     statusMessage.textContent = 'REPRISE — reconnexion au worker…';
@@ -466,14 +502,19 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
     try {
       const response = await fetch(`/api/jobs/${encodeURIComponent(stored)}`);
       const job = await response.json();
-      if (!response.ok) throw new Error(job.error || 'Job not found.');
+      if (!response.ok) {
+        const statusError = new Error(job.error || 'Job not found.');
+        statusError.status = response.status;
+        throw statusError;
+      }
+      consecutivePollFailures = 0;
       if (job.status === 'queued') {
         queueState.textContent = '1 QUEUED';
         footerState.textContent = 'QUEUED';
         statusMessage.textContent = 'QUEUED — reprise du suivi';
         loadingCopy.textContent = 'QUEUED — reprise du suivi…';
         if (pollTimer) window.clearInterval(pollTimer);
-        pollTimer = window.setInterval(pollStatus, 2000);
+        pollTimer = window.setInterval(pollStatus, POLL_INTERVAL_MS);
         hideResumeBar();
         showToast('Run retrouvé — reprise du suivi.');
         return;
@@ -481,7 +522,7 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       if (job.status === 'running') {
         setStage(job.stage);
         if (pollTimer) window.clearInterval(pollTimer);
-        pollTimer = window.setInterval(pollStatus, 2000);
+        pollTimer = window.setInterval(pollStatus, POLL_INTERVAL_MS);
         hideResumeBar();
         showToast('Run retrouvé — reprise du suivi.');
         return;
@@ -497,12 +538,20 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       showError(job.error || 'Le run précédent a échoué.');
       showResumeBar(stored, 'Run précédent en erreur —');
       setBusy(false);
-    } catch (_error) {
-      clearStoredJobId();
-      hideResumeBar();
-      resetPanels();
+    } catch (error) {
+      if (errorStatus(error) === 404) {
+        clearStoredJobId();
+        hideResumeBar();
+        resetPanels();
+        setBusy(false);
+        currentJobId = null;
+        return;
+      }
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+      showError(errorMessage(error));
+      showResumeBar(stored, 'Run précédent indisponible — rechargez pour réessayer.');
       setBusy(false);
-      currentJobId = null;
     }
   }
 

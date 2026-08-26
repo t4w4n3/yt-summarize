@@ -1,10 +1,10 @@
-import { resolveOpenRouterKey as resolveFromShared } from '../../shared/secrets.ts';
+import { OpenRouterSecretError, resolveOpenRouterKey as resolveFromShared } from '../../shared/secrets.ts';
 import { StageError } from './process.ts';
 
 /**
  * Resolve the OpenRouter API key.
  * Delegates to the single contract in shared/secrets.ts (P4) and translates
- * plain Errors into StageErrors so `shared` never depends on `worker`.
+ * secret-resolution failures into StageErrors so `shared` never depends on `worker`.
  * The plaintext is kept in worker memory for the lifetime of a single
  * request and never written to disk.
  */
@@ -13,19 +13,18 @@ export async function resolveOpenRouterKey(): Promise<string> {
     const key = await resolveFromShared();
     if (key) return key;
   } catch (error) {
-    if (error instanceof Error) {
-      // Invalid secret file or GPG decrypt failure — surface as StageError
-      // so the pipeline can attribute it to the correct stage.
-      if (error.message.includes('did not contain') || error.message.includes('Could not resolve')) {
-        throw new StageError(
-          'Could not resolve the OpenRouter credential. Check the podman secret and worker logs.',
-          'pipeline',
-          error.message,
-        );
-      }
-      throw new StageError('Could not read the OpenRouter secret.', 'pipeline', error.message);
+    if (error instanceof OpenRouterSecretError) {
+      // Secret validation/decryption is translated at the worker boundary so
+      // the pipeline can attribute the failure without coupling shared to it.
+      throw new StageError(
+        'Could not resolve the OpenRouter credential. Check the podman secret and worker logs.',
+        'pipeline',
+        error.message,
+        { cause: error },
+      );
     }
-    throw new StageError('Could not read the OpenRouter secret.', 'pipeline', String(error));
+    const details = error instanceof Error ? error.message : String(error);
+    throw new StageError('Could not read the OpenRouter secret.', 'pipeline', details, { cause: error });
   }
 
   throw new StageError(

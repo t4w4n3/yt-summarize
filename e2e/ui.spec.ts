@@ -19,10 +19,11 @@ const RESULT = {
 
 interface JobMockOptions {
   jobStates?: Array<Record<string, unknown>>;
+  statusResponses?: Array<{ status: number; body: Record<string, unknown> }>;
   createError?: { status: number; error: string };
 }
 
-function installJobMock(page: Page, { jobStates = [], createError }: JobMockOptions) {
+function installJobMock(page: Page, { jobStates = [], statusResponses = [], createError }: JobMockOptions) {
   let pollIndex = 0;
   let posts = 0;
   const bodies: Array<Record<string, unknown>> = [];
@@ -42,8 +43,17 @@ function installJobMock(page: Page, { jobStates = [], createError }: JobMockOpti
     return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ jobId: JOB_ID }) });
   });
   page.route(`**/api/jobs/${JOB_ID}`, (route) => {
-    const state = jobStates[Math.min(pollIndex, jobStates.length - 1)] ?? {};
+    const response = statusResponses[pollIndex];
+    const stateIndex = pollIndex - statusResponses.length;
     pollIndex += 1;
+    if (response) {
+      return route.fulfill({
+        status: response.status,
+        contentType: 'application/json',
+        body: JSON.stringify(response.body),
+      });
+    }
+    const state = jobStates[Math.min(stateIndex, jobStates.length - 1)] ?? {};
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state) });
   });
   page.route(`**/api/jobs/${JOB_ID}/result`, (route) =>
@@ -134,6 +144,38 @@ test('walks a job through all four stages to a rendered note', async ({ page }) 
   for (const stage of STAGE_STEPS) {
     await expect(page.locator(`.pipeline-step[data-stage="${stage}"]`)).toHaveClass(/is-done/);
   }
+});
+
+test('retries transient status failures without abandoning the job', async ({ page }) => {
+  await gotoWithClock(page);
+  installJobMock(page, {
+    statusResponses: [{ status: 503, body: { error: 'Temporary status outage.' } }],
+    jobStates: [{ status: 'queued' }, { status: 'done' }],
+  });
+  await page.fill('#video-url', VALID_URL);
+  await page.click('#submit-button');
+
+  await expect(page.locator('#output-error')).toBeHidden();
+  await expect(page.locator('#output-loading')).toBeVisible();
+  await page.clock.fastForward(2000);
+  await expect(page.locator('#queue-state')).toHaveText('1 QUEUED');
+  await page.clock.fastForward(2000);
+  await expect(page.locator('#note-content')).toBeVisible();
+  await expect(page.locator('#footer-state')).toHaveText('DONE');
+});
+
+test('keeps a resume pointer after a transient status failure', async ({ page }) => {
+  await page.addInitScript((jobId) => {
+    localStorage.setItem('summarize-yt:lastJobId', jobId);
+  }, JOB_ID);
+  await page.clock.install();
+  installJobMock(page, {
+    statusResponses: [{ status: 503, body: { error: 'Temporary status outage.' } }],
+  });
+  await page.goto('/');
+  await expect(page.locator('#output-error')).toBeVisible();
+  await expect(page.locator('#resume-bar')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('summarize-yt:lastJobId'))).toBe(JOB_ID);
 });
 
 test('surfaces a failed job and offers a reset', async ({ page }) => {

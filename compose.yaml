@@ -78,6 +78,10 @@ services:
     healthcheck:
       disable: true
 
+# Pragmatic shared-model: app+worker share JobRow via jobs-data volume (SQLite jobs.db).
+# Balanced today because volatility=low (supporting, single-team, same image, polling)
+# — not VOLATILITY shields the Tight Model+High-Distance coupling.
+# Revisit if queue/history UI lands — extract JobStorePort / published language.
 volumes:
   jobs-data:
   artifacts:

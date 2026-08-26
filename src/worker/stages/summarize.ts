@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { config } from '../../shared/constants.ts';
+import { config } from '../../shared/config.ts';
 import { resolveOpenRouterKey } from './openrouter.ts';
 import type { StageContext } from './process.ts';
 import { StageError } from './process.ts';

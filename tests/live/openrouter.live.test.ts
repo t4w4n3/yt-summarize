@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
-import { config } from '../../src/shared/constants.ts';
+import { config } from '../../src/shared/config.ts';
 import { resolveOpenRouterKey } from '../../src/worker/stages/openrouter.ts';
 
 const RUN_LIVE = process.env.RUN_LIVE_TESTS === '1';

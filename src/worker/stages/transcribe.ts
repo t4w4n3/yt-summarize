@@ -9,7 +9,7 @@ import {
   nextAfterMultipartFailure,
 } from '../../domain/transcription/policy.ts';
 import type { AudioSplitterPort, SpeechToTextPort, TranscriptionAttempt } from '../../domain/transcription/ports.ts';
-import { config } from '../../shared/constants.ts';
+import { config } from '../../shared/config.ts';
 import * as openrouter from './openrouter.ts';
 import type { StageContext } from './process.ts';
 import { runProcess, StageError } from './process.ts';

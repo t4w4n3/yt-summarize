@@ -10,8 +10,8 @@
 //   FAKE_POLL_MS      claim loop interval (default 150)
 
 import http from 'node:http';
-import { STAGES } from '../src/shared/constants.ts';
 import { claimNextJob, heartbeat, markDone, markFailed, openDatabase, updateStage } from '../src/shared/db.ts';
+import { STAGES } from '../src/shared/job.ts';
 
 const HEALTH_PORT = Number(process.env.FAKE_WORKER_PORT || 4175);
 const STAGE_DELAY_MS = Number(process.env.FAKE_STAGE_DELAY_MS || 250);

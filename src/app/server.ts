@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
-import { config } from '../shared/constants.ts';
+import { config } from '../shared/config.ts';
 import type { JobRow } from '../shared/db.ts';
 import { createJob, extractVideoIdFromUrl, findExistingJobByVideoId, getJob, openDatabase } from '../shared/db.ts';
 

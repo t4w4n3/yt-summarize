@@ -1,7 +1,12 @@
+// Pragmatic shared-model: app+worker share JobRow via jobs-data volume.
+// Balanced today because volatility=low (supporting, single-team, same image,
+// polling via BEGIN IMMEDIATE) — not VOLATILITY shields the tight Model+High-Distance coupling.
+// Revisit if queue/history UI lands (volatility → high) — extract JobStorePort / published language via publicJob().
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import type { JobStatus } from './constants.ts';
-import { config, dbPath, STATUS } from './constants.ts';
+import { config, dbPath } from './config.ts';
+import type { JobStatus } from './job.ts';
+import { STATUS } from './job.ts';
 
 export interface JobRow {
   id: string;

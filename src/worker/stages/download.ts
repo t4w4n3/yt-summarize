@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveYouTubeCookiesPath } from '../../shared/secrets.ts';
 import type { StageContext } from './process.ts';
 import { runProcess, StageError } from './process.ts';
 
@@ -33,29 +34,8 @@ export async function download(job: { url: string }, context: StageContext): Pro
   }
   // YouTube bot-checks datacenter IPs; a Netscape-format cookies file (e.g. exported
   // from a logged-in browser) makes downloads reliable on those networks.
-  // Preferred: podman secret at /run/secrets/youtube_cookies (rootless-friendly).
-  // Fallback: legacy bind mount at /secrets/youtube-cookies.txt.
-  const cookiesSecret = '/run/secrets/youtube_cookies';
-  const cookiesLegacy = '/secrets/youtube-cookies.txt';
-  let cookiesPath: string | null = null;
-  if (fs.existsSync(cookiesSecret)) {
-    try {
-      const stat = fs.statSync(cookiesSecret);
-      if (stat.size > 0) {
-        const content = fs.readFileSync(cookiesSecret, 'utf8');
-        // dummy placeholder from sync script is "# empty" or sk-or-missing; skip
-        if (content.trim() && !content.includes('sk-or-missing') && content.includes('Netscape')) {
-          cookiesPath = cookiesSecret;
-        } else if (content.trim().length > 20) {
-          // any non-empty non-placeholder is treated as cookies
-          cookiesPath = cookiesSecret;
-        }
-      }
-    } catch {}
-  }
-  if (!cookiesPath && fs.existsSync(cookiesLegacy)) {
-    cookiesPath = cookiesLegacy;
-  }
+  // Secret layout is consolidated in shared/secrets.ts (P4).
+  const cookiesPath = resolveYouTubeCookiesPath();
   if (cookiesPath) {
     args.push('--cookies', cookiesPath);
   }

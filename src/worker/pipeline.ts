@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { config, STAGES, stageTimeoutMs } from '../shared/constants.ts';
+import { config } from '../shared/config.ts';
 import type { JobRow } from '../shared/db.ts';
 import { heartbeat, markDone, updateStage } from '../shared/db.ts';
+import { STAGES } from '../shared/job.ts';
+import { stageTimeoutMs } from '../shared/timeouts.ts';
 import { convert } from './stages/convert.ts';
 import { download } from './stages/download.ts';
 import { StageError } from './stages/process.ts';

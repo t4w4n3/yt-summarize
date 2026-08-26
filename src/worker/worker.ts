@@ -1,4 +1,4 @@
-import { config } from '../shared/constants.ts';
+import { config } from '../shared/config.ts';
 import {
   claimNextJob,
   closeDatabase,

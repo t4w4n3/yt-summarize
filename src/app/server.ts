@@ -130,6 +130,13 @@ app.get('/api/jobs/:id/result.md', (req: Request<{ id: string }>, res: Response)
 app.use(express.static(publicDir, { index: 'index.html' }));
 app.use((_req: Request, res: Response) => res.status(404).json({ error: 'Not found.' }));
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const status =
+    typeof error === 'object' && error !== null && 'status' in error
+      ? error.status
+      : typeof error === 'object' && error !== null && 'statusCode' in error
+        ? error.statusCode
+        : undefined;
+  if (status === 413) return res.status(413).json({ error: 'Request body too large.' });
   if (error instanceof SyntaxError && 'body' in error)
     return res.status(400).json({ error: 'Request body must be valid JSON.' });
   console.error(error);

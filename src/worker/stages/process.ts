@@ -6,8 +6,8 @@ export class StageError extends Error {
   stage: string;
   details: string;
 
-  constructor(message: string, stage: string, details = '') {
-    super(message);
+  constructor(message: string, stage: string, details = '', options?: ErrorOptions) {
+    super(message, options);
     this.name = 'StageError';
     this.stage = stage;
     this.details = details;

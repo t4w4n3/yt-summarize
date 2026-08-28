@@ -18,13 +18,31 @@ import { transcribe } from './stages/transcribe.ts';
  */
 export type StagedError = Error & { stage?: string | null };
 
+/**
+ * The four outbound stages run in sequence. Injectable so tests can stub the
+ * real subprocess/HTTP adapters; defaults to the real implementations.
+ */
+export interface PipelineStages {
+  download: typeof download;
+  convert: typeof convert;
+  transcribe: typeof transcribe;
+  summarize: typeof summarize;
+}
+
+const realStages: PipelineStages = { download, convert, transcribe, summarize };
+
 export function stageOf(error: unknown): string | null {
   if (error instanceof StageError) return error.stage;
   if (error instanceof Error) return (error as StagedError).stage ?? null;
   return null;
 }
 
-export async function runPipeline(db: DatabaseSync, job: JobRow, signal: AbortSignal): Promise<void> {
+export async function runPipeline(
+  db: DatabaseSync,
+  job: JobRow,
+  signal: AbortSignal,
+  stages: PipelineStages = realStages,
+): Promise<void> {
   const jobDir = path.join(config.artifactsDir, job.id);
   fs.mkdirSync(jobDir, { recursive: true });
   const logPath = path.join(jobDir, 'stage.log');
@@ -38,16 +56,16 @@ export async function runPipeline(db: DatabaseSync, job: JobRow, signal: AbortSi
   try {
     currentStage = STAGES[0];
     updateStage(db, job.id, currentStage, 5);
-    const downloaded = await download(job, { ...context, timeoutMs: stageTimeoutMs(currentStage) });
+    const downloaded = await stages.download(job, { ...context, timeoutMs: stageTimeoutMs(currentStage) });
     audioPath = downloaded.audioPath;
 
     currentStage = STAGES[1];
     updateStage(db, job.id, currentStage, 25);
-    wavPath = await convert(audioPath, { ...context, timeoutMs: stageTimeoutMs(currentStage) });
+    wavPath = await stages.convert(audioPath, { ...context, timeoutMs: stageTimeoutMs(currentStage) });
 
     currentStage = STAGES[2];
     updateStage(db, job.id, currentStage, 45);
-    transcriptPath = await transcribe(wavPath, { ...context, timeoutMs: stageTimeoutMs(currentStage) });
+    transcriptPath = await stages.transcribe(wavPath, { ...context, timeoutMs: stageTimeoutMs(currentStage) });
     try {
       fs.rmSync(audioPath, { force: true });
     } catch {}
@@ -58,7 +76,7 @@ export async function runPipeline(db: DatabaseSync, job: JobRow, signal: AbortSi
     currentStage = STAGES[3];
     updateStage(db, job.id, currentStage, 70);
     // Legacy rows have a NULL lang column; NULL means English.
-    const markdown = await summarize(transcriptPath, {
+    const markdown = await stages.summarize(transcriptPath, {
       ...context,
       timeoutMs: stageTimeoutMs(currentStage),
       lang: job.lang || 'en',

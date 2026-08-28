@@ -13,11 +13,11 @@ Priorisation par risque (et non à l'aveugle) :
 
 | Layer | Avant | Après |
 |---|---|---|
-| **worker** | 37.8% | **74.2%** → **81.1%** → **87.7%** |
+| **worker** | 37.8% | **74.2%** → **81.1%** → **87.7%** → **94.7%** |
 | **shared** | 48.9% | **75.2%** → **84.9%** |
 | domain | 100% | 100% |
 
-(La colonne « Après » reflète la dernière mesure ; worker a été poussé 74.2%→81.1%→87.7% et shared a profité du passage de la pipeline par `openDatabase` réel → 75.2%→84.9%. Voir « Suite ».)
+(La colonne « Après » reflète la dernière mesure ; worker a été poussé 74.2%→81.1%→87.7%→94.7% et shared a profité du passage de la pipeline par `openDatabase` réel → 75.2%→84.9%. Voir « Suite ».)
 
 Stable sur 3 runs consécutifs ; suite hermétique complète (`pnpm run test`, y compris 15 e2e) verte.
 
@@ -29,7 +29,8 @@ Stable sur 3 runs consécutifs ; suite hermétique complète (`pnpm run test`, y
 - **`openrouter-boundary.test.ts`** — traduction des erreurs de secret en StageError → `openrouter.ts` **31%→100%**
 - **`summarize-boundary.test.ts`** — appel LLM (stub fetch + env key) et `extractContent` → `summarize.ts` **16%→96%**
 - **`worker-core.test.ts`** — boucle de polling (`createWorker`) sur une vraie DB SQLite avec `runJob`/`sleep` factices : claim→run→done, markFailed + attribution de stage via `StageError`, reclaim de jobs stale, boucle start/stop, et `runWithTimeout` (timeout + abort) → `worker.ts` **0%** → la logique vit désormais dans `worker-core.ts` **96.5%**
-- **`pipeline-orchestration.test.ts`** — `runPipeline` avec des stages factices injectés (pas de vrais subprocess/HTTP) : ordre download→convert→transcribe→summarize, markDone, attribution de stage (StageError sans stage / préservé / plain Error / non-Error), nettoyage des fichiers temporaires en `finally`, passage de `lang` (et défaut NULL→en). Le test passe par le vrai `openDatabase()` avec DATA_DIR/ARTIFACTS_DIR pinés sur des temp dirs avant import (import dynamique) → **`pipeline.ts` 40%→100%**
+- **`pipeline-orchestration.test.ts`** — `runPipeline` avec des stages factices injectés (pas de vrais subprocess/HTTP) : ordre download→convert→transcribe→summarize, markDone, attribution de stage (StageError sans stage / préservé / plain Error / non-Error), nettoyage des fichiers temporaires en `finally`, passage de `lang` (et défaut NULL→en). Passe par le vrai `openDatabase()` avec DATA_DIR/ARTIFACTS_DIR pinés avant import (import dynamique) → **`pipeline.ts` 40%→100%**
+- **`transcribe-edge.test.ts`** — chemins restants de `transcribe.ts` (boundary/ports couvrent déjà le succès + fallbacks) : échec de parse JSON & erreur réseau du stt par défaut (multipart/base64), branche « pas de stratégie suivante » (multipart 413 → base64 non-413 → throw, et base64 réseau → chunk), échec d'un chunk, mapping d'erreur externe (cancelled / AbortError→timeout / générique→unreachable), et fallback ffmpeg de `splitWavIntoChunks` (fausse CLI ffmpeg sur PATH) → **`transcribe.ts` 78.7%→97.3%**
 
 ## Changements de production
 
@@ -52,4 +53,4 @@ Stable sur 3 runs consécutifs ; suite hermétique complète (`pnpm run test`, y
 
 ## Suite possible
 
-- Worker a passé 87.7% (pipeline.ts à 100%). Prochains leviers pour pousser : `transcribe.ts` (78.7%) — logique de chunking/fallback déjà en partie couverte par `transcribe — 25 MB multipart boundary` ; puis les fichiers 0% de `app`/`vpn` (hors scope, e2e + thin wrapper). Le gate `--min-lines` reste à brancher plus tard (comme convenu) ; la task `cov` reste indicative.
+- Worker a passé 94.7% (pipeline.ts 100%, transcribe.ts 97.3%). Il ne reste plus comme levier significatif que les fichiers 0% de `app`/`vpn` (hors scope, e2e Playwright + thin wrapper) et la coquille `worker.ts`. Le gate `--min-lines` reste à brancher plus tard (comme convenu) ; la task `cov` reste indicative.

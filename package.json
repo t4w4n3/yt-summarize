@@ -18,7 +18,9 @@
     "test:integration": "node --test 'tests/integration/**/*.test.ts'",
     "test:arch": "node --test 'tests/arch/**/*.test.ts'",
     "test:live": "RUN_LIVE_TESTS=1 node --test 'tests/live/**/*.live.test.ts'",
-    "test": "pnpm run typecheck && pnpm run test:unit && pnpm run test:arch && pnpm run test:integration && pnpm run test:e2e"
+    "test": "pnpm run typecheck && pnpm run test:unit && pnpm run test:arch && pnpm run test:integration && pnpm run test:e2e",
+    "coverage": "node scripts/coverage.ts",
+    "cov:gate": "node scripts/coverage.ts --min-lines 80"
   },
   "engines": {
     "node": ">=24"

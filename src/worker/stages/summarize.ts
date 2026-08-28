@@ -15,7 +15,7 @@ function appendLog(logPath: string | undefined, line: string): void {
 }
 
 /** Pull choices[0].message.content out of an untyped JSON body, defensively. */
-function extractContent(body: unknown): string | null {
+export function extractContent(body: unknown): string | null {
   if (typeof body !== 'object' || body === null) return null;
   const choices = (body as { choices?: unknown }).choices;
   if (!Array.isArray(choices) || choices.length === 0) return null;

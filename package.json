@@ -39,6 +39,6 @@
     "@types/express": "^5.0.6",
     "@types/node": "^24.13.3",
     "archunit": "^2.4.0",
-    "typescript": "^7.0.2"
+    "typescript": "^6.0.3"
   }
 }

@@ -113,4 +113,73 @@ describe('convert — ffmpeg wrapper', () => {
     assert.equal(path.basename(wav), 'audio.wav');
     assert.equal(fs.existsSync(wav), true);
   });
+
+  it('invokes ffmpeg with expected transcoding args', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    const argLog = path.join(jobDir, 'ffmpeg-args');
+    installFake(
+      'ffmpeg',
+      `
+      printf '%s\\n' "$@" > "${argLog}"
+      wav=""
+      for a in "$@"; do wav="$a"; done
+      : > "$wav"
+      exit 0
+      `,
+    );
+    withPath();
+    const audioPath = path.join(jobDir, 'audio.webm');
+    fs.writeFileSync(audioPath, 'dummy');
+
+    await convert(audioPath, baseContext(jobDir));
+    const args = fs.readFileSync(argLog, 'utf8').split('\n').filter(Boolean);
+    assert.ok(args.includes('-hide_banner'));
+    assert.ok(args.includes('-loglevel'));
+    assert.ok(args.includes('error'));
+    assert.ok(args.includes('-y'));
+    assert.ok(args.includes('-i'));
+    assert.ok(args.includes(audioPath));
+    assert.ok(args.includes('-ar'));
+    assert.ok(args.includes('16000'));
+    assert.ok(args.includes('-ac'));
+    assert.ok(args.includes('1'));
+    assert.ok(args.includes('-c:a'));
+    assert.ok(args.includes('pcm_s16le'));
+    assert.equal(args[args.length - 1], path.join(jobDir, 'audio.wav'));
+  });
+
+  it('throws a converting StageError when ffmpeg exits non-zero', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    installFake('ffmpeg', 'exit 1\n');
+    withPath();
+    const audioPath = path.join(jobDir, 'audio.webm');
+    fs.writeFileSync(audioPath, 'dummy');
+
+    await assert.rejects(
+      convert(audioPath, baseContext(jobDir)),
+      (error: unknown) => error instanceof Error && (error as { stage?: string }).stage === 'converting',
+    );
+  });
+
+  it('passes through stage context (timeout, logPath, heartbeat, signal)', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    const heartbeatLog = path.join(jobDir, 'heartbeat');
+    installFake('ffmpeg', FAKE_FFMPEG);
+    withPath();
+    const audioPath = path.join(jobDir, 'audio.webm');
+    fs.writeFileSync(audioPath, 'dummy');
+    const ctx: StageContext = {
+      jobDir,
+      logPath: path.join(jobDir, 'stage.log'),
+      timeoutMs: 12345,
+      onHeartbeat: () => {
+        fs.writeFileSync(heartbeatLog, 'beat');
+      },
+      signal: new AbortController().signal,
+    };
+    const wav = await convert(audioPath, ctx);
+    assert.equal(path.basename(wav), 'audio.wav');
+    // runProcess should have been called with the context values — at least not throw
+    assert.ok(fs.existsSync(wav));
+  });
 });

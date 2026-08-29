@@ -23,7 +23,7 @@ RUN pipx install --pip-args="--no-cache-dir" "yt-dlp==2026.8.19"
 
 WORKDIR /app
 # Keep the pinned pnpm version in sync with mise.toml and package.json packageManager.
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN npm install -g pnpm@11.21.0 && pnpm install --frozen-lockfile --prod
 
 RUN mkdir -p /data /artifacts && chown -R node:node /app /data /artifacts

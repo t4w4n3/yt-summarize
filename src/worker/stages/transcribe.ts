@@ -192,57 +192,116 @@ export async function splitWavIntoChunks(
   return files.map((f) => path.join(chunkDir, f));
 }
 
+function buildWavHeader(numChannels: number, sampleRate: number, bitsPerSample: number, dataSize: number): Buffer {
+  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+  const blockAlign = (numChannels * bitsPerSample) / 8;
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(numChannels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(dataSize, 40);
+  return header;
+}
+
 export async function splitWavManual(wavPath: string, chunkDir: string, chunkDurationSec: number): Promise<string[]> {
   const stat = await fs.promises.stat(wavPath);
   if (stat.size < 44) throw new Error('file too small to be wav');
 
   const fh = await fs.promises.open(wavPath, 'r');
   try {
-    const header = Buffer.alloc(44);
-    await fh.read(header, 0, 44, 0);
-
-    if (header.toString('ascii', 0, 4) !== 'RIFF' || header.toString('ascii', 8, 12) !== 'WAVE') {
+    const riffHeader = Buffer.alloc(12);
+    await fh.read(riffHeader, 0, 12, 0);
+    if (riffHeader.toString('ascii', 0, 4) !== 'RIFF' || riffHeader.toString('ascii', 8, 12) !== 'WAVE') {
       throw new Error('not a RIFF/WAVE file');
     }
-    const audioFormat = header.readUInt16LE(20);
-    const _numChannels = header.readUInt16LE(22);
-    const _sampleRate = header.readUInt32LE(24);
-    const byteRate = header.readUInt32LE(28);
-    const blockAlign = header.readUInt16LE(32);
-    const _bitsPerSample = header.readUInt16LE(34);
-    const dataSize = header.readUInt32LE(40);
 
-    if (audioFormat !== 1) throw new Error(`unsupported audioFormat ${audioFormat} (only PCM)`);
-    // Sanity: byteRate should equal sampleRate * numChannels * bitsPerSample/8
-    const bytesPerSec = byteRate;
+    // Parse chunks to locate fmt and data — ffmpeg inserts a LIST chunk
+    // (e.g. Lavf59.27.100) between fmt and data, so a fixed 44-byte header
+    // is wrong. See failed job e5e31fbb (33 MB WAV → 70-byte garbage chunk).
+    let offset = 12;
+    let fmt: {
+      audioFormat: number;
+      numChannels: number;
+      sampleRate: number;
+      byteRate: number;
+      blockAlign: number;
+      bitsPerSample: number;
+    } | null = null;
+    let dataOffset = -1;
+    let dataSize = -1;
+
+    while (offset + 8 <= stat.size) {
+      const chunkHeader = Buffer.alloc(8);
+      await fh.read(chunkHeader, 0, 8, offset);
+      const chunkId = chunkHeader.toString('ascii', 0, 4);
+      const chunkSize = chunkHeader.readUInt32LE(4);
+      if (chunkId === 'fmt ') {
+        // PCM fmt is 16 bytes; extensible may be larger — read at least 16.
+        const fmtSize = chunkSize;
+        if (fmtSize < 16) throw new Error('invalid fmt chunk');
+        const fmtData = Buffer.alloc(fmtSize);
+        await fh.read(fmtData, 0, fmtSize, offset + 8);
+        fmt = {
+          audioFormat: fmtData.readUInt16LE(0),
+          numChannels: fmtData.readUInt16LE(2),
+          sampleRate: fmtData.readUInt32LE(4),
+          byteRate: fmtData.readUInt32LE(8),
+          blockAlign: fmtData.readUInt16LE(12),
+          bitsPerSample: fmtData.readUInt16LE(14),
+        };
+      } else if (chunkId === 'data') {
+        dataOffset = offset + 8;
+        dataSize = chunkSize;
+        break;
+      }
+      // Chunks are word-aligned: pad byte if size is odd.
+      offset += 8 + chunkSize + (chunkSize % 2);
+      // Guard against insane number of chunks / malformed file.
+      if (offset > stat.size) break;
+    }
+
+    if (!fmt) throw new Error('fmt chunk not found');
+    if (dataOffset < 0 || dataSize < 0) throw new Error('data chunk not found');
+
+    if (fmt.audioFormat !== 1) throw new Error(`unsupported audioFormat ${fmt.audioFormat} (only PCM)`);
+    const bytesPerSec = fmt.byteRate;
+    const blockAlign = fmt.blockAlign;
     if (!bytesPerSec || !blockAlign) throw new Error('invalid wav header');
 
     // Domain policy: chunk length aligned to a sample frame so we never tear samples.
     const chunkBytes = alignedChunkBytes(bytesPerSec, blockAlign, chunkDurationSec);
     if (chunkBytes <= 0) throw new Error('chunk size 0');
 
-    const dataOffset = 44;
+    // Clamp dataSize to actual remaining bytes (truncated file guard).
+    const available = stat.size - dataOffset;
+    if (dataSize > available) dataSize = available;
+
     const dataEnd = dataOffset + dataSize;
     const files: string[] = [];
-    let offset = dataOffset;
+    let readOffset = dataOffset;
     let index = 0;
-    while (offset < dataEnd) {
-      const remaining = dataEnd - offset;
+    while (readOffset < dataEnd) {
+      const remaining = dataEnd - readOffset;
       const thisChunkSize = Math.min(chunkBytes, remaining);
-      // Ensure last chunk is also block-aligned (except EOF already is).
       const aligned = Math.floor(thisChunkSize / blockAlign) * blockAlign || thisChunkSize;
       const buf = Buffer.alloc(aligned);
-      await fh.read(buf, 0, aligned, offset);
+      await fh.read(buf, 0, aligned, readOffset);
 
       const chunkPath = path.join(chunkDir, `chunk_${String(index).padStart(3, '0')}.wav`);
-      const outHeader = Buffer.from(header);
-      outHeader.writeUInt32LE(36 + aligned, 4); // chunkSize
-      outHeader.writeUInt32LE(aligned, 40); // dataSize
+      const outHeader = buildWavHeader(fmt.numChannels, fmt.sampleRate, fmt.bitsPerSample, aligned);
       await fs.promises.writeFile(chunkPath, Buffer.concat([outHeader, buf]));
       files.push(chunkPath);
-      offset += aligned;
+      readOffset += aligned;
       index += 1;
-      // Guard against pathological loops.
       if (index > 1000) break;
     }
     return files;

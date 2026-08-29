@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
-import { splitWavManual, splitWavIntoChunks } from '../../src/worker/stages/transcribe.ts';
+import { splitWavIntoChunks, splitWavManual } from '../../src/worker/stages/transcribe.ts';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'transcribe-list-'));
@@ -109,7 +109,8 @@ describe('transcribe — ffmpeg LIST chunk regression (e5e31fbb)', () => {
     assert.equal(totalPcm, pcmBytes, 'sum of chunk PCM must equal original PCM (no loss, no LIST bytes)');
 
     // Regression guard: the 70-byte garbage file must NOT appear.
-    for (const c of chunks) assert.notEqual(fs.statSync(c).size, 70, 'must not produce the old 70-byte LIST garbage chunk');
+    for (const c of chunks)
+      assert.notEqual(fs.statSync(c).size, 70, 'must not produce the old 70-byte LIST garbage chunk');
 
     fs.rmSync(dir, { recursive: true, force: true });
   });

@@ -20,7 +20,11 @@
     "test:live": "RUN_LIVE_TESTS=1 node --test 'tests/live/**/*.live.test.ts'",
     "test": "pnpm run typecheck && pnpm run test:unit && pnpm run test:arch && pnpm run test:integration && pnpm run test:e2e",
     "coverage": "node scripts/coverage.ts",
-    "cov:gate": "node scripts/coverage.ts --min-lines 80"
+    "cov:gate": "node scripts/coverage.ts --min-lines 80",
+    "mutation": "stryker run",
+    "mutation:domain": "stryker run",
+    "mutation:all": "stryker run --mutate 'src/**/*.ts'",
+    "mutation:dry": "stryker run --dryRunOnly"
   },
   "engines": {
     "node": ">=24"
@@ -30,6 +34,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/typescript-checker": "^10.0.0",
     "@types/express": "^5.0.6",
     "@types/node": "^24.13.3",
     "archunit": "^2.4.0",

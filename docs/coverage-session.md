@@ -2,7 +2,7 @@
 
 ## Contexte
 
-`mise run cov` a montré un coverage indicatif inégal. Le user a confirmé que la task `cov` reste indicative (le gate `--min-lines` sera branché plus tard), et m'a demandé d'aller corriger ce que je recommandais.
+`mise run cov` a montré un coverage indicatif inégal. Le user a confirmé que la task `cov` reste indicative (le gate `--min-lines` était réservé pour plus tard, branché depuis — voir « Mise à jour »), et m'a demandé d'aller corriger ce que je recommandais.
 
 Priorisation par risque (et non à l'aveugle) :
 1. **worker** — couche cœur du produit (orchestration + adapters sortants), où une régression fait le plus de dégâts.
@@ -53,4 +53,8 @@ Stable sur 3 runs consécutifs ; suite hermétique complète (`pnpm run test`, y
 
 ## Suite possible
 
-- Worker a passé 94.7% (pipeline.ts 100%, transcribe.ts 97.3%). Il ne reste plus comme levier significatif que les fichiers 0% de `app`/`vpn` (hors scope, e2e Playwright + thin wrapper) et la coquille `worker.ts`. Le gate `--min-lines` reste à brancher plus tard (comme convenu) ; la task `cov` reste indicative.
+- Worker a passé 94.7% (pipeline.ts 100%, transcribe.ts 97.3%). Il ne reste plus comme levier significatif que les fichiers 0% de `app`/`vpn` (hors scope, e2e Playwright + thin wrapper) et la coquille `worker.ts`.
+
+## Mise à jour (gate `--min-lines`)
+
+Le gate `--min-lines` est branché : `mise run coverage -m <pct>` (alias `cov`, forme longue `--min-lines`) échoue (exit 1) si une couche passe sous `<pct>`, et un layer présent sans lignes mesurées échoue aussi. Sans flag, la task `cov` reste indicative. Le parsing (formes `-m`/`--min-lines`) et la décision du gate vivent désormais dans `scripts/cov-parse.ts` (`parseCoverageArgs` / `gateFailures`), testés en unitaire dans `tests/unit/cov-parse.test.ts`.

@@ -4,7 +4,14 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { aggregateByLayer, layerOf, parseLcov, rowsForReport } from '../../scripts/cov-parse.ts';
+import {
+  aggregateByLayer,
+  gateFailures,
+  layerOf,
+  parseCoverageArgs,
+  parseLcov,
+  rowsForReport,
+} from '../../scripts/cov-parse.ts';
 
 const SAMPLE_LCOV = [
   'SF:src/domain/transcription/policy.ts',
@@ -121,6 +128,65 @@ describe('cov-parse — aggregateByLayer', () => {
     assert.equal(a2.layer, 'worker');
     assert.equal(a2.linesFound, 57);
     assert.equal(a2.linesHit, 0);
+  });
+});
+
+describe('cov-parse — parseCoverageArgs', () => {
+  it('parses --min-lines <pct>', () => {
+    assert.deepEqual(parseCoverageArgs(['--min-lines', '80']), { minLines: 80 });
+  });
+
+  it('parses the short alias -m <pct>', () => {
+    assert.deepEqual(parseCoverageArgs(['-m', '80']), { minLines: 80 });
+  });
+
+  it('defaults to no threshold when the flag is absent', () => {
+    assert.deepEqual(parseCoverageArgs([]), { minLines: null });
+  });
+
+  it('rejects percentages outside [0, 100]', () => {
+    assert.throws(() => parseCoverageArgs(['--min-lines', '101']), /between 0 and 100/);
+    assert.throws(() => parseCoverageArgs(['-m', '-1']), /between 0 and 100/);
+  });
+
+  it('rejects a missing or non-numeric value', () => {
+    assert.throws(() => parseCoverageArgs(['--min-lines']), /expects a percentage/);
+    assert.throws(() => parseCoverageArgs(['-m', 'abc']), /expects a percentage/);
+  });
+
+  it('rejects unknown arguments', () => {
+    assert.throws(() => parseCoverageArgs(['--bogus']), /Unknown argument/);
+  });
+});
+
+describe('cov-parse — gateFailures', () => {
+  const rows = [
+    { layer: 'domain', files: 1, lines: 100, branches: 100, functions: 100 },
+    { layer: 'worker', files: 9, lines: 94.7, branches: 78.7, functions: 83.9 },
+    { layer: 'app', files: 1, lines: 85, branches: null, functions: null },
+  ];
+
+  it('passes when every layer is at or above the threshold', () => {
+    assert.deepEqual(gateFailures(rows, 80), []);
+  });
+
+  it('reports every layer strictly below the threshold', () => {
+    const failures = gateFailures(rows, 95);
+    assert.equal(failures.length, 2);
+    assert.match(failures[0] ?? '', /worker/);
+    assert.match(failures[0] ?? '', /94\.7%/);
+    assert.match(failures[1] ?? '', /app/);
+  });
+
+  it('fails layers with no measurable lines (nothing covered)', () => {
+    // A layer present in the report but with no covered files cannot pass any gate.
+    const failures = gateFailures([{ layer: 'vpn', files: 0, lines: null, branches: null, functions: null }], 0);
+    assert.equal(failures.length, 1);
+    assert.match(failures[0] ?? '', /vpn/);
+  });
+
+  it('passes an empty report', () => {
+    assert.deepEqual(gateFailures([], 80), []);
   });
 });
 

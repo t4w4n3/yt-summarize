@@ -16,42 +16,29 @@
  * Zero dependencies: uses `node --test --experimental-test-coverage` with the
  * `lcov` reporter and parses the output with scripts/cov-parse.ts.
  *
- * Usage: node scripts/coverage.ts [--min-lines <pct>]
- *   --min-lines <pct>  fail (exit 1) if any layer's line coverage is below pct.
+ * Usage: node scripts/coverage.ts [-m|--min-lines <pct>]
+ *   -m, --min-lines <pct>  fail (exit 1) if any layer's line coverage is below pct.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { aggregateByLayer, type FileCoverage, type LayerRow, layerOf, parseLcov, rowsForReport } from './cov-parse.ts';
+import {
+  aggregateByLayer,
+  type FileCoverage,
+  gateFailures,
+  type LayerRow,
+  layerOf,
+  parseCoverageArgs,
+  parseLcov,
+  rowsForReport,
+} from './cov-parse.ts';
 
 const TEST_GLOBS = ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'];
 
 function printRow(row: LayerRow): string {
   const fmt = (v: number | null): string => (v === null ? '  —  ' : `${v.toFixed(1).padStart(5)}%`);
   return `${row.layer.padEnd(14)} ${String(row.files).padStart(3)} files   lines ${fmt(row.lines)}   branches ${fmt(row.branches)}   fns ${fmt(row.functions)}`;
-}
-
-interface Mode {
-  minLines: number | null;
-}
-
-function parseArgs(argv: string[]): Mode {
-  const mode: Mode = { minLines: null };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === '--min-lines') {
-      const value = Number(argv[i + 1]);
-      if (Number.isNaN(value) || value < 0 || value > 100) {
-        throw new Error('--min-lines expects a percentage between 0 and 100');
-      }
-      mode.minLines = value;
-      i++;
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-  return mode;
 }
 
 /**
@@ -108,7 +95,7 @@ function mergeUnexecuted(covered: FileCoverage[], sources: Map<string, number>):
 }
 
 function main(): void {
-  const mode = parseArgs(process.argv.slice(2));
+  const mode = parseCoverageArgs(process.argv.slice(2));
   const dir = mkdtempSync(join(tmpdir(), 'cov-report-'));
   const lcovPath = join(dir, 'lcov.info');
 
@@ -147,20 +134,9 @@ function main(): void {
   rmSync(dir, { recursive: true, force: true });
 
   if (mode.minLines !== null) {
-    let failed = false;
-    for (const row of rows) {
-      if (row.lines !== null && row.lines < mode.minLines) {
-        console.error(`\nFAIL: ${row.layer} line coverage ${row.lines.toFixed(1)}% < ${mode.minLines}%`);
-        failed = true;
-      }
-    }
-    for (const row of rows) {
-      if (row.lines === null || row.files === 0) {
-        console.error(`\nFAIL: ${row.layer} has no covered files (coverage < ${mode.minLines}%)`);
-        failed = true;
-      }
-    }
-    if (failed) process.exit(1);
+    const failures = gateFailures(rows, mode.minLines);
+    for (const failure of failures) console.error(`\nFAIL: ${failure}`);
+    if (failures.length > 0) process.exit(1);
   }
 }
 

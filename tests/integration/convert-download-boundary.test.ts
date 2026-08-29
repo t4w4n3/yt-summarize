@@ -14,14 +14,45 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, it } from 'node:test';
+import { afterEach, describe, it, mock } from 'node:test';
 import { convert } from '../../src/worker/stages/convert.ts';
 import { download } from '../../src/worker/stages/download.ts';
 import type { StageContext } from '../../src/worker/stages/process.ts';
+import { StageError } from '../../src/worker/stages/process.ts';
 
 let binDir: string | undefined;
 let jobDir: string | undefined;
 const originalPath = process.env.PATH;
+const originalMullvadEnabled = process.env.MULLVAD_ENABLED;
+const originalMullvadProxy = process.env.MULLVAD_PROXY;
+const origExistsSync = fs.existsSync;
+const origStatSync = fs.statSync;
+const origReadFileSync = fs.readFileSync;
+
+function stubYouTubeCookies(valid: boolean): void {
+  const validContent = '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tFALSE\t0\tSID\tvalue\n';
+  const files = valid
+    ? new Map<string, string>([['/run/secrets/youtube_cookies', validContent]])
+    : new Map<string, string>();
+  mock.method(fs, 'existsSync', (p: fs.PathLike) => {
+    const s = p.toString();
+    if (s === '/run/secrets/youtube_cookies' || s === '/secrets/youtube-cookies.txt') return files.has(s);
+    return origExistsSync(s);
+  });
+  mock.method(fs, 'statSync', ((p: fs.PathLike) => {
+    const s = p.toString();
+    if (files.has(s)) return { size: (files.get(s) ?? '').length } as fs.Stats;
+    if (s === '/run/secrets/youtube_cookies' || s === '/secrets/youtube-cookies.txt') {
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    }
+    return origStatSync(p);
+  }) as typeof fs.statSync);
+  mock.method(fs, 'readFileSync', ((p: fs.PathLike, ...args: unknown[]) => {
+    const s = p.toString();
+    if (files.has(s)) return files.get(s) as unknown as string;
+    return (origReadFileSync as unknown as (...a: unknown[]) => unknown)(p, ...args);
+  }) as typeof fs.readFileSync);
+}
 
 function installFake(name: string, body: string): void {
   if (!binDir) binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fakebin-'));
@@ -40,6 +71,7 @@ const baseContext = (dir: string): StageContext => ({
 });
 
 afterEach(() => {
+  mock.restoreAll();
   if (binDir) {
     try {
       fs.rmSync(binDir, { recursive: true, force: true });
@@ -51,6 +83,10 @@ afterEach(() => {
     } catch {}
   }
   process.env.PATH = originalPath;
+  if (originalMullvadEnabled === undefined) delete process.env.MULLVAD_ENABLED;
+  else process.env.MULLVAD_ENABLED = originalMullvadEnabled;
+  if (originalMullvadProxy === undefined) delete process.env.MULLVAD_PROXY;
+  else process.env.MULLVAD_PROXY = originalMullvadProxy;
   binDir = undefined;
   jobDir = undefined;
 });
@@ -94,10 +130,379 @@ describe('download — yt-dlp wrapper', () => {
     installFake('yt-dlp', 'exit 0\n');
     withPath();
 
-    await assert.rejects(
-      download({ url: 'https://youtu.be/dQw4w9WgXcQ' }, baseContext(jobDir)),
-      (error: unknown) => error instanceof Error && (error as { stage?: string }).stage === 'downloading',
+    await assert.rejects(download({ url: 'https://youtu.be/dQw4w9WgXcQ' }, baseContext(jobDir)), (error: unknown) => {
+      assert.ok(error instanceof StageError);
+      assert.equal((error as StageError).stage, 'downloading');
+      assert.equal((error as StageError).message, 'YouTube audio was not downloaded.');
+      return true;
+    });
+  });
+
+  it('invokes yt-dlp with expected args', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    const argLog = path.join(jobDir, 'yt-args');
+    const url = 'https://youtu.be/dQw4w9WgXcQ';
+    const expectedOutput = path.join(jobDir, 'audio.%(ext)s');
+    const expectedTitlePath = path.join(jobDir, '.title');
+    installFake(
+      'yt-dlp',
+      `
+      printf '%s\\n' "$@" > "${argLog}"
+      prev=""
+      for a in "$@"; do
+        if [ "$prev" = "-o" ]; then output="$a"; fi
+        prev="$a"
+      done
+      jobdir="$(dirname "$output")"
+      printf 'Great Talk\\n' > "$jobdir/.title"
+      : > "$jobdir/audio.webm"
+      exit 0
+      `,
     );
+    withPath();
+
+    await download({ url }, baseContext(jobDir));
+    const args = fs.readFileSync(argLog, 'utf8').split('\n').filter(Boolean);
+    assert.ok(args.includes('--no-playlist'));
+    assert.ok(args.includes('--no-warnings'));
+    assert.ok(args.includes('--no-update'));
+    assert.ok(args.includes('--print-to-file'));
+    assert.ok(args.includes('%(title)s'));
+    assert.ok(args.includes(expectedTitlePath));
+    assert.ok(args.includes('-f'));
+    assert.ok(args.includes('bestaudio/best'));
+    assert.ok(args.includes('-o'));
+    assert.ok(args.includes(expectedOutput));
+    assert.equal(args[args.length - 1], url);
+  });
+
+  it('routes yt-dlp through the default Mullvad proxy when MULLVAD_ENABLED=true', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    const argLog = path.join(jobDir, 'yt-args');
+    process.env.MULLVAD_ENABLED = 'true';
+    delete process.env.MULLVAD_PROXY;
+    stubYouTubeCookies(false);
+    installFake(
+      'yt-dlp',
+      `
+      printf '%s\\n' "$@" > "${argLog}"
+      prev=""
+      for a in "$@"; do
+        if [ "$prev" = "-o" ]; then output="$a"; fi
+        prev="$a"
+      done
+      jobdir="$(dirname "$output")"
+      printf 'Title\\n' > "$jobdir/.title"
+      : > "$jobdir/audio.webm"
+      exit 0
+      `,
+    );
+    withPath();
+    await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
+    const args = fs.readFileSync(argLog, 'utf8').split('\n').filter(Boolean);
+    const proxyIdx = args.indexOf('--proxy');
+    assert.ok(proxyIdx !== -1, 'should include --proxy');
+    assert.equal(args[proxyIdx + 1], 'socks5h://127.0.0.1:1080');
+  });
+
+  it('uses custom MULLVAD_PROXY when set', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    const argLog = path.join(jobDir, 'yt-args');
+    process.env.MULLVAD_ENABLED = 'true';
+    process.env.MULLVAD_PROXY = 'socks5h://custom:1080';
+    stubYouTubeCookies(false);
+    installFake(
+      'yt-dlp',
+      `
+      printf '%s\\n' "$@" > "${argLog}"
+      prev=""
+      for a in "$@"; do
+        if [ "$prev" = "-o" ]; then output="$a"; fi
+        prev="$a"
+      done
+      jobdir="$(dirname "$output")"
+      printf 'Title\\n' > "$jobdir/.title"
+      : > "$jobdir/audio.webm"
+      exit 0
+      `,
+    );
+    withPath();
+    await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
+    const args = fs.readFileSync(argLog, 'utf8').split('\n').filter(Boolean);
+    assert.ok(args.includes('--proxy'));
+    assert.ok(args.includes('socks5h://custom:1080'));
+  });
+
+  it('omits --proxy when MULLVAD_ENABLED is not "true"', async () => {
+    for (const val of [undefined, 'false', '1', '']) {
+      jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+      const argLog = path.join(jobDir, 'yt-args');
+      if (val === undefined) delete process.env.MULLVAD_ENABLED;
+      else process.env.MULLVAD_ENABLED = val;
+      delete process.env.MULLVAD_PROXY;
+      stubYouTubeCookies(false);
+      installFake(
+        'yt-dlp',
+        `
+        printf '%s\\n' "$@" > "${argLog}"
+        prev=""
+        for a in "$@"; do
+          if [ "$prev" = "-o" ]; then output="$a"; fi
+          prev="$a"
+        done
+        jobdir="$(dirname "$output")"
+        printf 'Title\\n' > "$jobdir/.title"
+        : > "$jobdir/audio.webm"
+        exit 0
+        `,
+      );
+      withPath();
+      await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
+      const args = fs.readFileSync(argLog, 'utf8').split('\n').filter(Boolean);
+      assert.ok(!args.includes('--proxy'), `should not include --proxy when MULLVAD_ENABLED=${String(val)}`);
+      assert.ok(!args.includes('socks5h://127.0.0.1:1080'));
+      fs.rmSync(jobDir, { recursive: true, force: true });
+      jobDir = undefined;
+      // reset fake bin for next iteration
+      if (binDir) {
+        fs.rmSync(binDir, { recursive: true, force: true });
+        binDir = undefined;
+      }
+      mock.restoreAll();
+    }
+  });
+
+  it('includes --cookies when a valid cookies file exists', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    const argLog = path.join(jobDir, 'yt-args');
+    delete process.env.MULLVAD_ENABLED;
+    delete process.env.MULLVAD_PROXY;
+    stubYouTubeCookies(true);
+    installFake(
+      'yt-dlp',
+      `
+      printf '%s\\n' "$@" > "${argLog}"
+      prev=""
+      for a in "$@"; do
+        if [ "$prev" = "-o" ]; then output="$a"; fi
+        prev="$a"
+      done
+      jobdir="$(dirname "$output")"
+      printf 'Title\\n' > "$jobdir/.title"
+      : > "$jobdir/audio.webm"
+      exit 0
+      `,
+    );
+    withPath();
+    await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
+    const args = fs.readFileSync(argLog, 'utf8').split('\n').filter(Boolean);
+    const idx = args.indexOf('--cookies');
+    assert.ok(idx !== -1, 'should include --cookies');
+    assert.equal(args[idx + 1], '/run/secrets/youtube_cookies');
+  });
+
+  it('omits --cookies when no valid cookies file exists', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    const argLog = path.join(jobDir, 'yt-args');
+    delete process.env.MULLVAD_ENABLED;
+    stubYouTubeCookies(false);
+    installFake(
+      'yt-dlp',
+      `
+      printf '%s\\n' "$@" > "${argLog}"
+      prev=""
+      for a in "$@"; do
+        if [ "$prev" = "-o" ]; then output="$a"; fi
+        prev="$a"
+      done
+      jobdir="$(dirname "$output")"
+      printf 'Title\\n' > "$jobdir/.title"
+      : > "$jobdir/audio.webm"
+      exit 0
+      `,
+    );
+    withPath();
+    await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
+    const args = fs.readFileSync(argLog, 'utf8').split('\n').filter(Boolean);
+    assert.ok(!args.includes('--cookies'));
+  });
+
+  it('rejects with downloading StageError when yt-dlp exits non-zero', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    delete process.env.MULLVAD_ENABLED;
+    stubYouTubeCookies(false);
+    installFake('yt-dlp', 'echo "yt-dlp error" >&2; exit 1\n');
+    withPath();
+    await assert.rejects(download({ url: 'https://youtu.be/abc' }, baseContext(jobDir)), (error: unknown) => {
+      assert.ok(error instanceof StageError);
+      assert.equal((error as StageError).stage, 'downloading');
+      assert.match((error as StageError).message, /exit code 1/);
+      return true;
+    });
+  });
+
+  it('propagates timeoutMs to runProcess', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    delete process.env.MULLVAD_ENABLED;
+    stubYouTubeCookies(false);
+    installFake('yt-dlp', 'sleep 2\n');
+    withPath();
+    await assert.rejects(
+      download({ url: 'https://youtu.be/abc' }, { ...baseContext(jobDir), timeoutMs: 300 }),
+      (error: unknown) => {
+        assert.ok(error instanceof StageError);
+        assert.equal((error as StageError).stage, 'downloading');
+        assert.match((error as StageError).message, /timed out/);
+        return true;
+      },
+    );
+  });
+
+  it('propagates abort signal to runProcess', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    delete process.env.MULLVAD_ENABLED;
+    stubYouTubeCookies(false);
+    installFake('yt-dlp', FAKE_YTDLP);
+    withPath();
+    const ac = new AbortController();
+    ac.abort();
+    await assert.rejects(
+      download({ url: 'https://youtu.be/abc' }, { ...baseContext(jobDir), signal: ac.signal }),
+      (error: unknown) => {
+        assert.ok(error instanceof StageError);
+        assert.equal((error as StageError).stage, 'downloading');
+        assert.match((error as StageError).message, /cancelled/);
+        return true;
+      },
+    );
+  });
+
+  it('discovers audio file ignoring audio.wav and unrelated files', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    delete process.env.MULLVAD_ENABLED;
+    stubYouTubeCookies(false);
+    // pre-create decoys that should be ignored
+    fs.writeFileSync(path.join(jobDir, 'audio.wav'), 'wav');
+    fs.writeFileSync(path.join(jobDir, 'random.txt'), 'noise');
+    installFake(
+      'yt-dlp',
+      `
+      prev=""
+      for a in "$@"; do
+        if [ "$prev" = "-o" ]; then output="$a"; fi
+        prev="$a"
+      done
+      jobdir="$(dirname "$output")"
+      printf 'Title\\n' > "$jobdir/.title"
+      : > "$jobdir/audio.webm"
+      exit 0
+      `,
+    );
+    withPath();
+    // control readdir order to make the test deterministic: wav appears before webm
+    const origReaddirSync = fs.readdirSync;
+    mock.method(fs, 'readdirSync', (p: fs.PathLike) => {
+      if (p.toString() === jobDir)
+        return ['audio.wav', 'random.txt', 'audio.webm', '.title'] as unknown as ReturnType<typeof fs.readdirSync>;
+      return origReaddirSync(p as string) as unknown as ReturnType<typeof fs.readdirSync>;
+    });
+    const result = await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
+    assert.match(result.audioPath, /audio\.webm$/);
+    assert.ok(!result.audioPath.endsWith('audio.wav'), 'should not pick audio.wav');
+    assert.ok(fs.existsSync(result.audioPath));
+  });
+
+  it('returns Untitled when title file is missing', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    delete process.env.MULLVAD_ENABLED;
+    stubYouTubeCookies(false);
+    installFake(
+      'yt-dlp',
+      `
+      prev=""
+      for a in "$@"; do
+        if [ "$prev" = "-o" ]; then output="$a"; fi
+        prev="$a"
+      done
+      jobdir="$(dirname "$output")"
+      : > "$jobdir/audio.webm"
+      exit 0
+      `,
+    );
+    withPath();
+    const result = await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
+    assert.equal(result.title, 'Untitled YouTube video');
+  });
+
+  it('parses title trimming, splitting CRLF and taking last line', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    delete process.env.MULLVAD_ENABLED;
+    stubYouTubeCookies(false);
+    installFake(
+      'yt-dlp',
+      `
+      prev=""
+      for a in "$@"; do
+        if [ "$prev" = "-o" ]; then output="$a"; fi
+        prev="$a"
+      done
+      jobdir="$(dirname "$output")"
+      printf '  first line  \\r\\nsecond line\\nTrimMe  \\r\\n' > "$jobdir/.title"
+      : > "$jobdir/audio.webm"
+      exit 0
+      `,
+    );
+    withPath();
+    const result = await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
+    assert.equal(result.title, 'TrimMe');
+  });
+
+  it('parses title with LF-only lines correctly (kills \\r\\n mutant)', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    delete process.env.MULLVAD_ENABLED;
+    stubYouTubeCookies(false);
+    installFake(
+      'yt-dlp',
+      `
+      prev=""
+      for a in "$@"; do
+        if [ "$prev" = "-o" ]; then output="$a"; fi
+        prev="$a"
+      done
+      jobdir="$(dirname "$output")"
+      printf 'first\\nsecond\\nlast\\n' > "$jobdir/.title"
+      : > "$jobdir/audio.webm"
+      exit 0
+      `,
+    );
+    withPath();
+    const result = await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
+    assert.equal(result.title, 'last');
+  });
+
+  it('truncates title to 500 characters', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    delete process.env.MULLVAD_ENABLED;
+    stubYouTubeCookies(false);
+    const longTitle = 'a'.repeat(600);
+    installFake(
+      'yt-dlp',
+      `
+      prev=""
+      for a in "$@"; do
+        if [ "$prev" = "-o" ]; then output="$a"; fi
+        prev="$a"
+      done
+      jobdir="$(dirname "$output")"
+      printf '%s' "${longTitle}" > "$jobdir/.title"
+      : > "$jobdir/audio.webm"
+      exit 0
+      `,
+    );
+    withPath();
+    const result = await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
+    assert.equal(result.title.length, 500);
+    assert.equal(result.title, 'a'.repeat(500));
   });
 });
 

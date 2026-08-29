@@ -169,6 +169,49 @@ export interface LayerRow {
   functions: number | null;
 }
 
+/**
+ * Parse coverage CLI arguments. Supports the long form `--min-lines <pct>`
+ * and its short alias `-m <pct>`; absent flag means no gate. Throws on
+ * unknown flags, missing or non-numeric values, and percentages outside
+ * [0, 100].
+ */
+export function parseCoverageArgs(argv: string[]): { minLines: number | null } {
+  const mode: { minLines: number | null } = { minLines: null };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--min-lines' || arg === '-m') {
+      const value = Number(argv[i + 1]);
+      if (Number.isNaN(value) || value < 0 || value > 100) {
+        throw new Error(`${arg} expects a percentage between 0 and 100`);
+      }
+      mode.minLines = value;
+      i++;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  return mode;
+}
+
+/**
+ * Gate decision for `--min-lines`: returns one failure message per layer that
+ * fails the threshold. A layer below the threshold fails; a layer present in
+ * the report with no measurable coverage (no files / no lines) also fails,
+ * because an unmeasured layer cannot be guaranteed to be at threshold.
+ */
+export function gateFailures(rows: LayerRow[], minLines: number): string[] {
+  const failures: string[] = [];
+  for (const row of rows) {
+    if (row.lines !== null && row.lines < minLines) {
+      failures.push(`${row.layer} line coverage ${row.lines.toFixed(1)}% < ${minLines}%`);
+    }
+    if (row.lines === null || row.files === 0) {
+      failures.push(`${row.layer} has no covered files (coverage < ${minLines}%)`);
+    }
+  }
+  return failures;
+}
+
 /** Build printable rows with percentage scores (null = nothing to cover). */
 export function rowsForReport(aggregates: LayerAggregate[]): LayerRow[] {
   return aggregates.map((a) => ({

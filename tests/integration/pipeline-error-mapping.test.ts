@@ -62,4 +62,64 @@ describe('pipeline — stage attribution & friendly errors', () => {
     assert.equal(friendlyError(null), 'The worker stopped unexpectedly.');
     assert.equal(friendlyError(0), 'The worker stopped unexpectedly.');
   });
+
+  it('friendlyError handles downloading without details (no trailing space)', () => {
+    const msg = friendlyError(new StageError('oops', 'downloading'));
+    assert.match(msg, /YouTube could not provide this video/);
+    assert.equal(msg.endsWith('correct.'), true);
+  });
+
+  it('friendlyError truncates long details to 600 chars', () => {
+    const long = 'x'.repeat(800);
+    const msg = friendlyError(new StageError('fail', 'downloading', long));
+    // detail is ` ` + last 600 chars of long
+    assert.ok(msg.includes('x'.repeat(600)));
+    assert.equal(msg.includes('x'.repeat(601)), false);
+    assert.match(msg, /YouTube could not provide this video/);
+  });
+
+  it('friendlyError does not map transcribing without model missing', () => {
+    const err = new StageError('Transcription failed (HTTP 500).', 'transcribing', 'nope');
+    const msg = friendlyError(err);
+    assert.match(msg, /Transcription failed/);
+    assert.match(msg, /nope/);
+    assert.equal(msg.includes('model is missing'), false);
+  });
+
+  it('friendlyError maps transcribing model-missing even with details (verbatim)', () => {
+    const msg = friendlyError(new StageError('the model is missing from catalog', 'transcribing', 'extra detail'));
+    assert.equal(msg, 'the model is missing from catalog');
+  });
+
+  it('friendlyError maps summarizing credential failures for various patterns', () => {
+    for (const pattern of ['credential', 'auth', 'api key', '401', '403']) {
+      const msg = friendlyError(new StageError(`fail ${pattern}`, 'summarizing'));
+      assert.match(msg, /could not resolve the OpenRouter credential/i, `pattern ${pattern} should map`);
+    }
+    const plain = friendlyError(new StageError('Summarization failed (HTTP 429).', 'summarizing', 'rate limited'));
+    assert.match(plain, /Summarization failed/);
+    assert.match(plain, /rate limited/);
+  });
+
+  it('friendlyError handles StageError with unknown stage as message+detail', () => {
+    const err = new StageError('convert broke', 'converting', 'ffmpeg barfed');
+    const msg = friendlyError(err);
+    assert.equal(msg, 'convert broke ffmpeg barfed');
+  });
+
+  it('friendlyError handles string and non-string errors', () => {
+    assert.equal(friendlyError('plain string'), 'plain string');
+    assert.equal(friendlyError(''), 'The worker stopped unexpectedly.');
+    assert.equal(friendlyError(42), 'The worker stopped unexpectedly.');
+  });
+
+  it('stageOf handles StageError with empty stage and generic errors with empty stage', () => {
+    assert.equal(stageOf(new StageError('boom', '')), '');
+    const err = new Error('boom') as Error & { stage?: string | null };
+    err.stage = '';
+    assert.equal(stageOf(err), '');
+    const nullStage = new Error('boom') as Error & { stage?: string | null };
+    nullStage.stage = null;
+    assert.equal(stageOf(nullStage), null);
+  });
 });

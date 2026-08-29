@@ -13,7 +13,7 @@ lint_kind_matches() { # lint_kind_matches <kind> <path>
     sh:*.sh) return 0 ;;
     yaml:*.yml | yaml:*.yaml)
       case "$base" in *compose*) return 1 ;; *) : ;; esac
-      case "$path" in mise.lock | pnpm-lock.yaml) return 1 ;; *) : ;; esac
+      case "$path" in mise.lock | pnpm-lock.yaml | pnpm-workspace.yaml) return 1 ;; *) : ;; esac
       return 0
       ;;
     compose:*.yml | compose:*.yaml)

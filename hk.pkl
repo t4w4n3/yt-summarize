@@ -56,7 +56,7 @@ local checkSteps = new Mapping<String, Step> {
     check = "pnpm audit --audit-level=low"
   }
   ["security-trivy"] {
-    check = "trivy fs --scanners vuln,misconfig,secret --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 1 --ignore-unfixed ."
+    check = "trivy fs --scanners vuln,misconfig,secret --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 1 --ignore-unfixed --skip-dirs test-results --skip-dirs .stryker-tmp --skip-dirs .local --skip-dirs e2e/.tmp --skip-dirs playwright-report ."
   }
   ["security-gitleaks-worktree"] {
     check = "gitleaks dir --no-banner ."

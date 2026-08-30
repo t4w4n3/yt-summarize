@@ -12,11 +12,18 @@ pnpm audit --audit-level=low || status=1
 
 echo "── trivy fs (vulns + secrets + misconfig, all severities)"
 # --ignore-unfixed: vulnerabilities without a published fix would make the gate permanently red.
+# --skip-dirs: artefacts gitignorés (e2e traces, stryker, dev data) — évite un race
+# test-e2e ↔ trivy quand hk lance tout en parallèle (stat sur fichier en cours de delete).
 trivy fs \
   --scanners vuln,misconfig,secret \
   --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
   --exit-code 1 \
   --ignore-unfixed \
+  --skip-dirs test-results \
+  --skip-dirs .stryker-tmp \
+  --skip-dirs .local \
+  --skip-dirs e2e/.tmp \
+  --skip-dirs playwright-report \
   . || status=1
 
 echo "── gitleaks dir (secrets in the working tree)"

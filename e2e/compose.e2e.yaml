@@ -21,7 +21,7 @@ services:
     user: "node"
     command: ["/app/entrypoint-app.sh"]
     ports:
-      - "${E2E_PORT:-4174}:8080"
+      - "127.0.0.1:${E2E_PORT:-4174}:8080"
     environment:
       PORT: "8080"
       DATA_DIR: "/data"
@@ -42,7 +42,7 @@ services:
       - "./.tmp/data:/data"
       - "./fake-worker.ts:/app/e2e/fake-worker.ts:ro"
     ports:
-      - "${E2E_WORKER_PORT:-4175}:4175"
+      - "127.0.0.1:${E2E_WORKER_PORT:-4175}:4175"
     restart: "no"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:4175/healthz"]

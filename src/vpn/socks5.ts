@@ -7,7 +7,9 @@ import dns from 'node:dns';
 import net from 'node:net';
 
 const PORT = Number(process.env.SOCKS_PORT || 1080);
-const HOST = process.env.SOCKS_HOST || '0.0.0.0';
+// Défaut loopback — en production le sidecar `vpn` surcharge via
+// SOCKS_HOST=0.0.0.0 (confiné à son netns, publié host 127.0.0.1:1080 uniquement).
+const HOST = process.env.SOCKS_HOST || '127.0.0.1';
 const MULLVAD_DNS = process.env.MULLVAD_DNS || '10.64.0.1';
 
 // Résolution DNS via le DNS Mullvad (dans le tunnel). Le resolv.conf du

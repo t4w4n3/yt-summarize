@@ -49,8 +49,8 @@ http
     res.writeHead(404).end();
     return;
   })
-  .listen(HEALTH_PORT, '0.0.0.0', () => {
-    console.log(`[fake-worker] health check on :${HEALTH_PORT}`);
+  .listen(HEALTH_PORT, '127.0.0.1', () => {
+    console.log(`[fake-worker] health check on 127.0.0.1:${HEALTH_PORT}`);
   });
 
 async function run(): Promise<void> {

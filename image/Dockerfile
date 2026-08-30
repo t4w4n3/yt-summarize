@@ -34,7 +34,7 @@ COPY image/entrypoint-app.sh image/entrypoint-worker.sh image/entrypoint-vpn.sh 
 RUN chmod +x /app/entrypoint-*.sh && chown -R node:node /app
 
 EXPOSE 8080
-# App-only default; the worker and vpn services override/disable their healthcheck in compose.yaml.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -sf http://localhost:8080/ || exit 1
+# Healthcheck lives in compose.yaml (app service) — Dockerfile stays OCI-compatible
+# without a HEALTHCHECK instruction (which triggers "HEALTHCHECK is not supported
+# for OCI image format" warnings under podman/buildah default format).
 USER node

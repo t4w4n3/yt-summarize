@@ -2,4 +2,10 @@
 # DS-0002 (run as non-root) is now fixed: app/worker run as `node` (USER node),
 # secrets are podman secrets at /run/secrets/* (tmpfs 0440, no bind mount UID clash),
 # and the vpn sidecar is the only service that stays root (needs NET_ADMIN).
-# No active suppressions.
+# DS0026 / AVD-DS-0026 (no HEALTHCHECK in Dockerfile): healthcheck is defined
+# at compose level (compose.yaml app.healthcheck) to keep the image OCI-compatible.
+# A Dockerfile HEALTHCHECK triggers podman/buildah WARN "HEALTHCHECK is not
+# supported for OCI image format and will be ignored" and is ineffective; the
+# compose healthcheck (curl -sf http://localhost:8080/) is the intentional
+# OCI-compatible location.
+AVD-DS-0026

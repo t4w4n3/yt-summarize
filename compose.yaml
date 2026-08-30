@@ -67,8 +67,14 @@ services:
       - "/dev/net/tun"
     # Sidecar Mullvad: tunnel WireGuard dans SON netns + proxy SOCKS5 local.
     # Le port 1080 n'est publié qu'en loopback (personne d'autre n'y accède).
+    # Le SOCKS écoute sur 0.0.0.0 *dans* le netns du sidecar uniquement — le
+    # forward host->container arrive sur l'IP du container (10.88.x), pas son
+    # loopback, donc 127.0.0.1 dedans refuserait la connexion. Host reste 127.0.0.1.
     ports:
       - "127.0.0.1:1080:1080"
+    environment:
+      SOCKS_HOST: "0.0.0.0"
+      SOCKS_PORT: "1080"
     volumes:
       - "${HOME}/.local/mullvad-poc:/mullvad:ro"  # config WireGuard (clé privée, 0600 sur l'hôte)
     # on-failure + exit 0 de l'entrypoint: sans config, le service reste arrêté

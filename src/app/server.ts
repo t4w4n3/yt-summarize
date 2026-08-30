@@ -143,8 +143,8 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   return res.status(500).json({ error: 'Unexpected server error.' });
 });
 
-const server = app.listen(config.port, '127.0.0.1', () => {
-  console.log(`Summarize YT app listening on http://127.0.0.1:${config.port}`);
+const server = app.listen(config.port, '0.0.0.0', () => {
+  console.log(`Summarize YT app listening on http://0.0.0.0:${config.port}`);
 });
 
 function shutdown(signal: string): void {

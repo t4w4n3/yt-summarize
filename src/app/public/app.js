@@ -102,6 +102,7 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
   function isYouTubeUrl(value) {
     try {
       const url = new URL(value);
+      const hostname = url.hostname.toLowerCase();
       const hosts = [
         'youtube.com',
         'www.youtube.com',
@@ -109,14 +110,28 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
         'music.youtube.com',
         'youtu.be',
         'www.youtu.be',
+        'youtube-nocookie.com',
+        'www.youtube-nocookie.com',
       ];
-      return (
-        ['http:', 'https:'].includes(url.protocol) &&
-        hosts.includes(url.hostname.toLowerCase()) &&
-        (url.hostname.includes('youtu.be')
-          ? url.pathname.length > 1
-          : url.pathname === '/watch' && url.searchParams.has('v'))
-      );
+      if (!['http:', 'https:'].includes(url.protocol) || !hosts.includes(hostname)) return false;
+      if (url.username || url.password || url.port) return false;
+      const isShort = hostname === 'youtu.be' || hostname === 'www.youtu.be' || hostname.endsWith('.youtu.be');
+      let id = null;
+      if (isShort) {
+        const raw = url.pathname.slice(1).split('/')[0] ?? '';
+        id = (raw.split('?')[0] ?? '').split('#')[0] ?? '';
+        if (id === '') id = null;
+      } else {
+        if (url.pathname === '/watch') {
+          id = url.searchParams.get('v');
+        } else {
+          const parts = url.pathname.split('/').filter(Boolean);
+          if (parts.length >= 2 && ['shorts', 'embed', 'v', 'live'].includes(parts[0] ?? '')) {
+            id = parts[1] ?? null;
+          } else return false;
+        }
+      }
+      return !!id && /^[A-Za-z0-9_-]{11}$/.test(id);
     } catch {
       return false;
     }

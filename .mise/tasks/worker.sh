@@ -6,6 +6,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "worker" "$@"
+trap 'metrics_end $?' EXIT
 
 mkdir -p "$usage_data_dir" "$usage_artifacts_dir"
 echo "NOTE: paid stages decrypt the OpenRouter key from /secrets (a container mount); a local worker marks"

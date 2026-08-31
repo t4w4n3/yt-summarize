@@ -6,5 +6,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "coverage" "$@"
+trap 'metrics_end $?' EXIT
 
 pnpm run coverage "$@"

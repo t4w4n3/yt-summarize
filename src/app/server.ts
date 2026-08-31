@@ -29,14 +29,37 @@ function validateYouTubeUrl(value: unknown): string | null {
     'music.youtube.com',
     'youtu.be',
     'www.youtu.be',
+    'youtube-nocookie.com',
+    'www.youtube-nocookie.com',
   ]);
   if (!['http:', 'https:'].includes(url.protocol) || !allowedHosts.has(hostname))
     return 'Only youtube.com and youtu.be video URLs are supported.';
   if (url.username || url.password || url.port) return 'This URL contains unsupported credentials or a port.';
-  const isShort = hostname.endsWith('youtu.be');
-  const id = isShort ? url.pathname.slice(1).split('/')[0] : url.searchParams.get('v');
+  const isShort = hostname === 'youtu.be' || hostname === 'www.youtu.be' || hostname.endsWith('.youtu.be');
+  let id: string | null = null;
+  if (isShort) {
+    const raw = url.pathname.slice(1).split('/')[0] ?? '';
+    id = (raw.split('?')[0] ?? '').split('#')[0] ?? '';
+    if (id === '') id = null;
+  } else {
+    const isYouTubeHost =
+      hostname === 'youtube.com' ||
+      hostname.endsWith('.youtube.com') ||
+      hostname === 'youtube-nocookie.com' ||
+      hostname.endsWith('.youtube-nocookie.com');
+    if (!isYouTubeHost) return 'Only youtube.com and youtu.be video URLs are supported.';
+    if (url.pathname === '/watch') {
+      id = url.searchParams.get('v');
+    } else {
+      const parts = url.pathname.split('/').filter(Boolean);
+      if (parts.length >= 2 && ['shorts', 'embed', 'v', 'live'].includes(parts[0] ?? '')) {
+        id = parts[1] ?? null;
+      } else {
+        return 'Use a standard YouTube watch URL or a youtu.be link.';
+      }
+    }
+  }
   if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return 'That URL does not contain a valid single YouTube video ID.';
-  if (!isShort && url.pathname !== '/watch') return 'Use a standard YouTube watch URL or a youtu.be link.';
   return null;
 }
 

@@ -10,6 +10,9 @@ set -euo pipefail
 
 ROOT="${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "mullvad" "$@"
+trap 'metrics_end $?' EXIT
 
 MODE="${usage_mode:-${1:-status}}"
 RELAY="${usage_relay:-fr-mrs-wg-001}"

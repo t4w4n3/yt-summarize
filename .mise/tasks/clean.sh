@@ -5,6 +5,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "clean" "$@"
+trap 'metrics_end $?' EXIT
 
 if [ "${usage_yes:-false}" != "true" ]; then
   read -r -p "This deletes the jobs database and every artifact. Type 'clean' to confirm: " answer

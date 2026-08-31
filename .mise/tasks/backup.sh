@@ -4,6 +4,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "backup" "$@"
 
 BACKUP_DIR="${BACKUP_DIR:-$HOME/.local/backups}"
 KEEP="${BACKUP_KEEP:-10}"
@@ -23,7 +25,7 @@ done
 STAMP="$(date +%Y%m%d-%H%M%S)"
 ARCHIVE="$BACKUP_DIR/summarize-yt-$STAMP.tar.gz"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap 'rc=$?; metrics_end $rc; rm -rf "$TMP"' EXIT
 
 # Consistent snapshot of SQLite while the app is running (WAL-safe; the
 # restored jobs.db carries the full state — no -wal/-shm needed).

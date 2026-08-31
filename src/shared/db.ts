@@ -33,9 +33,31 @@ export function extractVideoIdFromUrl(value: string): string | null {
   try {
     const url = new URL(value.trim());
     const hostname = url.hostname.toLowerCase();
-    const isShort = hostname.endsWith('youtu.be');
-    const id = isShort ? url.pathname.slice(1).split('/')[0] : url.searchParams.get('v');
-    if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) return id;
+    // youtu.be short links (including www.youtu.be)
+    if (hostname === 'youtu.be' || hostname === 'www.youtu.be' || hostname.endsWith('.youtu.be')) {
+      const raw = url.pathname.slice(1).split('/')[0] ?? '';
+      const id = (raw.split('?')[0] ?? '').split('#')[0] ?? '';
+      if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) return id;
+      return null;
+    }
+    const isYouTubeHost =
+      hostname === 'youtube.com' ||
+      hostname.endsWith('.youtube.com') ||
+      hostname === 'youtube-nocookie.com' ||
+      hostname.endsWith('.youtube-nocookie.com');
+    if (!isYouTubeHost) return null;
+    // Standard watch URL: /watch?v=VIDEOID
+    if (url.pathname === '/watch') {
+      const v = url.searchParams.get('v');
+      if (v && /^[A-Za-z0-9_-]{11}$/.test(v)) return v;
+      return null;
+    }
+    // Shorts, embed, v, live: /shorts/VIDEOID etc.
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length >= 2 && ['shorts', 'embed', 'v', 'live'].includes(parts[0] ?? '')) {
+      const id = parts[1] ?? null;
+      if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) return id;
+    }
   } catch {}
   return null;
 }

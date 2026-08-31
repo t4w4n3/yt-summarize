@@ -5,5 +5,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "test-ui" "$@"
+trap 'metrics_end $?' EXIT
 
 pnpm run test:e2e:ui

@@ -5,6 +5,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "build" "$@"
+trap 'metrics_end $?' EXIT
 
 CACHE_BUST="$(git rev-parse HEAD 2>/dev/null || date +%s)"
 if [ -n "$(git status --porcelain 2>/dev/null)" ]; then

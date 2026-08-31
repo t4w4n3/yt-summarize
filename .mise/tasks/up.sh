@@ -45,7 +45,24 @@ CACHE_BUST="$(git rev-parse HEAD 2>/dev/null || date +%s)"
 if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
   CACHE_BUST="${CACHE_BUST}-dirty-$(git status --porcelain 2>/dev/null | sha256sum | cut -c1-8)"
 fi
-podman-compose up -d --build --build-arg "CACHE_BUST=${CACHE_BUST}" --force-recreate --remove-orphans
+# podman-compose 1.3.0 est bruyant : --force-recreate tente un `podman rm -f`
+# même quand l'image n'a pas changé → "Error: no such container/pod" bénins.
+# On filtre ce bruit pour la tolérance zéro bruit, mais on laisse passer les
+# vraies erreurs de build/run.
+# INTENTIONAL: filtrage bruit bénin podman-compose - réévaluer en bumpant podman-compose >1.3.0
+_tmp="$(mktemp)"
+set +e
+podman-compose up -d --build --build-arg "CACHE_BUST=${CACHE_BUST}" --force-recreate --remove-orphans >"$_tmp" 2>&1
+_status=$?
+set -e
+grep -vE 'Error: no (container|pod) with (name or ID|ID or name).*found: no such (container|pod)' "$_tmp" || true
+if [ "$_status" -ne 0 ]; then
+  if grep -vE 'Error: no (container|pod) with' "$_tmp" | grep -qE '^Error:'; then
+    rm -f "$_tmp"
+    exit "$_status"
+  fi
+fi
+rm -f "$_tmp"
 echo
 echo "Stack started: http://localhost:${PORT:-8080}"
 podman-compose ps

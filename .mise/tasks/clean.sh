@@ -17,4 +17,18 @@ if [ "${usage_yes:-false}" != "true" ]; then
   fi
 fi
 
-podman-compose down -v
+# Même bruit bénin que down.sh (idempotent + netavark race) — on filtre.
+# INTENTIONAL: filtrage bruit bénin podman-compose/netavark - réévaluer en bumpant podman-compose >1.3.0 / netavark >1.14
+_tmp="$(mktemp)"
+set +e
+podman-compose down -v >"$_tmp" 2>&1
+_status=$?
+set -e
+grep -vE 'Error: no (container|pod) with (name or ID|ID or name).*found: no such (container|pod)|Error: removing container .* netavark: setns: IO error: Invalid argument' "$_tmp" || true
+if [ "$_status" -ne 0 ]; then
+  if grep -vE 'Error: no (container|pod) with|netavark: setns' "$_tmp" | grep -qE '^Error:'; then
+    rm -f "$_tmp"
+    exit "$_status"
+  fi
+fi
+rm -f "$_tmp"

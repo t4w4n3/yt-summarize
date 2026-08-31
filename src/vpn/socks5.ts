@@ -102,3 +102,16 @@ const server = net.createServer((socket) => {
 server.listen(PORT, HOST, () => {
   console.log(`socks5://${HOST}:${PORT} — trafic via tunnel Mullvad`);
 });
+
+// PID 1 dans un container n'a pas de handler SIGTERM par défaut (le kernel
+// l'ignore). Sans ce handler le sidecar met 10s à mourir et podman finit par
+// SIGKILL, ce qui laisse un Warning bruit + race netavark setns au down.
+function shutdown(signal: string): void {
+  console.log(`${signal}: vpn shutting down`);
+  server.close(() => process.exit(0));
+  // Si des connexions restent ouvertes, force l'exit rapidement (pas de fuite
+  // de tunnel : le netns meurt avec le container).
+  setTimeout(() => process.exit(0), 2000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

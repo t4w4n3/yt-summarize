@@ -40,6 +40,16 @@ sync_openrouter() {
   # cleanup even if we fail
   trap 'rm -f "$tmp"' RETURN
 
+  # Sur VPS sans lecteur smartcard, gpg-agent loggue à chaque decrypt
+  # "can't connect to .../scdaemon" (bruit journal). On le désactive
+  # proprement — pas de YubiKey sur ce host.
+  # INTENTIONAL: disable-scdaemon sans carte - réévaluer si YubiKey déployée
+  if [ -d "$gnupg_dir" ] && ! grep -q "^disable-scdaemon" "$gnupg_dir/gpg-agent.conf" 2>/dev/null; then
+    echo "disable-scdaemon" >>"$gnupg_dir/gpg-agent.conf"
+    chmod 600 "$gnupg_dir/gpg-agent.conf" 2>/dev/null || true
+    gpgconf --kill gpg-agent 2>/dev/null || true
+  fi
+
   if [ -f "$gpg_file" ] && [ -d "$gnupg_dir" ]; then
     if GNUPGHOME="$gnupg_dir" gpg --quiet --batch --no-tty --decrypt "$gpg_file" >"$tmp" 2>/dev/null; then
       # validate it looks like an OpenRouter key

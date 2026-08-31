@@ -5,6 +5,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "test-live" "$@"
+trap 'metrics_end $?' EXIT
 
 # Live tests self-skip unless RUN_LIVE_TESTS=1; pnpm script sets it.
 pnpm run test:live

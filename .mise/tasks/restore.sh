@@ -6,6 +6,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "restore" "$@"
 
 ARCHIVE="${usage_file:?Usage: mise run restore <backup.tar.gz> [--yes]}"
 [ -f "$ARCHIVE" ] || {
@@ -29,7 +31,7 @@ VOL_ROOT="$HOME/.local/share/containers/storage/volumes"
 JOBS_VOL="$VOL_ROOT/summarize-yt_jobs-data/_data"
 ART_VOL="$VOL_ROOT/summarize-yt_artifacts/_data"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap 'rc=$?; metrics_end $rc; rm -rf "$TMP"' EXIT
 
 echo "[restore] stopping the stack (containers may stay down if they don't exist)..."
 podman-compose stop >/dev/null 2>&1 || true

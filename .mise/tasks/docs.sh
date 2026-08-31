@@ -9,6 +9,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "docs" "$@"
+trap 'metrics_end $?' EXIT
 
 DOCS_PORT="${usage_port}"
 DOCS_HOST="127.0.0.1"

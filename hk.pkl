@@ -20,25 +20,25 @@ amends "package://github.com/jdx/hk/releases/download/v1.56.1/hk@1.56.1#/Config.
 
 local checkSteps = new Mapping<String, Step> {
   ["doctor"] {
-    check = "mise run doctor"
+    check = "METRICS_CALLER=hk mise run doctor"
   }
   ["lint-types"] {
-    check = "mise run lint-types"
+    check = "METRICS_CALLER=hk mise run lint-types"
   }
   ["lint-js"] {
-    check = "mise run lint-js"
+    check = "METRICS_CALLER=hk mise run lint-js"
   }
   ["lint-shell"] {
-    check = "mise run lint-shell"
+    check = "METRICS_CALLER=hk mise run lint-shell"
   }
   ["lint-yaml"] {
-    check = "mise run lint-yaml"
+    check = "METRICS_CALLER=hk mise run lint-yaml"
   }
   ["lint-containerfile"] {
-    check = "mise run lint-containerfile"
+    check = "METRICS_CALLER=hk mise run lint-containerfile"
   }
   ["lint-compose"] {
-    check = "mise run lint-compose"
+    check = "METRICS_CALLER=hk mise run lint-compose"
   }
   ["test-unit"] {
     check = "pnpm run test:unit"
@@ -86,7 +86,7 @@ hooks {
         steps {
           ...checkSteps
           ["test-live"] {
-            check = "mise run test-live"
+            check = "METRICS_CALLER=hk mise run test-live"
           }
         }
       }

@@ -5,6 +5,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "logs" "$@"
+trap 'metrics_end $?' EXIT
 
 # Intentionally unquoted: $usage_service may contain multiple service names.
 # shellcheck disable=SC2086

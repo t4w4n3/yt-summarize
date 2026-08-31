@@ -9,6 +9,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "mutation" "$@"
+trap 'metrics_end $?' EXIT
 
 # gitleaks / CI guards ignore .stryker-tmp and test-results/mutation
 if [ "${usage_all:-false}" = "true" ]; then

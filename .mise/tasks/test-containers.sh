@@ -5,6 +5,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "test-containers" "$@"
 
 command -v podman-compose >/dev/null 2>&1 || {
   echo "podman-compose required — run \`mise run doctor\`" >&2
@@ -37,7 +39,7 @@ cleanup() {
   echo "[test-containers] tearing down the stack..."
   "${COMPOSE[@]}" down -v >/dev/null 2>&1 || true
 }
-trap cleanup EXIT
+trap 'rc=$?; metrics_end $rc; cleanup' EXIT
 
 echo "[test-containers] building image + starting stack (first run builds the image; be patient)..."
 "${COMPOSE[@]}" up -d --build

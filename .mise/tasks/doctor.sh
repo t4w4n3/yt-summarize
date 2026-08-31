@@ -4,6 +4,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "doctor" "$@"
+trap 'metrics_end $?' EXIT
 
 fail=0
 ok() { printf '  ok:   %s\n' "$1"; }

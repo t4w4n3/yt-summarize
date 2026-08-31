@@ -5,6 +5,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "setup" "$@"
+trap 'metrics_end $?' EXIT
 
 if [ ! -f .env ]; then
   cp .env.example .env

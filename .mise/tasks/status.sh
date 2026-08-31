@@ -5,5 +5,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/scripts/metrics.sh"
+metrics_start "status" "$@"
+trap 'metrics_end $?' EXIT
 
 podman-compose ps

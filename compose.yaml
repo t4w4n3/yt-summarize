@@ -85,9 +85,11 @@ services:
       SOCKS_PORT: "1080"
     volumes:
       - "${HOME}/.local/mullvad-poc:/mullvad:ro"  # config WireGuard (clé privée, 0600 sur l'hôte)
-    # on-failure + exit 0 de l'entrypoint: sans config, le service reste arrêté
-    # proprement (clone frais) au lieu de boucler.
-    restart: "on-failure"
+    # unless-stopped: le sidecar redémarre après reboot / SIGTERM (cf. bug
+    # 2026-09-01 où on-failure + exit 0 empêchait le restart, laissant
+    # 127.0.0.1:1080 fermé → "Connection refused" côté worker). Sans config
+    # l'entrypoint dort à l'infini au lieu d'exit 0 pour éviter la boucle.
+    restart: "unless-stopped"
     # Pas d'endpoint HTTP sonnable pour ce sidecar.
     healthcheck:
       disable: true

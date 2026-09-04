@@ -1,16 +1,11 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 
-// Single contract for secret layout — consolidation of the duplicated
-// `fs.existsSync('/run/secrets/…')` → placeholder → fallback knowledge that
-// previously lived in both download.ts (cookies) and openrouter.ts (key).
-// See docs/coupling-review.md P4.
+// Single contract for secret layout — podman secret → legacy GPG → env var
+// for the OpenRouter key. Downloads go through the Mullvad sidecar.
 
 const OPENROUTER_SECRET_PATH = '/run/secrets/openrouter_key';
 const OPENROUTER_LEGACY_GPG = '/secrets/openrouter.gpg';
-const COOKIES_SECRET_PATH = '/run/secrets/youtube_cookies';
-const COOKIES_PLACEHOLDER = '# empty - no cookies';
-const NETSCAPE_COOKIE_HEADER = '# Netscape HTTP Cookie File';
 
 export type OpenRouterSecretErrorCode = 'invalid-secret' | 'decryption-failed';
 
@@ -23,30 +18,6 @@ export class OpenRouterSecretError extends Error {
     this.name = 'OpenRouterSecretError';
     this.code = code;
   }
-}
-
-function isNetscapeCookiesFile(content: string): boolean {
-  const lines = content.split(/\r?\n/).map((line) => line.trim());
-  if (!lines.includes(NETSCAPE_COOKIE_HEADER) || lines.includes(COOKIES_PLACEHOLDER)) return false;
-  return lines.some((line) => {
-    if (!line || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) return false;
-    return line.split('\t').length === 7;
-  });
-}
-
-/**
- * Resolve the YouTube cookies file path for yt-dlp.
- * Returns the podman secret path if it contains a real Netscape cookies file,
- * otherwise null.
- */
-export function resolveYouTubeCookiesPath(): string | null {
-  if (fs.existsSync(COOKIES_SECRET_PATH)) {
-    const stat = fs.statSync(COOKIES_SECRET_PATH);
-    if (stat.size > 0 && isNetscapeCookiesFile(fs.readFileSync(COOKIES_SECRET_PATH, 'utf8'))) {
-      return COOKIES_SECRET_PATH;
-    }
-  }
-  return null;
 }
 
 /**

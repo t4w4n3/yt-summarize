@@ -1,36 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Sync host GPG-encrypted secrets into podman secrets (tmpfs, rootless-friendly).
-# Called by `mise run up` / `mise run setup` before `podman-compose up`.
+# Sync the host GPG-encrypted OpenRouter key into a podman secret (tmpfs,
+# rootless-friendly). Called by `mise run up` / `mise run setup` before
+# `podman-compose up`.
 # - openrouter_key: decrypted from ~/.secrets/openrouter.gpg + ~/.gnupg (ciphertext at rest)
-# - youtube_cookies: from ~/.secrets/youtube-cookies.txt (if present)
 # If the source does not exist, a dummy placeholder is created so that
 # compose's `external: true` does not fail and the worker can still start
-# (it will warn and paid stages will fail with a clear credential error).
+# (paid stages will fail with a clear credential error).
 
 SECRET_OPENROUTER="openrouter_key"
-SECRET_COOKIES="youtube_cookies"
-
-ensure_secret() {
-  local name="$1" file="$2" placeholder="$3"
-  if [ -f "$file" ]; then
-    if [ -s "$file" ]; then
-      if podman secret exists "$name" >/dev/null 2>&1; then
-        podman secret rm "$name" >/dev/null
-      fi
-      podman secret create "$name" "$file" >/dev/null
-      echo "podman secret '$name' synced from $file"
-      return 0
-    fi
-  fi
-  # source missing or empty → ensure a dummy placeholder so compose doesn't error
-  if ! podman secret exists "$name" >/dev/null 2>&1; then
-    printf '%s' "$placeholder" | podman secret create "$name" - >/dev/null
-    echo "podman secret '$name' created as placeholder (no source at $file)"
-  else
-    echo "podman secret '$name' already exists (placeholder kept; source missing at $file)"
-  fi
-}
 
 sync_openrouter() {
   local gpg_file="$HOME/.secrets/openrouter.gpg"
@@ -84,22 +62,5 @@ sync_openrouter() {
   trap - RETURN
 }
 
-sync_cookies() {
-  local cookie_file="$HOME/.secrets/youtube-cookies.txt"
-  # podman secret create needs a file; we create a dummy if missing
-  if [ -f "$cookie_file" ] && [ -s "$cookie_file" ]; then
-    ensure_secret "$SECRET_COOKIES" "$cookie_file" "# empty - no cookies"
-  else
-    # ensure dummy exists so compose external doesn't fail
-    if ! podman secret exists "$SECRET_COOKIES" >/dev/null 2>&1; then
-      printf '# empty - no cookies\n' | podman secret create "$SECRET_COOKIES" - >/dev/null
-      echo "podman secret '$SECRET_COOKIES' created as placeholder (no $cookie_file)"
-    else
-      echo "podman secret '$SECRET_COOKIES' already exists (placeholder kept)"
-    fi
-  fi
-}
-
 # main
 sync_openrouter
-sync_cookies

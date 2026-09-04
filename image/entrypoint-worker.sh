@@ -14,10 +14,4 @@ if [ -f /run/secrets/openrouter_key ]; then
   # podman secret is tmpfs 0440; ensure the worker can read it (already world-readable)
   :
 fi
-# youtube cookies are optional — checked at /run/secrets/youtube_cookies
-if [ -f /run/secrets/youtube_cookies ]; then
-  # download.ts checks /run/secrets/youtube_cookies directly, so no action needed here
-  :
-fi
-
 exec node /app/src/worker/worker.ts

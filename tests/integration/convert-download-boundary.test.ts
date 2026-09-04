@@ -25,35 +25,6 @@ let jobDir: string | undefined;
 const originalPath = process.env.PATH;
 const originalMullvadEnabled = process.env.MULLVAD_ENABLED;
 const originalMullvadProxy = process.env.MULLVAD_PROXY;
-const origExistsSync = fs.existsSync;
-const origStatSync = fs.statSync;
-const origReadFileSync = fs.readFileSync;
-
-function stubYouTubeCookies(valid: boolean): void {
-  const validContent = '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tFALSE\t0\tSID\tvalue\n';
-  const files = valid
-    ? new Map<string, string>([['/run/secrets/youtube_cookies', validContent]])
-    : new Map<string, string>();
-  mock.method(fs, 'existsSync', (p: fs.PathLike) => {
-    const s = p.toString();
-    if (s === '/run/secrets/youtube_cookies') return files.has(s);
-    return origExistsSync(s);
-  });
-  mock.method(fs, 'statSync', ((p: fs.PathLike) => {
-    const s = p.toString();
-    if (files.has(s)) return { size: (files.get(s) ?? '').length } as fs.Stats;
-    if (s === '/run/secrets/youtube_cookies') {
-      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-    }
-    return origStatSync(p);
-  }) as typeof fs.statSync);
-  mock.method(fs, 'readFileSync', ((p: fs.PathLike, ...args: unknown[]) => {
-    const s = p.toString();
-    if (files.has(s)) return files.get(s) as unknown as string;
-    return (origReadFileSync as unknown as (...a: unknown[]) => unknown)(p, ...args);
-  }) as typeof fs.readFileSync);
-}
-
 function installFake(name: string, body: string): void {
   if (!binDir) binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fakebin-'));
   const p = path.join(binDir, name);
@@ -181,7 +152,6 @@ describe('download — yt-dlp wrapper', () => {
     const argLog = path.join(jobDir, 'yt-args');
     process.env.MULLVAD_ENABLED = 'true';
     delete process.env.MULLVAD_PROXY;
-    stubYouTubeCookies(false);
     installFake(
       'yt-dlp',
       `
@@ -210,7 +180,6 @@ describe('download — yt-dlp wrapper', () => {
     const argLog = path.join(jobDir, 'yt-args');
     process.env.MULLVAD_ENABLED = 'true';
     process.env.MULLVAD_PROXY = 'socks5h://custom:1080';
-    stubYouTubeCookies(false);
     installFake(
       'yt-dlp',
       `
@@ -240,7 +209,6 @@ describe('download — yt-dlp wrapper', () => {
       if (val === undefined) delete process.env.MULLVAD_ENABLED;
       else process.env.MULLVAD_ENABLED = val;
       delete process.env.MULLVAD_PROXY;
-      stubYouTubeCookies(false);
       installFake(
         'yt-dlp',
         `
@@ -272,65 +240,9 @@ describe('download — yt-dlp wrapper', () => {
     }
   });
 
-  it('includes --cookies when a valid cookies file exists', async () => {
-    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
-    const argLog = path.join(jobDir, 'yt-args');
-    delete process.env.MULLVAD_ENABLED;
-    delete process.env.MULLVAD_PROXY;
-    stubYouTubeCookies(true);
-    installFake(
-      'yt-dlp',
-      `
-      printf '%s\\n' "$@" > "${argLog}"
-      prev=""
-      for a in "$@"; do
-        if [ "$prev" = "-o" ]; then output="$a"; fi
-        prev="$a"
-      done
-      jobdir="$(dirname "$output")"
-      printf 'Title\\n' > "$jobdir/.title"
-      : > "$jobdir/audio.webm"
-      exit 0
-      `,
-    );
-    withPath();
-    await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
-    const args = fs.readFileSync(argLog, 'utf8').split('\n').filter(Boolean);
-    const idx = args.indexOf('--cookies');
-    assert.ok(idx !== -1, 'should include --cookies');
-    assert.equal(args[idx + 1], '/run/secrets/youtube_cookies');
-  });
-
-  it('omits --cookies when no valid cookies file exists', async () => {
-    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
-    const argLog = path.join(jobDir, 'yt-args');
-    delete process.env.MULLVAD_ENABLED;
-    stubYouTubeCookies(false);
-    installFake(
-      'yt-dlp',
-      `
-      printf '%s\\n' "$@" > "${argLog}"
-      prev=""
-      for a in "$@"; do
-        if [ "$prev" = "-o" ]; then output="$a"; fi
-        prev="$a"
-      done
-      jobdir="$(dirname "$output")"
-      printf 'Title\\n' > "$jobdir/.title"
-      : > "$jobdir/audio.webm"
-      exit 0
-      `,
-    );
-    withPath();
-    await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
-    const args = fs.readFileSync(argLog, 'utf8').split('\n').filter(Boolean);
-    assert.ok(!args.includes('--cookies'));
-  });
-
   it('rejects with downloading StageError when yt-dlp exits non-zero', async () => {
     jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
     delete process.env.MULLVAD_ENABLED;
-    stubYouTubeCookies(false);
     installFake('yt-dlp', 'echo "yt-dlp error" >&2; exit 1\n');
     withPath();
     await assert.rejects(download({ url: 'https://youtu.be/abc' }, baseContext(jobDir)), (error: unknown) => {
@@ -344,7 +256,6 @@ describe('download — yt-dlp wrapper', () => {
   it('propagates timeoutMs to runProcess', async () => {
     jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
     delete process.env.MULLVAD_ENABLED;
-    stubYouTubeCookies(false);
     installFake('yt-dlp', 'sleep 2\n');
     withPath();
     await assert.rejects(
@@ -361,7 +272,6 @@ describe('download — yt-dlp wrapper', () => {
   it('propagates abort signal to runProcess', async () => {
     jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
     delete process.env.MULLVAD_ENABLED;
-    stubYouTubeCookies(false);
     installFake('yt-dlp', FAKE_YTDLP);
     withPath();
     const ac = new AbortController();
@@ -380,7 +290,6 @@ describe('download — yt-dlp wrapper', () => {
   it('discovers audio file ignoring audio.wav and unrelated files', async () => {
     jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
     delete process.env.MULLVAD_ENABLED;
-    stubYouTubeCookies(false);
     // pre-create decoys that should be ignored
     fs.writeFileSync(path.join(jobDir, 'audio.wav'), 'wav');
     fs.writeFileSync(path.join(jobDir, 'random.txt'), 'noise');
@@ -415,7 +324,6 @@ describe('download — yt-dlp wrapper', () => {
   it('returns Untitled when title file is missing', async () => {
     jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
     delete process.env.MULLVAD_ENABLED;
-    stubYouTubeCookies(false);
     installFake(
       'yt-dlp',
       `
@@ -437,7 +345,6 @@ describe('download — yt-dlp wrapper', () => {
   it('parses title trimming, splitting CRLF and taking last line', async () => {
     jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
     delete process.env.MULLVAD_ENABLED;
-    stubYouTubeCookies(false);
     installFake(
       'yt-dlp',
       `
@@ -460,7 +367,6 @@ describe('download — yt-dlp wrapper', () => {
   it('parses title with LF-only lines correctly (kills \\r\\n mutant)', async () => {
     jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
     delete process.env.MULLVAD_ENABLED;
-    stubYouTubeCookies(false);
     installFake(
       'yt-dlp',
       `
@@ -483,7 +389,6 @@ describe('download — yt-dlp wrapper', () => {
   it('truncates title to 500 characters', async () => {
     jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
     delete process.env.MULLVAD_ENABLED;
-    stubYouTubeCookies(false);
     const longTitle = 'a'.repeat(600);
     installFake(
       'yt-dlp',

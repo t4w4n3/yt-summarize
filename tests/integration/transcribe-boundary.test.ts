@@ -140,7 +140,7 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
         if (contentType(opts) === 'application/json') {
           sawJson = true;
           const body = JSON.parse(String(opts.body)) as { model?: string; input_audio?: string };
-          assert.equal(body.model, 'mistralai/voxtral-mini-transcribe');
+          assert.equal(body.model, 'microsoft/mai-transcribe-2');
           assert.ok(typeof body.input_audio === 'string' && body.input_audio.length > 0, 'input_audio must be base64');
           // Should be a large base64 payload (our 512 KB file → ~682 KB b64)
           assert.ok((body.input_audio?.length ?? 0) > 100_000);

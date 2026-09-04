@@ -10,7 +10,7 @@ web
 
 - Backend: Node 24 + Express + SQLite (`node:sqlite`), one container image run as two services (`app` + `worker`) under podman compose.
 - Frontend: single-page vanilla HTML/CSS/JS (Markdown rendered with `marked` + `DOMPurify`). The user is open to Vite/React, but explicitly prefers the simplest path for a minimal v1; the static single-page approach stands unless a concrete need appears.
-- Toolchain per job: yt-dlp → ffmpeg → OpenRouter STT API (`mistralai/voxtral-mini-transcribe`) → OpenRouter chat API (DeepSeek V4 Flash). Both paid stages are plain HTTPS calls; no agent runtime in the container.
+- Toolchain per job: yt-dlp → ffmpeg → OpenRouter STT API (`microsoft/mai-transcribe-2`) → OpenRouter chat API (Meta Muse Spark 1.3). Both paid stages are plain HTTPS calls; no agent runtime in the container.
 
 ## Users
 
@@ -35,7 +35,7 @@ The output is a study artifact, not a summary snippet: a structured document (Ov
 
 - Accepts single YouTube video URLs only (`youtube.com`, `www.`/`m.`/`music.` variants, `youtu.be`); no playlists/channels (explicit `--no-playlist`).
 - Four-stage pipeline with per-stage timeouts and friendly per-stage error mapping; stale jobs are re-queued after worker restart; artifacts cleaned after each job (transcript and summary kept).
-- STT model configurable (default `mistralai/voxtral-mini-transcribe`); transcription runs through the OpenRouter API, so no local speech tools or model volumes are needed.
+- STT model configurable (default `microsoft/mai-transcribe-2`); transcription runs through the OpenRouter API, so no local speech tools or model volumes are needed.
 - No history/queue UI, no accounts, no rate limiting, no cost tracking in v1 (explicitly out of scope).
 - Not yet decided/verified: a real YouTube download on this host (YouTube bot-checks its IP; a cookies file at `~/.secrets/youtube-cookies.txt` is the documented remedy). The STT and summarization stages have been exercised against real audio via the spike.
 

@@ -1,64 +1,6 @@
----
-name: Summarize YT
-description: A one-bit desktop workstation for turning YouTube videos into durable Markdown study notes.
-colors:
-  paper: "#f4f4f0"
-  paper-hi: "#fbfbf8"
-  ink: "#11110f"
-  muted: "#5c5c55"
-  dither: "#d3d3cc"
-  dither-dark: "#a8a8a0"
-  acid-lime: "#d9ff3f"
-  error: "#b11818"
-typography:
-  display:
-    fontFamily: "Press Start 2P, IBM Plex Mono, Courier New, monospace"
-    fontSize: "12px"
-    fontWeight: 400
-    lineHeight: 1.2
-    letterSpacing: "-0.035em"
-  body:
-    fontFamily: "IBM Plex Mono, Courier New, monospace"
-    fontSize: "13px"
-    fontWeight: 400
-    lineHeight: 1.45
-    letterSpacing: "-0.01em"
-  label:
-    fontFamily: "IBM Plex Mono, Courier New, monospace"
-    fontSize: "10px"
-    fontWeight: 600
-    lineHeight: 1.2
-    letterSpacing: "0.08em"
-rounded:
-  none: "0"
-spacing:
-  xs: "4px"
-  sm: "9px"
-  md: "13px"
-  lg: "21px"
-  xl: "30px"
-components:
-  button-primary:
-    backgroundColor: "{colors.acid-lime}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.none}"
-    padding: "0 14px"
-    height: "42px"
-  button-secondary:
-    backgroundColor: "{colors.paper-hi}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.none}"
-    padding: "0 10px"
-    height: "31px"
-  input-url:
-    backgroundColor: "{colors.paper-hi}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.none}"
-    padding: "0 13px"
-    height: "46px"
----
-
 # Design System: Summarize YT
+
+> Reference for UI tokens and components, plus the principles behind them. Normative when changing the UI; see [README.md](README.md) for product docs and [AGENTS.md](AGENTS.md) for contributor tasks.
 
 ## Overview
 

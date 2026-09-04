@@ -9,7 +9,6 @@ import fs from 'node:fs';
 const OPENROUTER_SECRET_PATH = '/run/secrets/openrouter_key';
 const OPENROUTER_LEGACY_GPG = '/secrets/openrouter.gpg';
 const COOKIES_SECRET_PATH = '/run/secrets/youtube_cookies';
-const COOKIES_LEGACY_PATH = '/secrets/youtube-cookies.txt';
 const COOKIES_PLACEHOLDER = '# empty - no cookies';
 const NETSCAPE_COOKIE_HEADER = '# Netscape HTTP Cookie File';
 
@@ -38,7 +37,7 @@ function isNetscapeCookiesFile(content: string): boolean {
 /**
  * Resolve the YouTube cookies file path for yt-dlp.
  * Returns the podman secret path if it contains a real Netscape cookies file,
- * otherwise the legacy bind-mount path, otherwise null.
+ * otherwise null.
  */
 export function resolveYouTubeCookiesPath(): string | null {
   if (fs.existsSync(COOKIES_SECRET_PATH)) {
@@ -46,9 +45,6 @@ export function resolveYouTubeCookiesPath(): string | null {
     if (stat.size > 0 && isNetscapeCookiesFile(fs.readFileSync(COOKIES_SECRET_PATH, 'utf8'))) {
       return COOKIES_SECRET_PATH;
     }
-  }
-  if (fs.existsSync(COOKIES_LEGACY_PATH)) {
-    return COOKIES_LEGACY_PATH;
   }
   return null;
 }

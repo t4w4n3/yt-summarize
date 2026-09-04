@@ -61,10 +61,10 @@ flowchart TB
   LOOP <--> DB
   LOOP --> ART
 
-  SEC["/secrets — host, read-only<br/>openrouter.gpg (GPG-encrypted) · youtube-cookies.txt"]
-  GPG["/gnupg — host keyring, read-only"]
+  SEC["/run/secrets — podman secrets (tmpfs 0440)<br/>openrouter_key · youtube_cookies"]
+  GPG["~/.secrets/openrouter.gpg + ~/.gnupg — host, GPG-encrypted at rest"]
   LOOP --> SEC
-  LOOP --> GPG
+  LOOP -. "sync-secrets.sh" .-> GPG
 
   PIPE -- "yt-dlp --proxy socks5h://127.0.0.1:1080" --> SOCKS
   WG --> MULLVAD["Mullvad relay<br/>only yt-dlp egress exits here"]
@@ -201,7 +201,7 @@ flowchart TB
 
   KEY --> DEC
   RING --> DEC
-  COOK --> PROXY
+  COOK -. "sync-secrets.sh → youtube_cookies" .-> SEC
 
   style BOUND fill:#f4f4f0,stroke:#a8a8a0,stroke-dasharray:4 3
   style DEC fill:#d9ff3f,stroke:#11110f

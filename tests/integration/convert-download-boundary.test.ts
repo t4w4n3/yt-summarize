@@ -36,13 +36,13 @@ function stubYouTubeCookies(valid: boolean): void {
     : new Map<string, string>();
   mock.method(fs, 'existsSync', (p: fs.PathLike) => {
     const s = p.toString();
-    if (s === '/run/secrets/youtube_cookies' || s === '/secrets/youtube-cookies.txt') return files.has(s);
+    if (s === '/run/secrets/youtube_cookies') return files.has(s);
     return origExistsSync(s);
   });
   mock.method(fs, 'statSync', ((p: fs.PathLike) => {
     const s = p.toString();
     if (files.has(s)) return { size: (files.get(s) ?? '').length } as fs.Stats;
-    if (s === '/run/secrets/youtube_cookies' || s === '/secrets/youtube-cookies.txt') {
+    if (s === '/run/secrets/youtube_cookies') {
       throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
     }
     return origStatSync(p);

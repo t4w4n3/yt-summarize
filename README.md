@@ -88,9 +88,10 @@ browser where you're signed in to YouTube (Netscape format, e.g. with the
 mise run cookies ~/Downloads/youtube-cookies.txt
 ```
 
-This copies the file to `~/.secrets/youtube-cookies.txt` (mode 600) and restarts
-the worker. The worker automatically passes `--cookies /secrets/youtube-cookies.txt`
-to yt-dlp when the file is present (it is mounted read-only from `~/.secrets`).
+This copies the file to `~/.secrets/youtube-cookies.txt` (mode 600), syncs it
+into the `youtube_cookies` podman secret, and restarts the worker. The worker
+automatically passes `--cookies /run/secrets/youtube_cookies` to yt-dlp when
+the secret contains a valid Netscape cookies file.
 
 ## Mullvad VPN (downloads from a datacenter IP)
 

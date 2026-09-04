@@ -10,7 +10,7 @@ Self-hosted YouTube-to-learning-note workstation. Paste one YouTube video URL, t
 - Host GPG secrets at these exact paths:
   - `~/.secrets/openrouter.gpg`
   - `~/.gnupg/`
-- The OpenRouter account must have the **mistral** provider authorized (Settings → Provider Preferences), otherwise STT returns `404 No allowed providers are available`.
+- The OpenRouter account must have the **microsoft** and **meta** providers authorized (Settings → Provider Preferences), otherwise STT/summarization returns `404 No allowed providers are available`.
 
 The API key is not stored in `.env`, the image, or a volume. The worker mounts the encrypted payload and keyring read-only, copies the keyring to a writable temporary GnuPG home, and decrypts the key in memory per request (`gpg --batch --decrypt`). There is no agent runtime in the pipeline: both paid stages are plain HTTPS calls to OpenRouter.
 
@@ -70,8 +70,8 @@ the task files under `.mise/tasks/` are the documented interface.
 
 Runtime settings live in `.env` (created by `mise run setup`; see `.env.example`).
 To change the transcription or summarization models, set `STT_MODEL` / `LLM_MODEL`
-there (defaults: `mistralai/voxtral-mini-transcribe`,
-`deepseek/deepseek-v4-flash-0731`).
+there (defaults: `microsoft/mai-transcribe-2`,
+`meta/muse-spark-1.3-contributor`).
 
 The Node toolchain is pinned in `mise.toml` (`node = "24"`, matching the
 container's `node:24-bookworm-slim` and `package.json` engines) and is provided

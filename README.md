@@ -7,7 +7,7 @@ Self-hosted YouTube-to-learning-note workstation. Paste one YouTube video URL, t
 This documentation follows [Diataxis](https://diataxis.fr/):
 
 - **Tutorial** — [Quick start](#quick-start): get from zero to your first note.
-- **How-to guides** — [How-to guides](#how-to-guides): solve a specific problem (VPN, Tailscale, backup, local iteration).
+- **How-to guides** — [How-to guides](#how-to-guides): solve a specific problem (VPN, backup, local iteration).
 - **Reference** — [Reference](#reference): commands, configuration, and API facts.
 - **Explanation** — [How it works](#how-it-works): concepts that clarify why the system behaves the way it does.
 
@@ -72,21 +72,9 @@ Notes:
 - Without a config, the `vpn` service stays down cleanly and the stack still starts. To download directly (datacenter IP, often blocked), set `MULLVAD_ENABLED=false` in `.env`.
 - `mise run doctor` reports a missing Mullvad config.
 
-### Expose the app on the tailnet (Tailscale)
+### Access the app remotely (optional)
 
-The app is served over HTTPS from the tailnet only — it is never published on a public interface (`compose.yaml` binds `127.0.0.1:8080`; the host's public IP exposes nothing). `tailscaled` terminates TLS for:
-
-    https://<machine>.ts.net/
-
-Reachable only by devices on your tailnet. Set up (one-time, on the host):
-
-```bash
-sudo tailscale set --operator=$USER
-mise run up                       # starts the stack, loopback-bound
-sudo tailscale serve --bg --https=443 http://127.0.0.1:8080
-```
-
-Inspect or disable with `tailscale serve status` / `tailscale serve --https=443 off`. The serve config persists across reboots, and the stack restarts via `restart: unless-stopped`.
+The stack binds `127.0.0.1:8080` (loopback only — never exposed publicly). Open [http://localhost:8080](http://localhost:8080) on the host, or expose it with whatever reverse proxy / tunnel you already use.
 
 ### Back up and restore data
 

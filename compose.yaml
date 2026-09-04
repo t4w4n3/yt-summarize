@@ -8,8 +8,8 @@ services:
       dockerfile: "image/Dockerfile"
     user: "node"
     command: ["/app/entrypoint-app.sh"]
-    # Loopback-only: reachable solely via `tailscale serve` (https://<machine>.ts.net).
-    # Never publish on all interfaces — this box has a public IP and no firewall.
+    # Loopback-only: never publish on all interfaces. Expose via your own
+    # reverse proxy / tunnel if remote access is needed.
     ports:
       - "127.0.0.1:8080:8080"
     environment:

@@ -77,7 +77,7 @@ describe('live OpenRouter (consumes tokens; opt-in via RUN_LIVE_TESTS=1)', { ski
       body: JSON.stringify({
         model: config.llmModel,
         messages: [{ role: 'user', content: 'Reply with exactly one word: OK' }],
-        max_tokens: 20,
+        max_tokens: 50,
         reasoning: { effort: 'minimal' },
       }),
       signal: AbortSignal.timeout(30_000),
@@ -85,13 +85,29 @@ describe('live OpenRouter (consumes tokens; opt-in via RUN_LIVE_TESTS=1)', { ski
     assert.equal(res.status, 200, `expected HTTP 200 from OpenRouter chat completions`);
 
     const body = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string | null; reasoning?: string | null } }>;
+      choices?: Array<{
+        message?: {
+          content?: string | null;
+          reasoning?: string | null;
+          reasoning_details?: Array<{ type?: string; data?: string; summary?: string }>;
+        };
+        finish_reason?: string | null;
+        native_finish_reason?: string | null;
+      }>;
       usage?: { total_tokens?: number };
     };
-    const msg = body.choices?.[0]?.message;
+    const choice = body.choices?.[0];
+    const msg = choice?.message;
     const content = typeof msg?.content === 'string' ? msg.content.trim() : '';
     const reasoning = typeof msg?.reasoning === 'string' ? msg.reasoning.trim() : '';
-    assert.ok(content.length > 0 || reasoning.length > 0, 'expected non-empty completion (content or reasoning)');
+    const hasReasoningDetails = Array.isArray(msg?.reasoning_details) && msg.reasoning_details.length > 0;
+    // Reasoning models count reasoning tokens against max_tokens — 20 was too tight
+    // (17 reasoning + 1 content hit max_output_tokens and truncated content to null).
+    // 50 gives headroom so content is reliably present even with minimal effort.
+    assert.ok(
+      content.length > 0 || reasoning.length > 0 || hasReasoningDetails,
+      `expected non-empty completion (content or reasoning), got finish_reason=${choice?.finish_reason} native=${choice?.native_finish_reason} body=${JSON.stringify(body).slice(0, 1000)}`,
+    );
     assert.ok((body.usage?.total_tokens ?? 0) > 0, 'expected token accounting in usage');
   });
 });

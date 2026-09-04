@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveYouTubeCookiesPath } from '../../shared/secrets.ts';
 import type { StageContext } from './process.ts';
 import { runProcess, StageError } from './process.ts';
 
@@ -31,13 +30,6 @@ export async function download(job: { url: string }, context: StageContext): Pro
   // socks5h = résolution DNS par le proxy (DNS aussi via le tunnel).
   if (process.env.MULLVAD_ENABLED === 'true') {
     args.push('--proxy', process.env.MULLVAD_PROXY || 'socks5h://127.0.0.1:1080');
-  }
-  // YouTube bot-checks datacenter IPs; a Netscape-format cookies file (e.g. exported
-  // from a logged-in browser) makes downloads reliable on those networks.
-  // Secret layout is consolidated in shared/secrets.ts (P4).
-  const cookiesPath = resolveYouTubeCookiesPath();
-  if (cookiesPath) {
-    args.push('--cookies', cookiesPath);
   }
   args.push(job.url);
   await runProcess('yt-dlp', args, {

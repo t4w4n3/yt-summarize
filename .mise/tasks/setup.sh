@@ -20,7 +20,7 @@ pnpm install --frozen-lockfile
 pnpm exec playwright install chromium
 
 echo
-# Sync podman secrets (openrouter key + cookies) so `mise run up` can run as `node`
+# Sync the podman secret (openrouter key) so `mise run up` can run as `node`
 if [ -x "$ROOT/scripts/sync-secrets.sh" ]; then
   "$ROOT/scripts/sync-secrets.sh" || echo "  (secrets sync skipped — GPG source absent, placeholders created)"
 fi

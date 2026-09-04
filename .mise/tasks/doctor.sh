@@ -91,15 +91,6 @@ if podman secret exists openrouter_key >/dev/null 2>&1; then
 else
   warn "podman secret 'openrouter_key' missing — run: bash scripts/sync-secrets.sh or mise run up (creates placeholder if no GPG)"
 fi
-if [ -f "$HOME/.secrets/youtube-cookies.txt" ]; then
-  ok "$HOME/.secrets/youtube-cookies.txt present"
-  if podman secret exists youtube_cookies >/dev/null 2>&1; then
-    ok "podman secret 'youtube_cookies' exists"
-  else
-    warn "podman secret 'youtube_cookies' missing — run: bash scripts/sync-secrets.sh"
-  fi
-fi
-
 echo
 if [ "$fail" -eq 0 ]; then
   echo "All checks passed. Next: mise run up"

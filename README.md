@@ -7,7 +7,7 @@ Self-hosted YouTube-to-learning-note workstation. Paste one YouTube video URL, t
 This documentation follows [Diataxis](https://diataxis.fr/):
 
 - **Tutorial** — [Quick start](#quick-start): get from zero to your first note.
-- **How-to guides** — [How-to guides](#how-to-guides): solve a specific problem (cookies, VPN, Tailscale, backup, local iteration).
+- **How-to guides** — [How-to guides](#how-to-guides): solve a specific problem (VPN, Tailscale, backup, local iteration).
 - **Reference** — [Reference](#reference): commands, configuration, and API facts.
 - **Explanation** — [How it works](#how-it-works): concepts that clarify why the system behaves the way it does.
 
@@ -45,16 +45,6 @@ mise run pipeline "https://youtu.be/..."
 ```
 
 Submits the URL to the running stack and polls until the note is ready. Accepts single video URLs only (`youtube.com` with `www.`/`m.`/`music.` subdomains, `youtu.be`); playlists are rejected (`--no-playlist`). The same video requested in another language produces a new job.
-
-### Fix YouTube bot-checks with cookies
-
-YouTube bot-checks datacenter IPs, which makes anonymous downloads fail with "Sign in to confirm you're not a bot". Export a cookies file from a browser where you're signed in to YouTube (Netscape format, e.g. with the "Get cookies.txt LOCALLY" extension) and install it with:
-
-```bash
-mise run cookies ~/Downloads/youtube-cookies.txt
-```
-
-This copies the file to `~/.secrets/youtube-cookies.txt` (mode 600), syncs it into the `youtube_cookies` podman secret, and restarts the worker. The worker automatically passes `--cookies /run/secrets/youtube_cookies` to yt-dlp when the secret contains a valid Netscape cookies file.
 
 ### Download reliably via the Mullvad VPN
 
@@ -135,7 +125,6 @@ Everyday commands. Contributor commands (coverage, mutation, lint, security, ful
 | `mise run pipeline <url>` | Submit a YouTube URL to the running stack and poll until done |
 | `mise run app [-p PORT]` | Run the web app locally (no container) for UI/API iteration |
 | `mise run worker` | Run the worker locally (no container; paid stages need the stack) |
-| `mise run cookies <file>` | Install a Netscape `cookies.txt` for the worker and restart it |
 | `mise run mullvad <mode>` | Mullvad operations: relay rotation (`scan`), config provisioning (`init`), tunnel debug (`run`/`test`/`dryrun`/`status`) |
 | `mise run backup` | Snapshot both volumes (SQLite job DB + artifacts) to `~/.local/backups/` |
 | `mise run restore <file> [--yes]` | Restore volumes from a backup archive (stops the stack, restores, restarts) |
@@ -203,7 +192,6 @@ The summarization prompt produces a study artifact proportional to the video len
 ### Secrets and trust boundaries
 
 - The OpenRouter key is GPG-encrypted at rest on the host (`~/.secrets/openrouter.gpg`, 0600) with a passphrase-less keyring (`~/.gnupg`, 0700). `mise run up` syncs it into the `openrouter_key` podman secret; the worker reads `/run/secrets/openrouter_key` (tmpfs, 0440) and decrypts per request, so the plaintext key only ever lives in worker memory for one HTTPS call. It never lands in `.env`, the image, or a volume.
-- The optional YouTube cookies file follows the same path via the `youtube_cookies` secret.
 - `app`/`worker` run as non-root `node`; only `vpn` runs as root (needs `NET_ADMIN` + `/dev/net/tun`, confined to its own network namespace).
 
 ## Testing

@@ -52,9 +52,6 @@ services:
       - "artifacts:/artifacts"
     secrets:
       - "openrouter_key"
-      # youtube_cookies is optional — if the podman secret does not exist the
-      # worker still starts; download.ts checks /run/secrets/youtube_cookies.
-      - "youtube_cookies"
     network_mode: "host"                      # host DNS/network; required on hosts without podman's aardvark-dns
     restart: "unless-stopped"
     # Runs as non-root `node` (image default); no HTTP endpoint to probe.
@@ -103,7 +100,5 @@ volumes:
 
 secrets:
   openrouter_key:
-    external: true
-  youtube_cookies:
     external: true
 ...

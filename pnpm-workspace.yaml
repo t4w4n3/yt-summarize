@@ -1,2 +1,11 @@
+# GHSA-g3hv-75wg-m249 (minimatch, modérée, DoS via globparts amplification) :
+# dev-only, via archunit et @stryker-mutator/core, jamais dans l'image. Non
+# corrigeable aujourd'hui — archunit 2.5.4 (la dernière) exige minimatch ^10,
+# tandis que minimatch 11, première version corrigée, a supprimé l'API
+# glob→RegExp (makeRe) qu'archunit appelle : l'override casse les 9 tests
+# d'architecture. À retirer dès qu'archunit passe à minimatch 11.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-g3hv-75wg-m249
 overrides:
   qs: ^6.16.0

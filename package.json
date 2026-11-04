@@ -30,15 +30,15 @@
     "node": ">=24"
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.3.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "@stryker-mutator/core": "^10.0.0",
-    "@stryker-mutator/typescript-checker": "^10.0.0",
+    "@stryker-mutator/core": "^10.1.1",
+    "@stryker-mutator/typescript-checker": "^10.1.1",
     "@types/express": "^5.0.6",
     "@types/node": "^24.13.3",
-    "archunit": "^2.4.0",
+    "archunit": "^2.5.4",
     "typescript": "^6.0.3"
   }
 }

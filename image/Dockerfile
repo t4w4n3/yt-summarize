@@ -4,7 +4,7 @@ FROM node:24-bookworm-slim
 # Versions pinned (hadolint DL3008/DL3013). Re-pin deliberately when bumping:
 # `podman run --rm node:24-bookworm-slim bash -c "apt-get update && apt-cache policy <pkg>"`
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates=20250419~deb12u1 \
+      ca-certificates=20250419~deb12u2 \
       curl=7.88.1-10+deb12u15 \
       ffmpeg=7:5.1.9-0+deb12u1 \
       gnupg=2.2.40-1.1+deb12u2 \

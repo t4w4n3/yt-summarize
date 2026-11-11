@@ -10,11 +10,19 @@
  */
 
 import assert from 'node:assert/strict';
-import { afterEach, describe, it } from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, it, mock } from 'node:test';
 import { runProcess, StageError } from '../../src/worker/stages/process.ts';
+
+function tmpDir(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'proc-test-'));
+}
 
 describe('runProcess — subprocess boundary', () => {
   afterEach(() => {
+    mock.restoreAll();
     process.env = { ...process.env };
   });
 
@@ -96,6 +104,60 @@ describe('runProcess — subprocess boundary', () => {
       }),
       (error: unknown) => error instanceof StageError && /too much output/.test(error.message),
     );
+  });
+
+  it('settles only once the stage log stream is closed', async () => {
+    // The caller deletes the job directory as soon as the promise settles, so a
+    // log stream still opening in the background then fails with ENOENT as an
+    // uncaught exception (a real flake in convert-download-boundary). Track the
+    // stream's close event to observe the ordering deterministically.
+    const dir = tmpDir();
+    const logPath = path.join(dir, 'stage.log');
+    const closed: string[] = [];
+    const createWriteStream = fs.createWriteStream.bind(fs);
+    mock.method(fs, 'createWriteStream', (file: fs.PathLike, options?: Parameters<typeof fs.createWriteStream>[1]) => {
+      const stream = createWriteStream(file, options);
+      stream.on('close', () => closed.push(file.toString()));
+      return stream;
+    });
+    try {
+      const result = await runProcess(process.execPath, ['-e', 'process.stdout.write("hi");'], {
+        stage: 'downloading',
+        timeoutMs: 5000,
+        logPath,
+      });
+      assert.equal(result.code, 0);
+      assert.deepEqual(
+        closed,
+        [logPath],
+        'stage.log must be closed by the time runProcess settles, otherwise the caller can delete the job dir under an open stream',
+      );
+    } finally {
+      mock.restoreAll();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('survives a stage log that cannot be opened', async () => {
+    const dir = tmpDir();
+    // The parent directory does not exist, so opening the log fails with ENOENT.
+    const logPath = path.join(dir, 'gone', 'stage.log');
+    try {
+      const started = Date.now();
+      const result = await runProcess(process.execPath, ['-e', 'process.stdout.write("hi");'], {
+        stage: 'downloading',
+        timeoutMs: 5000,
+        logPath,
+      });
+      const elapsedMs = Date.now() - started;
+      assert.equal(result.code, 0);
+      assert.equal(fs.existsSync(logPath), false);
+      // A log that never opened can never close: waiting for it would stall the
+      // stage for the whole LOG_CLOSE_TIMEOUT_MS bound (5 s) on every job.
+      assert.ok(elapsedMs < 2000, `a broken stage log must not stall the stage, took ${elapsedMs}ms`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('rejects with a could-not-start StageError when the binary is missing', async () => {

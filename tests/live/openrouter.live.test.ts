@@ -21,6 +21,7 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import { config } from '../../src/shared/config.ts';
 import { resolveOpenRouterKey } from '../../src/worker/stages/openrouter.ts';
+import { providerRouting } from '../../src/worker/stages/summarize.ts';
 
 const RUN_LIVE = process.env.RUN_LIVE_TESTS === '1';
 
@@ -65,6 +66,8 @@ describe('live OpenRouter (consumes tokens; opt-in via RUN_LIVE_TESTS=1)', { ski
   it('micro chat completion on the configured cheap model succeeds', async () => {
     const apiKey = await resolveLiveKey();
 
+    const provider = providerRouting(config.llmProviderPin, config.llmQuantization);
+
     // A single tiny request — a handful of output tokens at most.
     // Use minimal reasoning so the micro budget covers real content,
     // not just the model's hidden thinking trace (cf. summarize stage).
@@ -76,6 +79,9 @@ describe('live OpenRouter (consumes tokens; opt-in via RUN_LIVE_TESTS=1)', { ski
       },
       body: JSON.stringify({
         model: config.llmModel,
+        // Same provider pin as the summarize stage: a live run must exercise
+        // the endpoint production actually uses.
+        ...(provider ? { provider } : {}),
         messages: [{ role: 'user', content: 'Reply with exactly one word: OK' }],
         max_tokens: 50,
         reasoning: { effort: 'minimal' },

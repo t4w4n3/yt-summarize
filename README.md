@@ -145,7 +145,9 @@ Runtime settings live in `.env` (created by `mise run setup`; see `.env.example`
 | `STT_RETRY_BASE_DELAY_MS` | `1000` | First retry delay; doubles per attempt (half fixed, half jitter) |
 | `STT_RETRY_MAX_DELAY_MS` | `8000` | Ceiling for any single retry delay — worst case added to a job is (attempts − 1) × this |
 | `LLM_PROVIDER` | `openrouter` | Chat provider for summarization |
-| `LLM_MODEL` | `meta/muse-spark-1.3-contributor` | Summarization model (OpenRouter) |
+| `LLM_MODEL` | `deepseek/deepseek-v4.1-flash-1017` | Summarization model (OpenRouter) |
+| `LLM_PROVIDER_PIN` | `deepinfra` | OpenRouter provider slug the summarization request is pinned to (`provider.only`, fallbacks disabled); blank = OpenRouter default routing |
+| `LLM_QUANTIZATION` | `fp8` | Quantization filter applied to the pinned provider (`provider.quantizations`); blank = any quantization |
 | `LLM_THINKING` | `high` | Reasoning effort for the summarization model |
 | `WORKER_POLL_MS` | `2000` | Worker polling interval between queue checks |
 | `JOB_TIMEOUT_MS` | `1800000` | Whole-job timeout (30 min) before the job fails |

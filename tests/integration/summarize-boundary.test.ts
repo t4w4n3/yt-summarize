@@ -12,8 +12,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
+import { config } from '../../src/shared/config.ts';
 import type { StageContext } from '../../src/worker/stages/process.ts';
-import { extractContent, summarize } from '../../src/worker/stages/summarize.ts';
+import { extractContent, providerRouting, summarize } from '../../src/worker/stages/summarize.ts';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'summarize-test-'));
@@ -141,5 +142,58 @@ describe('summarize — LLM outbound adapter', () => {
     assert.equal(extractContent({}), null);
     assert.equal(extractContent(null), null);
     assert.equal(extractContent('string'), null);
+  });
+});
+
+describe('summarize — OpenRouter provider pin', () => {
+  it('pins a single provider and quantization with fallbacks disabled', () => {
+    assert.deepEqual(providerRouting('deepinfra', 'fp8'), {
+      only: ['deepinfra'],
+      quantizations: ['fp8'],
+      allow_fallbacks: false,
+    });
+  });
+
+  it('sends no provider object at all when no provider is pinned', () => {
+    assert.equal(providerRouting('', 'fp8'), undefined);
+  });
+
+  it('leaves the quantization filter out when none is configured', () => {
+    assert.deepEqual(providerRouting('deepinfra', ''), { only: ['deepinfra'], allow_fallbacks: false });
+  });
+
+  it('sends the pinned provider and quantization in the request body', async () => {
+    const dir = tmpDir();
+    const transcript = writeTranscript(dir, 't');
+    let body: { provider?: unknown } = {};
+    globalThis.fetch = (async (_url: string | URL | Request, opts?: RequestInit) => {
+      body = JSON.parse(String(opts?.body)) as { provider?: unknown };
+      return jsonResponse(200, { choices: [{ message: { content: '# Pinned' } }] });
+    }) as typeof fetch;
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
+    try {
+      const md = await summarize(transcript, {
+        jobDir: dir,
+        logPath: path.join(dir, 'stage.log'),
+        timeoutMs: 5000,
+        lang: 'en',
+      } as StageContext);
+      assert.equal(md, '# Pinned');
+      assert.deepEqual(body.provider, {
+        only: [config.llmProviderPin],
+        quantizations: [config.llmQuantization],
+        allow_fallbacks: false,
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('trims surrounding whitespace from the configured slugs', () => {
+    assert.deepEqual(providerRouting(' deepinfra ', ' fp8 '), {
+      only: ['deepinfra'],
+      quantizations: ['fp8'],
+      allow_fallbacks: false,
+    });
   });
 });

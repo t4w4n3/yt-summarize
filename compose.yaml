@@ -49,6 +49,10 @@ services:
       STT_RETRY_MAX_DELAY_MS: "${STT_RETRY_MAX_DELAY_MS}"
       LLM_PROVIDER: "${LLM_PROVIDER}"
       LLM_MODEL: "${LLM_MODEL}"
+      # Pin OpenRouter to one provider endpoint (slug) + quantization, so two
+      # identical requests are not routed to a different backend.
+      LLM_PROVIDER_PIN: "${LLM_PROVIDER_PIN}"
+      LLM_QUANTIZATION: "${LLM_QUANTIZATION}"
       LLM_THINKING: "${LLM_THINKING}"
       WORKER_POLL_MS: "${WORKER_POLL_MS}"
       JOB_TIMEOUT_MS: "${JOB_TIMEOUT_MS}"

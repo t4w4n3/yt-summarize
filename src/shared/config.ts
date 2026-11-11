@@ -13,6 +13,10 @@ export interface Config {
   sttRetryMaxDelayMs: number;
   llmProvider: string;
   llmModel: string;
+  /** OpenRouter provider slug the summarization model is pinned to (blank = no pin). */
+  llmProviderPin: string;
+  /** Quantization filter applied to the pinned provider (blank = any quantization). */
+  llmQuantization: string;
   llmThinking: string;
   pollMs: number;
   jobTimeoutMs: number;
@@ -28,7 +32,9 @@ export const config: Config = Object.freeze({
   sttRetryBaseDelayMs: boundedInt(process.env.STT_RETRY_BASE_DELAY_MS, 1000, 0),
   sttRetryMaxDelayMs: boundedInt(process.env.STT_RETRY_MAX_DELAY_MS, 8000, 0),
   llmProvider: envVar(process.env.LLM_PROVIDER, 'openrouter'),
-  llmModel: envVar(process.env.LLM_MODEL, 'meta/muse-spark-1.3-contributor'),
+  llmModel: envVar(process.env.LLM_MODEL, 'deepseek/deepseek-v4.1-flash-1017'),
+  llmProviderPin: envVar(process.env.LLM_PROVIDER_PIN, 'deepinfra'),
+  llmQuantization: envVar(process.env.LLM_QUANTIZATION, 'fp8'),
   llmThinking: envVar(process.env.LLM_THINKING, 'high'),
   pollMs: boundedInt(process.env.WORKER_POLL_MS, 2000, 1),
   jobTimeoutMs: boundedInt(process.env.JOB_TIMEOUT_MS, 1800000, 1),

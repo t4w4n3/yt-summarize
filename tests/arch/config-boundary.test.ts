@@ -61,6 +61,21 @@ describe('architecture — settings come from shared/config', () => {
     );
   });
 
+  it('the e2e stack never reuses a running server', () => {
+    // global-setup wipes e2e/.tmp/data before the servers start. A reused server
+    // keeps its handle on the deleted SQLite file, so POST /api/summarize then
+    // answers 200 (deduped) where a fresh run answers 201, so a green suite could
+    // have tested a database nobody created. Refusing to reuse turns a busy port
+    // into a loud failure instead.
+    const src = fs.readFileSync('e2e/playwright.config.ts', 'utf8');
+    const values = [...src.matchAll(/reuseExistingServer:\s*([^,\n}]+)/g)].map((match) => (match[1] ?? '').trim());
+    assert.deepEqual(
+      values,
+      ['false', 'false'],
+      'every e2e webServer must set reuseExistingServer: false (its data dir is wiped before it starts)',
+    );
+  });
+
   it('shared/config.ts is the single place that parses the compose literal', () => {
     const readers = tsFilesUnder(path.join(SRC, 'shared'))
       .filter((file) => !file.endsWith(path.join('config.ts')))

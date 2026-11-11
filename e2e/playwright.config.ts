@@ -26,12 +26,17 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
   webServer: [
+    // Never reuse a server that is already listening: global-setup wipes the
+    // data dir before the servers start, and a reused server would keep its
+    // handle on the deleted SQLite file — the suite would then run against a
+    // stale database (deduped 200 where a fresh run answers 201). A busy port
+    // is a loud failure instead: kill the leftover process and rerun.
     // Real app server (same code as the container, host process, temp data dir).
     {
       command: 'node src/app/server.ts',
       cwd: path.join(import.meta.dirname, '..'),
       url: appUrl,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 30_000,
       env: { PORT: '4174', DATA_DIR: dataDir },
     },
@@ -41,7 +46,7 @@ export default defineConfig({
       command: 'node e2e/fake-worker.ts',
       cwd: path.join(import.meta.dirname, '..'),
       url: workerHealthUrl,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 30_000,
       env: { DATA_DIR: dataDir, FAKE_WORKER_PORT: '4175' },
     },

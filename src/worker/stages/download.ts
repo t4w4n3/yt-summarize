@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { mullvadSettings } from '../../shared/config.ts';
 import type { StageContext } from './process.ts';
 import { runProcess, StageError } from './process.ts';
 
@@ -28,8 +29,11 @@ export async function download(job: { url: string }, context: StageContext): Pro
   // Mullvad sidecar (service `vpn` du compose): yt-dlp passe par le proxy
   // SOCKS5 du sidecar → tunnel Mullvad. Seul ce trafic sort par le VPN.
   // socks5h = résolution DNS par le proxy (DNS aussi via le tunnel).
-  if (process.env.MULLVAD_ENABLED === 'true') {
-    args.push('--proxy', process.env.MULLVAD_PROXY || 'socks5h://127.0.0.1:1080');
+  // Les réglages passent par shared/config, seul à savoir lire l'expression
+  // ${VAR:-défaut} que podman-compose laisse brute quand la variable manque.
+  const mullvad = mullvadSettings();
+  if (mullvad.enabled) {
+    args.push('--proxy', mullvad.proxy);
   }
   args.push(job.url);
   await runProcess('yt-dlp', args, {

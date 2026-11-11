@@ -14,6 +14,30 @@ function appendLog(logPath: string | undefined, line: string): void {
   } catch {}
 }
 
+/** OpenRouter `provider` routing object that pins one endpoint of the model. */
+export interface ProviderRouting {
+  only: string[];
+  quantizations?: string[];
+  allow_fallbacks: false;
+}
+
+/**
+ * Builds the OpenRouter `provider` object pinning a single provider endpoint.
+ *
+ * A blank pin sends no `provider` object at all (OpenRouter default routing); a
+ * blank quantization only drops the `quantizations` filter. Empty values are
+ * never forwarded: `only: []` or `quantizations: ['']` would filter every
+ * endpoint out and the request would fail with "no allowed providers".
+ */
+export function providerRouting(pin: string, quantization: string): ProviderRouting | undefined {
+  const slug = pin.trim();
+  if (!slug) return undefined;
+  const routing: ProviderRouting = { only: [slug], allow_fallbacks: false };
+  const quant = quantization.trim();
+  if (quant) routing.quantizations = [quant];
+  return routing;
+}
+
 /** Pull choices[0].message.content out of an untyped JSON body, defensively. */
 export function extractContent(body: unknown): string | null {
   if (typeof body !== 'object' || body === null) return null;
@@ -37,6 +61,10 @@ export async function summarize(transcriptPath: string, context: StageContext): 
     .readFileSync(path.join(import.meta.dirname, '..', 'prompts', 'summarize.md'), 'utf8')
     .replaceAll('{{OUTPUT_LANGUAGE}}', lang);
   const transcript = fs.readFileSync(transcriptPath, 'utf8');
+  // Pin the summarization endpoint: OpenRouter otherwise routes to whichever
+  // provider of the model is cheapest/fastest right now, which changes output
+  // quality and price between two identical requests.
+  const provider = providerRouting(config.llmProviderPin, config.llmQuantization);
 
   const controller = new AbortController();
   const timeoutMs = context.timeoutMs || 10 * 60 * 1000;
@@ -47,13 +75,14 @@ export async function summarize(transcriptPath: string, context: StageContext): 
   try {
     appendLog(
       context.logPath,
-      `$ POST ${API_URL} (model=${config.llmModel}, reasoning=${config.llmThinking}, lang=${lang})`,
+      `$ POST ${API_URL} (model=${config.llmModel}, provider=${config.llmProviderPin}/${config.llmQuantization}, reasoning=${config.llmThinking}, lang=${lang})`,
     );
     response = await fetch(API_URL, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: config.llmModel,
+        ...(provider ? { provider } : {}),
         messages: [
           { role: 'system', content: systemPrompt },
           {

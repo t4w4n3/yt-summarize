@@ -152,6 +152,8 @@ describe('shared/config — the frozen config object is fully resolved', () => {
       sttModel: config.sttModel,
       llmProvider: config.llmProvider,
       llmModel: config.llmModel,
+      llmProviderPin: config.llmProviderPin,
+      llmQuantization: config.llmQuantization,
       llmThinking: config.llmThinking,
       mullvadProxy: mullvadSettings().proxy,
     } as const;
@@ -161,5 +163,19 @@ describe('shared/config — the frozen config object is fully resolved', () => {
         `${name}=${JSON.stringify(value)} must be a resolved value`,
       );
     }
+  });
+});
+
+describe('shared/config — summarization model defaults', () => {
+  it('defaults to deepseek/deepseek-v4.1-flash-1017 pinned on the deepinfra fp8 endpoint', (t) => {
+    // config is built at import time from the real environment; a developer with
+    // an override exported would otherwise see a spurious failure here.
+    const overrides = ['LLM_MODEL', 'LLM_PROVIDER_PIN', 'LLM_QUANTIZATION'].filter(
+      (name) => process.env[name] !== undefined,
+    );
+    if (overrides.length > 0) return t.skip(`environment overrides the default (${overrides.join(', ')})`);
+    assert.equal(config.llmModel, 'deepseek/deepseek-v4.1-flash-1017');
+    assert.equal(config.llmProviderPin, 'deepinfra');
+    assert.equal(config.llmQuantization, 'fp8');
   });
 });

@@ -37,6 +37,10 @@ services:
       DATA_DIR: "/data"
       ARTIFACTS_DIR: "/artifacts"
       STT_MODEL: "${STT_MODEL:-microsoft/mai-transcribe-2}"
+      # Retry borné des erreurs transitoires du provider STT (429 / 5xx).
+      STT_RETRY_MAX_ATTEMPTS: "${STT_RETRY_MAX_ATTEMPTS:-3}"
+      STT_RETRY_BASE_DELAY_MS: "${STT_RETRY_BASE_DELAY_MS:-1000}"
+      STT_RETRY_MAX_DELAY_MS: "${STT_RETRY_MAX_DELAY_MS:-8000}"
       LLM_PROVIDER: "${LLM_PROVIDER:-openrouter}"
       LLM_MODEL: "${LLM_MODEL:-meta/muse-spark-1.3-contributor}"
       LLM_THINKING: "${LLM_THINKING:-high}"

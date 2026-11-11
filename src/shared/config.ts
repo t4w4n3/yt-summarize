@@ -5,6 +5,9 @@ export interface Config {
   dataDir: string;
   artifactsDir: string;
   sttModel: string;
+  sttRetryMaxAttempts: number;
+  sttRetryBaseDelayMs: number;
+  sttRetryMaxDelayMs: number;
   llmProvider: string;
   llmModel: string;
   llmThinking: string;
@@ -18,6 +21,9 @@ export const config: Config = Object.freeze({
   dataDir: process.env.DATA_DIR || '/data',
   artifactsDir: process.env.ARTIFACTS_DIR || '/artifacts',
   sttModel: process.env.STT_MODEL || 'microsoft/mai-transcribe-2',
+  sttRetryMaxAttempts: Number(process.env.STT_RETRY_MAX_ATTEMPTS || 3),
+  sttRetryBaseDelayMs: Number(process.env.STT_RETRY_BASE_DELAY_MS || 1000),
+  sttRetryMaxDelayMs: Number(process.env.STT_RETRY_MAX_DELAY_MS || 8000),
   llmProvider: process.env.LLM_PROVIDER || 'openrouter',
   llmModel: process.env.LLM_MODEL || 'meta/muse-spark-1.3-contributor',
   llmThinking: process.env.LLM_THINKING || 'high',

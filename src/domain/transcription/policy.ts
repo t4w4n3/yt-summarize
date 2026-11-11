@@ -60,3 +60,32 @@ export function alignedChunkBytes(
 export function joinTranscriptParts(parts: string[]): string {
   return parts.join('\n\n');
 }
+
+/* ── Transient-failure retry policy ───────────────────────────────────────────
+ *
+ * The provider is upstream-flaky: a 429 (upstream rate limit) or a 5xx says
+ * "same request again in a moment", not "give up". Everything else — 400,
+ * 404, 413 — is definitive: retrying it just wastes the job's time budget.
+ * Delays grow exponentially and are capped, so the added wait is bounded.
+ */
+
+export const RETRY_MAX_ATTEMPTS = 3;
+export const RETRY_BASE_DELAY_MS = 1000;
+export const RETRY_MAX_DELAY_MS = 8000;
+
+export function isRetryableStatus(httpStatus: number): boolean {
+  return httpStatus === 429 || (httpStatus >= 500 && httpStatus <= 599);
+}
+
+export function retryDelayMs(
+  attempt: number,
+  baseMs: number = RETRY_BASE_DELAY_MS,
+  maxMs: number = RETRY_MAX_DELAY_MS,
+  random: () => number = Math.random,
+): number {
+  const safeAttempt = Math.max(1, Math.floor(attempt));
+  // Exponential cap, then equal jitter: half fixed, half random, so concurrent
+  // workers that hit the same upstream limit don't retry in lockstep.
+  const cap = Math.min(baseMs * 2 ** (safeAttempt - 1), maxMs);
+  return Math.round(cap / 2 + random() * (cap / 2));
+}

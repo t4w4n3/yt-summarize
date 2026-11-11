@@ -178,7 +178,7 @@ The app and worker share only the SQLite job database and the artifacts volume. 
 
 ### Study note structure
 
-The summarization prompt produces a study artifact proportional to the video length: TL;DR, key learnings (claim + rationale, never rationale-free), concepts & terms, details, opinions vs. established facts, action items / next steps, and mentioned resources. Sections with no content are omitted rather than invented; obvious transcription mis-hearings are silently corrected; the speaker's terminology and numbers are preserved. Out of scope for v1: playlists/channels, queue/history UI, accounts, rate limiting, cost tracking, offline transcription.
+The summarization prompt produces a study artifact proportional to the video length: a self-contained TL;DR, key learnings (each claim with the evidence behind it, tagged `[opinion]` when it is the speaker's judgement), concepts & terms (definitions only, no claims), details (only material the learnings cannot hold), and at most three actions. Each fact appears once; a section that would only restate an earlier point is omitted, and the note stays shorter than the transcript. Obvious transcription mis-hearings are silently corrected; the speaker's terminology and numbers are preserved. Out of scope for v1: playlists/channels, queue/history UI, accounts, rate limiting, cost tracking, offline transcription.
 
 ### Secrets and trust boundaries
 

@@ -11,9 +11,21 @@ const VALID_URL = 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
 
 const RESULT = {
   title: 'The real e2e video',
-  markdown: ['## Overview', '', 'A test overview paragraph.', '', '## Key Takeaways', '', '- One', '- Two', ''].join(
-    '\n',
-  ),
+  markdown: [
+    '## Overview',
+    '',
+    'A test overview paragraph.',
+    '',
+    '### A nested detail',
+    '',
+    'A test detail paragraph.',
+    '',
+    '## Key Takeaways',
+    '',
+    '- One',
+    '- Two',
+    '',
+  ].join('\n'),
   wordCount: 14,
 };
 
@@ -140,6 +152,7 @@ test('walks a job through all four stages to a rendered note', async ({ page }) 
   await expect(page.locator('#queue-state')).toHaveText('COMPLETE');
   await expect(page.locator('#word-count')).toHaveText(`${RESULT.wordCount} WORDS`);
   await expect(page.locator('#markdown-output h2').first()).toHaveText('Overview');
+  await expect(page.locator('#markdown-output h3').first()).toHaveText('A nested detail');
   await expect(page.locator('#download-button')).toBeVisible();
   for (const stage of STAGE_STEPS) {
     await expect(page.locator(`.pipeline-step[data-stage="${stage}"]`)).toHaveClass(/is-done/);
@@ -221,14 +234,14 @@ test('sample note opens, downloads, and resets via Escape', async ({ page }) => 
   await expect(page.locator('#note-title')).toHaveText('How to make a note worth keeping');
   await expect(page.locator('#footer-state')).toHaveText('SAMPLE');
   await expect(page.locator('#word-count')).toHaveText(/\d+ WORDS/);
-  await expect(page.locator('#markdown-output h2').first()).toHaveText('Overview');
+  await expect(page.locator('#markdown-output h2').first()).toHaveText('TL;DR');
   await expect(page.locator('#toast')).toBeVisible();
 
   const downloadPromise = page.waitForEvent('download');
   await page.click('#download-button');
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.md$/);
-  expect(fs.readFileSync(await download.path(), 'utf8')).toContain('## Overview');
+  expect(fs.readFileSync(await download.path(), 'utf8')).toContain('## TL;DR');
 
   const shortcutDownload = page.waitForEvent('download');
   await page.keyboard.press('Control+d');

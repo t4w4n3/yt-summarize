@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: the un-interpolated
+// "${VAR:-default}" expression podman-compose emits IS the input under test.
 /**
  * Unit tests — integer bounds read from the environment.
  *
@@ -23,9 +25,7 @@ describe('shared/config — boundedInt', () => {
   it('uses the fallback for the un-interpolated compose literal', () => {
     // Exactly what podman-compose passes when the var is missing from .env —
     // the `${` is the input under test, not a template to interpolate.
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: reproduces the compose literal verbatim
     const attemptsLiteral = '${STT_RETRY_MAX_ATTEMPTS:-3}';
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: reproduces the compose literal verbatim
     const baseLiteral = '${STT_RETRY_BASE_DELAY_MS:-1000}';
     assert.equal(boundedInt(attemptsLiteral, 3, 1), 3);
     assert.equal(boundedInt(baseLiteral, 1000, 0), 1000);
@@ -34,6 +34,10 @@ describe('shared/config — boundedInt', () => {
   it('parses a plain integer', () => {
     assert.equal(boundedInt('5', 3, 1), 5);
     assert.equal(boundedInt('8000', 1000, 0), 8000);
+  });
+
+  it('honours the default carried by the compose expression over the code fallback', () => {
+    assert.equal(boundedInt('${STT_RETRY_MAX_ATTEMPTS:-42}', 3, 1), 42);
   });
 
   it('floors a decimal and trims surrounding spaces', () => {

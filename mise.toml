@@ -24,5 +24,7 @@ pkl = "0.32.1"
 HK_MISE = "1"
 
 [hooks]
-# Installe/met à jour les git hooks hk à chaque `mise install`.
-postinstall = "hk install --mise"
+# Installe/met à jour les git hooks hk à chaque `mise install`, puis remplace
+# les shims pre-commit/pre-push par la version qui garde la sortie de l'agent
+# dans deux fichiers temporaires (scripts/hk-hook.sh).
+postinstall = "hk install --mise && ./.mise/tasks/hooks.sh"

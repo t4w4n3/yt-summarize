@@ -40,6 +40,13 @@ export interface RunProcessOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * Upper bound on waiting for the stage log to flush when a subprocess settles.
+ * The log is best-effort, so a stuck flush must never hold a stage (and with it
+ * the worker's single queue) hostage.
+ */
+const LOG_CLOSE_TIMEOUT_MS = 5000;
+
 export interface ProcessResult {
   code: number | null;
   signal: string | null;
@@ -62,14 +69,33 @@ export function runProcess(command: string, args: string[], options: RunProcessO
     let heartbeatTimer: NodeJS.Timeout | undefined;
     let timeout: NodeJS.Timeout | undefined;
     const log = logPath ? fs.createWriteStream(logPath, { flags: 'a' }) : null;
+    // Stage logs are best-effort: the job directory can disappear under the
+    // stream (operator wiping a volume, a caller cleaning up), and an
+    // unhandled 'error' event would take the whole worker down.
+    log?.on('error', () => {});
+    /** Resolves once the log stream is closed, so callers can safely delete the job dir. */
+    const closeLog = (): Promise<void> => {
+      // A stream that already closed (open failed, autoDestroy) never emits
+      // 'close' again: waiting for it would cost the full bound on every job.
+      if (!log || log.closed) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, LOG_CLOSE_TIMEOUT_MS).unref();
+        log.once('close', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        log.end();
+      });
+    };
     const finish = ((fn: (value: never) => void, value: never) => {
       if (settled) return;
       settled = true;
       if (timeout !== undefined) clearTimeout(timeout);
       if (heartbeatTimer !== undefined) clearInterval(heartbeatTimer);
       signal?.removeEventListener('abort', onAbort);
-      log?.end();
-      fn(value);
+      // Settle only after the log is flushed and closed: the promise is the
+      // caller's signal that the job directory is no longer in use.
+      void closeLog().then(() => fn(value));
     }) as unknown as {
       (fn: (value: ProcessResult) => void, value: ProcessResult): void;
       (fn: (error: Error) => void, error: Error): void;

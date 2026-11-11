@@ -39,33 +39,26 @@
   const POLL_INTERVAL_MS = 2000;
   const MAX_POLL_FAILURES = 3;
 
-  const demoMarkdown = `## Overview
+  const demoMarkdown = `## TL;DR
 
-A good study note keeps the shape of an idea visible after the video is gone. This sample shows the kind of durable, structured document the workstation produces from a transcript.
+A good study note keeps the shape of an idea visible after the video is gone. It opens with the verdict, backs each claim with the evidence the speaker gave, and keeps everything below the opening additive: no section restates another.
 
-## Key Takeaways
+## Key learnings
 
-- Capture the central claim before collecting supporting details.
-- Define unfamiliar terms at the moment they become useful.
-- Preserve examples, numbers, and the speaker's own vocabulary.
-- End with actions that turn understanding into a next step.
+- **Capture the central claim before the supporting detail.** A note that starts with evidence buries the point; state the claim first, then the proof that made it land.
+- **Define a term the moment it becomes load-bearing.** A one-line definition placed where the reader needs it beats a paragraph of context.
+- **Preserve examples, numbers and the speaker's own vocabulary.** Abstract paraphrase loses the thing that makes an idea stick.
 
-## Core Concepts
+## Concepts & terms
 
-**Retrieval practice** is the act of recalling an idea without looking at the source. It exposes gaps more reliably than rereading.
+**Retrieval practice** — recalling an idea without looking at the source, which exposes gaps more reliably than rereading.
 
-**Progressive compression** means reducing a long explanation into layers: full note, short outline, and one-sentence recall cue.
+**Progressive compression** — reducing an explanation into layers: full note, short outline, one-sentence recall cue.
 
-## Steps & Techniques
-
-1. Listen once for the argument and its turning points.
-2. Rebuild the explanation as concepts, evidence, and decisions.
-3. Mark the smallest useful action for later review.
-
-## Action Items
+## If you want to act
 
 - Revisit this note tomorrow without replaying the video.
-- Add a concrete example if a concept still feels abstract.`;
+- Add a concrete example wherever a concept still feels abstract.`;
 
   function tickClock() {
     const now = new Date();
@@ -289,7 +282,10 @@ A good study note keeps the shape of an idea visible after the video is gone. Th
       }
     };
     for (const line of lines) {
-      if (line.startsWith('## ')) {
+      if (line.startsWith('### ')) {
+        closeList();
+        html += `<h3>${escapeHtml(line.slice(4))}</h3>`;
+      } else if (line.startsWith('## ')) {
         closeList();
         html += `<h2>${escapeHtml(line.slice(3))}</h2>`;
       } else if (line.startsWith('- ')) {

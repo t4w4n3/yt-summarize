@@ -4,9 +4,11 @@ import {
   alignedChunkBytes,
   CHUNK_DURATION_SEC,
   chooseInitialStrategy,
+  isRetryableStatus,
   joinTranscriptParts,
   nextAfterBase64Failure,
   nextAfterMultipartFailure,
+  retryDelayMs,
 } from '../../domain/transcription/policy.ts';
 import type { AudioSplitterPort, SpeechToTextPort, TranscriptionAttempt } from '../../domain/transcription/ports.ts';
 import { config } from '../../shared/config.ts';
@@ -18,6 +20,19 @@ export { CHUNK_DURATION_SEC, MULTIPART_LIMIT } from '../../domain/transcription/
 
 const API_URL = 'https://openrouter.ai/api/v1/audio/transcriptions';
 
+/** Bounded retry budget for transient provider failures (429 / 5xx). */
+export interface RetryOptions {
+  /** Total attempts per request, first try included (≥ 1). */
+  readonly maxAttempts: number;
+  /** Cap for the first backoff delay; doubles per attempt. */
+  readonly baseDelayMs: number;
+  /** Hard ceiling for any single delay, so the job budget stays bounded. */
+  readonly maxDelayMs: number;
+}
+
+/** Injectable wait — aborts when the signal does. */
+export type SleepFn = (ms: number, signal?: AbortSignal) => Promise<void>;
+
 /** StageContext plus dependency-injection hooks used by unit tests and for contract coupling. */
 export interface TranscribeContext extends StageContext {
   /** Defaults to openrouter.resolveOpenRouterKey; injectable in tests. */
@@ -26,6 +41,10 @@ export interface TranscribeContext extends StageContext {
   stt?: SpeechToTextPort;
   /** Audio splitter port — defaults to manual PCM slicing + ffmpeg fallback. */
   splitter?: AudioSplitterPort;
+  /** Retry budget — defaults to the config values. */
+  retry?: RetryOptions;
+  /** Wait between retries — defaults to setTimeout. Tests inject a recorder. */
+  sleep?: SleepFn;
 }
 
 function appendLog(logPath: string | undefined, line: string): void {
@@ -102,6 +121,52 @@ async function responseToAttempt(response: Response): Promise<TranscriptionAttem
     text,
     errorDetails: errorDetails || raw,
   };
+}
+
+/** Waits between retries; rejects with an AbortError if the job is cancelled. */
+function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
+ * Runs one provider request, retrying it while the status is transient
+ * (429 / 5xx). Bounded twice over: `maxAttempts` caps the number of calls,
+ * `maxDelayMs` caps each wait, so the worst case added to a job is
+ * (maxAttempts − 1) × maxDelayMs. Definitive errors (400, 404, 413, …) return
+ * immediately — the size policy, not the retry loop, decides what happens next.
+ *
+ * The status alone decides: the adapter reports `ok` exactly for 2xx bodies
+ * that carry text, and a 2xx is never transient, so a succeeded attempt can
+ * never enter this loop.
+ */
+async function attemptWithRetry(
+  request: () => Promise<TranscriptionAttempt>,
+  options: { retry: RetryOptions; sleep: SleepFn; signal: AbortSignal; logPath: string | undefined },
+): Promise<TranscriptionAttempt> {
+  const { retry, sleep, signal, logPath } = options;
+  const maxAttempts = Math.max(1, retry.maxAttempts);
+  let attempt = await request();
+  for (let n = 1; n < maxAttempts && isRetryableStatus(attempt.httpStatus); n += 1) {
+    const delay = retryDelayMs(n, retry.baseDelayMs, retry.maxDelayMs);
+    appendLog(logPath, `HTTP ${attempt.httpStatus} is transient, retry ${n}/${maxAttempts - 1} in ${delay}ms`);
+    await sleep(delay, signal);
+    attempt = await request();
+  }
+  return attempt;
 }
 
 function createDefaultStt(logPath: string | undefined): SpeechToTextPort {
@@ -325,6 +390,14 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
   // high-distance (core, volatile STT provider) is balanced by low strength.
   const stt: SpeechToTextPort = context.stt ?? createDefaultStt(context.logPath);
   const splitter: AudioSplitterPort = context.splitter ?? createDefaultSplitter();
+  const retry: RetryOptions = context.retry ?? {
+    maxAttempts: config.sttRetryMaxAttempts,
+    baseDelayMs: config.sttRetryBaseDelayMs,
+    maxDelayMs: config.sttRetryMaxDelayMs,
+  };
+  const sleep: SleepFn = context.sleep ?? defaultSleep;
+  const retried = (request: () => Promise<TranscriptionAttempt>) =>
+    attemptWithRetry(request, { retry, sleep, signal, logPath: context.logPath });
 
   try {
     let statSize = 0;
@@ -339,7 +412,7 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
     let text: string | null = null;
 
     if (initial === 'multipart') {
-      const attempt = await stt.attemptMultipart(wavPath, apiKey, signal);
+      const attempt = await retried(() => stt.attemptMultipart(wavPath, apiKey, signal));
       if (attempt.ok) {
         text = attempt.text;
       } else {
@@ -358,7 +431,7 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
 
     if (text === null) {
       // For large files or small files that got 413, try base64 JSON.
-      const attempt = await stt.attemptBase64(wavPath, apiKey, signal);
+      const attempt = await retried(() => stt.attemptBase64(wavPath, apiKey, signal));
       if (attempt.ok) {
         text = attempt.text;
       } else {
@@ -386,7 +459,7 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
       const parts: string[] = [];
       for (const chunkPath of chunkPaths) {
         appendLog(context.logPath, `transcribing chunk ${path.basename(chunkPath)}`);
-        const chunkAttempt = await stt.attemptMultipart(chunkPath, apiKey, signal);
+        const chunkAttempt = await retried(() => stt.attemptMultipart(chunkPath, apiKey, signal));
         if (!chunkAttempt.ok || !chunkAttempt.text) {
           throw new StageError(
             `Transcription failed (HTTP ${chunkAttempt.httpStatus || 0}).`,

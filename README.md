@@ -141,6 +141,9 @@ Runtime settings live in `.env` (created by `mise run setup`; see `.env.example`
 | `DATA_DIR` | `/data` | SQLite job database directory (shared `jobs-data` volume) |
 | `ARTIFACTS_DIR` | `/artifacts` | Stage artifacts directory (`artifacts` volume) |
 | `STT_MODEL` | `microsoft/mai-transcribe-2` | Speech-to-text model (OpenRouter) |
+| `STT_RETRY_MAX_ATTEMPTS` | `3` | Attempts per transcription request, first try included (transient 429/5xx only) |
+| `STT_RETRY_BASE_DELAY_MS` | `1000` | First retry delay; doubles per attempt (half fixed, half jitter) |
+| `STT_RETRY_MAX_DELAY_MS` | `8000` | Ceiling for any single retry delay — worst case added to a job is (attempts − 1) × this |
 | `LLM_PROVIDER` | `openrouter` | Chat provider for summarization |
 | `LLM_MODEL` | `meta/muse-spark-1.3-contributor` | Summarization model (OpenRouter) |
 | `LLM_THINKING` | `high` | Reasoning effort for the summarization model |

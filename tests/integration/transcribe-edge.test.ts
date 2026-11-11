@@ -58,6 +58,10 @@ function baseContext(dir: string, extra: Partial<TranscribeContext> = {}): Trans
     logPath: path.join(dir, 'stage.log'),
     timeoutMs: 5000,
     resolveKey: async () => 'sk-or-test',
+    // These cases describe the size/strategy policy, not the retry policy:
+    // one attempt each keeps 5xx cases fast and independent of backoff.
+    // Retry behaviour is covered by transcribe-retry.test.ts.
+    retry: { maxAttempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
     ...extra,
   } as TranscribeContext;
 }

@@ -18,10 +18,12 @@ import {
   fitsMultipart,
   isBase64LimitError,
   isMultipartLimitError,
+  isRetryableStatus,
   joinTranscriptParts,
   MULTIPART_LIMIT,
   nextAfterBase64Failure,
   nextAfterMultipartFailure,
+  retryDelayMs,
 } from '../../src/domain/transcription/policy.ts';
 
 describe('domain/transcription/policy — constants', () => {
@@ -142,5 +144,96 @@ describe('domain/transcription/policy — chunk helpers', () => {
     assert.equal(joinTranscriptParts(['one']), 'one');
     assert.equal(joinTranscriptParts([]), '');
     assert.equal(joinTranscriptParts(['x', 'y', 'z']), 'x\n\ny\n\nz');
+  });
+});
+
+describe('domain/transcription/policy — transient failures (429 / 5xx)', () => {
+  it('isRetryableStatus: 429 and every 5xx are transient', () => {
+    assert.equal(isRetryableStatus(429), true);
+    assert.equal(isRetryableStatus(500), true);
+    assert.equal(isRetryableStatus(502), true);
+    assert.equal(isRetryableStatus(503), true);
+    assert.equal(isRetryableStatus(504), true);
+    assert.equal(isRetryableStatus(599), true);
+  });
+
+  it('isRetryableStatus: 4xx and 2xx are definitive — retrying cannot help', () => {
+    assert.equal(isRetryableStatus(400), false);
+    assert.equal(isRetryableStatus(401), false);
+    assert.equal(isRetryableStatus(404), false);
+    assert.equal(isRetryableStatus(413), false);
+    assert.equal(isRetryableStatus(422), false);
+    assert.equal(isRetryableStatus(200), false);
+    assert.equal(isRetryableStatus(201), false);
+    assert.equal(isRetryableStatus(0), false);
+  });
+
+  it('retryDelayMs: equal jitter — half fixed, half random, on an exponential cap', () => {
+    // attempt 1: cap 1000 → 500 + 0.5*500 = 750
+    assert.equal(
+      retryDelayMs(1, 1000, 8000, () => 0.5),
+      750,
+    );
+    // attempt 2: cap 2000 → 1000 + 0.5*1000 = 1500
+    assert.equal(
+      retryDelayMs(2, 1000, 8000, () => 0.5),
+      1500,
+    );
+    // attempt 3: cap 4000 → 2000 + 0.5*2000 = 3000
+    assert.equal(
+      retryDelayMs(3, 1000, 8000, () => 0.5),
+      3000,
+    );
+  });
+
+  it('retryDelayMs: random=0 gives the floor (cap/2)', () => {
+    assert.equal(
+      retryDelayMs(1, 1000, 8000, () => 0),
+      500,
+    );
+    assert.equal(
+      retryDelayMs(3, 1000, 8000, () => 0),
+      2000,
+    );
+  });
+
+  it('retryDelayMs: capped by maxMs however many attempts', () => {
+    // attempt 4 raw cap would be 8000 → 4000 + 0.5*4000 = 6000
+    assert.equal(
+      retryDelayMs(4, 1000, 8000, () => 0.5),
+      6000,
+    );
+    // attempt 50 raw cap would be astronomic → still capped at 8000
+    assert.equal(
+      retryDelayMs(50, 1000, 8000, () => 0.5),
+      6000,
+    );
+    assert.equal(
+      retryDelayMs(50, 1000, 8000, () => 0),
+      4000,
+    );
+  });
+
+  it('retryDelayMs: never exceeds maxMs, even with the largest random', () => {
+    assert.ok(retryDelayMs(50, 1000, 8000, () => 0.999999) <= 8000);
+  });
+
+  it('retryDelayMs: maxMs below base still bounds the delay', () => {
+    // base 10000 capped to 1000 → 500 + 0.5*500 = 750
+    assert.equal(
+      retryDelayMs(1, 10_000, 1000, () => 0.5),
+      750,
+    );
+  });
+
+  it('retryDelayMs: attempt numbers below 1 clamp to the first attempt', () => {
+    assert.equal(
+      retryDelayMs(0, 1000, 8000, () => 0.5),
+      750,
+    );
+    assert.equal(
+      retryDelayMs(-3, 1000, 8000, () => 0.5),
+      750,
+    );
   });
 });

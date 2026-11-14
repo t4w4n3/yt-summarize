@@ -16,7 +16,7 @@
  */
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { config, envBool, envVar, mullvadSettings, unwrapComposeLiteral } from '../../src/shared/config.ts';
+import { config, envBool, envVar, loadConfig, mullvadSettings, unwrapComposeLiteral } from '../../src/shared/config.ts';
 
 describe('shared/config — unwrapComposeLiteral', () => {
   it('returns the default written inside ${VAR:-default}', () => {
@@ -85,6 +85,49 @@ describe('shared/config — envBool', () => {
   });
 });
 
+describe('shared/config — loadConfig', () => {
+  it('leaves the pin and the quantization unset when .env blanks them', () => {
+    // `.env` `LLM_PROVIDER_PIN=` reaches the container as '' — the documented
+    // "no pin / no quantization filter", not the deepinfra/fp8 default.
+    for (const blank of ['', '   ']) {
+      const cfg = loadConfig({ LLM_PROVIDER_PIN: blank, LLM_QUANTIZATION: blank });
+      assert.equal(cfg.llmProviderPin, '');
+      assert.equal(cfg.llmQuantization, '');
+    }
+  });
+
+  it('keeps the deepseek-on-deepinfra defaults when the keys are absent', () => {
+    const cfg = loadConfig({ LLM_PROVIDER_PIN: '${LLM_PROVIDER_PIN}', LLM_QUANTIZATION: '${LLM_QUANTIZATION}' });
+    assert.equal(cfg.llmModel, 'deepseek/deepseek-v4.1-flash-1017');
+    assert.equal(cfg.llmProviderPin, 'deepinfra');
+    assert.equal(cfg.llmQuantization, 'fp8');
+  });
+
+  it('honours an explicit model, pin and quantization, trimmed', () => {
+    const cfg = loadConfig({
+      LLM_MODEL: 'meta/muse-spark-1.3-contributor',
+      LLM_PROVIDER_PIN: ' meta ',
+      LLM_QUANTIZATION: ' unknown ',
+    });
+    assert.equal(cfg.llmModel, 'meta/muse-spark-1.3-contributor');
+    assert.equal(cfg.llmProviderPin, 'meta');
+    assert.equal(cfg.llmQuantization, 'unknown');
+  });
+
+  it('honours the default a compose expression carries', () => {
+    const cfg = loadConfig({
+      LLM_PROVIDER_PIN: '${LLM_PROVIDER_PIN:-meta}',
+      LLM_QUANTIZATION: '${LLM_QUANTIZATION:-}',
+    });
+    assert.equal(cfg.llmProviderPin, 'meta');
+    assert.equal(cfg.llmQuantization, '');
+  });
+
+  it('exports the config built from the real environment', () => {
+    assert.deepEqual(config, loadConfig(process.env));
+  });
+});
+
 describe('shared/config — mullvadSettings', () => {
   const originalEnabled = process.env.MULLVAD_ENABLED;
   const originalProxy = process.env.MULLVAD_PROXY;
@@ -146,36 +189,36 @@ describe('shared/config — the frozen config object is fully resolved', () => {
   });
 
   it('no string setting leaks an un-parsed compose expression', () => {
-    const strings = {
+    const required = {
       dataDir: config.dataDir,
       artifactsDir: config.artifactsDir,
       sttModel: config.sttModel,
       llmProvider: config.llmProvider,
       llmModel: config.llmModel,
-      llmProviderPin: config.llmProviderPin,
-      llmQuantization: config.llmQuantization,
       llmThinking: config.llmThinking,
       mullvadProxy: mullvadSettings().proxy,
     } as const;
-    for (const [name, value] of Object.entries(strings)) {
+    for (const [name, value] of Object.entries(required)) {
       assert.ok(
         value.length > 0 && !value.startsWith('${'),
         `${name}=${JSON.stringify(value)} must be a resolved value`,
       );
     }
+    // The routing pair may legitimately resolve to '': blank means "no pin /
+    // no quantization filter", but it must still never be a raw expression.
+    const blankable = { llmProviderPin: config.llmProviderPin, llmQuantization: config.llmQuantization };
+    for (const [name, value] of Object.entries(blankable)) {
+      assert.ok(!value.startsWith('${'), `${name}=${JSON.stringify(value)} must be a resolved value`);
+    }
   });
 });
 
 describe('shared/config — summarization model defaults', () => {
-  it('defaults to deepseek/deepseek-v4.1-flash-1017 pinned on the deepinfra fp8 endpoint', (t) => {
-    // config is built at import time from the real environment; a developer with
-    // an override exported would otherwise see a spurious failure here.
-    const overrides = ['LLM_MODEL', 'LLM_PROVIDER_PIN', 'LLM_QUANTIZATION'].filter(
-      (name) => process.env[name] !== undefined,
-    );
-    if (overrides.length > 0) return t.skip(`environment overrides the default (${overrides.join(', ')})`);
-    assert.equal(config.llmModel, 'deepseek/deepseek-v4.1-flash-1017');
-    assert.equal(config.llmProviderPin, 'deepinfra');
-    assert.equal(config.llmQuantization, 'fp8');
+  it('defaults to deepseek/deepseek-v4.1-flash-1017 pinned on the deepinfra fp8 endpoint', () => {
+    // An empty snapshot, so a developer's exported override cannot mask the default.
+    const cfg = loadConfig({});
+    assert.equal(cfg.llmModel, 'deepseek/deepseek-v4.1-flash-1017');
+    assert.equal(cfg.llmProviderPin, 'deepinfra');
+    assert.equal(cfg.llmQuantization, 'fp8');
   });
 });

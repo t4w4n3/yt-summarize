@@ -13,9 +13,9 @@ export interface Config {
   sttRetryMaxDelayMs: number;
   llmProvider: string;
   llmModel: string;
-  /** OpenRouter provider slug the summarization model is pinned to (blank = no pin). */
+  /** OpenRouter provider slug the summarization model is pinned to (blank = no pin, absent = `deepinfra`). */
   llmProviderPin: string;
-  /** Quantization filter applied to the pinned provider (blank = any quantization). */
+  /** Quantization filter applied to the pinned provider (blank = any quantization, absent = `fp8`). */
   llmQuantization: string;
   llmThinking: string;
   pollMs: number;
@@ -23,23 +23,35 @@ export interface Config {
   staleAfterMs: number;
 }
 
-export const config: Config = Object.freeze({
-  port: boundedInt(process.env.PORT, 8080, 1),
-  dataDir: envVar(process.env.DATA_DIR, '/data'),
-  artifactsDir: envVar(process.env.ARTIFACTS_DIR, '/artifacts'),
-  sttModel: envVar(process.env.STT_MODEL, 'microsoft/mai-transcribe-2'),
-  sttRetryMaxAttempts: boundedInt(process.env.STT_RETRY_MAX_ATTEMPTS, 3, 1),
-  sttRetryBaseDelayMs: boundedInt(process.env.STT_RETRY_BASE_DELAY_MS, 1000, 0),
-  sttRetryMaxDelayMs: boundedInt(process.env.STT_RETRY_MAX_DELAY_MS, 8000, 0),
-  llmProvider: envVar(process.env.LLM_PROVIDER, 'openrouter'),
-  llmModel: envVar(process.env.LLM_MODEL, 'deepseek/deepseek-v4.1-flash-1017'),
-  llmProviderPin: envVar(process.env.LLM_PROVIDER_PIN, 'deepinfra'),
-  llmQuantization: envVar(process.env.LLM_QUANTIZATION, 'fp8'),
-  llmThinking: envVar(process.env.LLM_THINKING, 'high'),
-  pollMs: boundedInt(process.env.WORKER_POLL_MS, 2000, 1),
-  jobTimeoutMs: boundedInt(process.env.JOB_TIMEOUT_MS, 1800000, 1),
-  staleAfterMs: boundedInt(process.env.STALE_AFTER_MS, 600000, 1),
-});
+/**
+ * Builds the settings object from an environment snapshot.
+ *
+ * Exported so tests can feed a synthetic environment — a `.env` that blanks a
+ * setting, the raw compose expression podman passes for a missing key, or an
+ * explicit override — instead of mutating `process.env`, which is read only
+ * once at module load.
+ */
+export function loadConfig(env: NodeJS.ProcessEnv): Config {
+  return {
+    port: boundedInt(env.PORT, 8080, 1),
+    dataDir: envVar(env.DATA_DIR, '/data'),
+    artifactsDir: envVar(env.ARTIFACTS_DIR, '/artifacts'),
+    sttModel: envVar(env.STT_MODEL, 'microsoft/mai-transcribe-2'),
+    sttRetryMaxAttempts: boundedInt(env.STT_RETRY_MAX_ATTEMPTS, 3, 1),
+    sttRetryBaseDelayMs: boundedInt(env.STT_RETRY_BASE_DELAY_MS, 1000, 0),
+    sttRetryMaxDelayMs: boundedInt(env.STT_RETRY_MAX_DELAY_MS, 8000, 0),
+    llmProvider: envVar(env.LLM_PROVIDER, 'openrouter'),
+    llmModel: envVar(env.LLM_MODEL, 'deepseek/deepseek-v4.1-flash-1017'),
+    llmProviderPin: envVarAllowBlank(env.LLM_PROVIDER_PIN, 'deepinfra'),
+    llmQuantization: envVarAllowBlank(env.LLM_QUANTIZATION, 'fp8'),
+    llmThinking: envVar(env.LLM_THINKING, 'high'),
+    pollMs: boundedInt(env.WORKER_POLL_MS, 2000, 1),
+    jobTimeoutMs: boundedInt(env.JOB_TIMEOUT_MS, 1800000, 1),
+    staleAfterMs: boundedInt(env.STALE_AFTER_MS, 600000, 1),
+  };
+}
+
+export const config: Config = Object.freeze(loadConfig(process.env));
 
 /**
  * Reads the value out of an un-interpolated compose expression.
@@ -63,6 +75,22 @@ export function unwrapComposeLiteral(raw: string): string | undefined {
 export function envVar(raw: string | undefined, fallback: string): string {
   const value = raw === undefined ? undefined : unwrapComposeLiteral(raw);
   return value === undefined || value.trim() === '' ? fallback : value;
+}
+
+/**
+ * Environment string that keeps a deliberate blank, with the compose expression
+ * unwrapped: absent (or a bare `${VAR}`) resolves to `fallback`, while `''` and
+ * whitespace resolve to `''`.
+ *
+ * Used by the two OpenRouter routing settings, whose documented "blank = no pin
+ * / no quantization filter" must survive a cleared `.env` key: through `envVar`,
+ * `LLM_PROVIDER_PIN=` would silently fall back to `deepinfra` and re-pin the
+ * request (404 when the model has no deepinfra endpoint).
+ */
+export function envVarAllowBlank(raw: string | undefined, fallback: string): string {
+  if (raw === undefined) return fallback;
+  const value = unwrapComposeLiteral(raw);
+  return value === undefined ? fallback : value.trim();
 }
 
 /** Environment flag: 'true'/'false' as written, the compose default, or `fallback`. */

@@ -183,7 +183,12 @@ describe('P1 — transcribe via injected ports (contract coupling)', () => {
     let fetchCalls = 0;
     globalThis.fetch = (async (_url: string | URL | Request, _opts?: RequestInit) => {
       fetchCalls += 1;
-      return { ok: true, status: 200, json: async () => ({ text: 'default adapter works' }) } as Response;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ text: 'default adapter works' }),
+        headers: new Headers(),
+      } as Response;
     }) as typeof fetch;
 
     try {

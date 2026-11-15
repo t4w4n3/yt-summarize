@@ -88,7 +88,7 @@ describe('shared/config — envBool', () => {
 describe('shared/config — loadConfig', () => {
   it('leaves the pin and the quantization unset when .env blanks them', () => {
     // `.env` `LLM_PROVIDER_PIN=` reaches the container as '' — the documented
-    // "no pin / no quantization filter", not the deepinfra/fp8 default.
+    // "no pin / no quantization filter", not the google-vertex default.
     for (const blank of ['', '   ']) {
       const cfg = loadConfig({ LLM_PROVIDER_PIN: blank, LLM_QUANTIZATION: blank });
       assert.equal(cfg.llmProviderPin, '');
@@ -96,11 +96,11 @@ describe('shared/config — loadConfig', () => {
     }
   });
 
-  it('keeps the deepseek-on-deepinfra defaults when the keys are absent', () => {
+  it('keeps the meta/muse-ember-on-google-vertex defaults when the keys are absent', () => {
     const cfg = loadConfig({ LLM_PROVIDER_PIN: '${LLM_PROVIDER_PIN}', LLM_QUANTIZATION: '${LLM_QUANTIZATION}' });
-    assert.equal(cfg.llmModel, 'deepseek/deepseek-v4.1-flash-1017');
-    assert.equal(cfg.llmProviderPin, 'deepinfra');
-    assert.equal(cfg.llmQuantization, 'fp8');
+    assert.equal(cfg.llmModel, 'meta/muse-ember');
+    assert.equal(cfg.llmProviderPin, 'google-vertex/global');
+    assert.equal(cfg.llmQuantization, '');
   });
 
   it('honours an explicit model, pin and quantization, trimmed', () => {
@@ -213,12 +213,20 @@ describe('shared/config — the frozen config object is fully resolved', () => {
   });
 });
 
+describe('shared/config — STT retry bounds', () => {
+  it('defaults the provider-requested wait ceiling to 120 s', () => {
+    // OpenRouter's in-flight 402 asks for ~120 s; the ceiling bounds that wait.
+    assert.equal(loadConfig({}).sttRetryAfterMaxMs, 120_000);
+    assert.equal(loadConfig({ STT_RETRY_AFTER_MAX_MS: '5000' }).sttRetryAfterMaxMs, 5000);
+  });
+});
+
 describe('shared/config — summarization model defaults', () => {
-  it('defaults to deepseek/deepseek-v4.1-flash-1017 pinned on the deepinfra fp8 endpoint', () => {
+  it('defaults to meta/muse-ember pinned on the google-vertex/global endpoint, no quantization filter', () => {
     // An empty snapshot, so a developer's exported override cannot mask the default.
     const cfg = loadConfig({});
-    assert.equal(cfg.llmModel, 'deepseek/deepseek-v4.1-flash-1017');
-    assert.equal(cfg.llmProviderPin, 'deepinfra');
-    assert.equal(cfg.llmQuantization, 'fp8');
+    assert.equal(cfg.llmModel, 'meta/muse-ember');
+    assert.equal(cfg.llmProviderPin, 'google-vertex/global');
+    assert.equal(cfg.llmQuantization, '');
   });
 });

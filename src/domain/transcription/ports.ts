@@ -13,6 +13,12 @@ export interface TranscriptionAttempt {
   readonly text: string;
   /** Truncated raw error body for diagnostics / limit-classification. */
   readonly errorDetails: string;
+  /**
+   * Provider-requested wait (`Retry-After`, in ms), when the response carried
+   * one. The policy clamps it; the stage waits at least that long before the
+   * next attempt instead of its own exponential backoff.
+   */
+  readonly retryAfterMs?: number;
 }
 
 /**

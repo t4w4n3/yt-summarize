@@ -49,9 +49,14 @@ function writeSyntheticWav(filePath: string, dataBytes = 1024): void {
 function okAttempt(text: string): TranscriptionAttempt {
   return { httpStatus: 200, ok: true, text, errorDetails: '' };
 }
-function failAttempt(status: number, details: string): TranscriptionAttempt {
-  return { httpStatus: status, ok: false, text: '', errorDetails: details };
+function failAttempt(status: number, details: string, retryAfterMs?: number): TranscriptionAttempt {
+  return { httpStatus: status, ok: false, text: '', errorDetails: details, retryAfterMs };
 }
+
+/** The exact 402 OpenRouter returned on job 1954b724 (chunk 6/6 of a 100-minute video). */
+const IN_FLIGHT_402 =
+  '{"error":{"message":"This request would exceed your available credits given your current in-flight requests.","code":402,"metadata":{"reason":"in_flight_budget_exhausted","headers":{"Retry-After":"120"}}}} HTTP 402';
+const OUT_OF_CREDIT_402 = '{"error":{"message":"Insufficient credits","code":402}} HTTP 402';
 
 /** Context for a small file: multipart is the first strategy. */
 function makeContext(
@@ -285,6 +290,142 @@ describe('transcribe — transient failures (429 / 5xx)', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('402 in_flight_budget_exhausted ⇒ waits the hinted Retry-After (120 s) and retries', async () => {
+    const dir = tmpDir();
+    const wav = path.join(dir, 'audio.wav');
+    writeSyntheticWav(wav);
+
+    const sleeps: number[] = [];
+    let calls = 0;
+    const fakeStt: SpeechToTextPort = {
+      async attemptMultipart() {
+        calls += 1;
+        return calls === 1 ? failAttempt(402, IN_FLIGHT_402, 120_000) : okAttempt('transcript after the wait');
+      },
+      async attemptBase64() {
+        assert.fail('an in-flight 402 is not a size-limit error — base64 must not be tried');
+        return okAttempt('');
+      },
+    };
+
+    let outcome: { out?: string; error?: unknown } = {};
+    try {
+      outcome = { out: await transcribe(wav, makeContext(dir, fakeStt, sleeps)) };
+    } catch (error) {
+      outcome = { error };
+    }
+
+    try {
+      assert.equal(calls, 2, 'one in-flight 402 then one 200 ⇒ 2 multipart attempts');
+      assert.deepEqual(sleeps, [120_000], 'the provider asked for 120 s — that is the wait, not the 1 s backoff');
+      assert.equal(outcome.error, undefined, 'the retried request succeeded — no stage error');
+      assert.equal(fs.readFileSync(String(outcome.out), 'utf8').trim(), 'transcript after the wait');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a Retry-After above the ceiling is clamped to retryAfterMaxMs', async () => {
+    const dir = tmpDir();
+    const wav = path.join(dir, 'audio.wav');
+    writeSyntheticWav(wav);
+
+    const sleeps: number[] = [];
+    let calls = 0;
+    const fakeStt: SpeechToTextPort = {
+      async attemptMultipart() {
+        calls += 1;
+        // 600 s requested, ceiling at 30 s
+        return calls === 1 ? failAttempt(402, IN_FLIGHT_402, 600_000) : okAttempt('clamped ok');
+      },
+      async attemptBase64() {
+        assert.fail('an in-flight 402 is not a size-limit error — base64 must not be tried');
+        return okAttempt('');
+      },
+    };
+
+    const context = { ...makeContext(dir, fakeStt, sleeps), retry: { ...RETRY, retryAfterMaxMs: 30_000 } };
+    try {
+      await transcribe(wav, context as unknown as TranscribeContext);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    assert.deepEqual(sleeps, [30_000], '600 s hint clamped to the injected 30 s ceiling');
+    assert.equal(calls, 2, 'the clamped wait is still followed by exactly one retry');
+  });
+
+  it('without an injected budget, the config ceiling (120 s) clamps the hint', async () => {
+    const dir = tmpDir();
+    const wav = path.join(dir, 'audio.wav');
+    writeSyntheticWav(wav);
+
+    const sleeps: number[] = [];
+    let calls = 0;
+    const fakeStt: SpeechToTextPort = {
+      async attemptMultipart() {
+        calls += 1;
+        return calls === 1 ? failAttempt(402, IN_FLIGHT_402, 600_000) : okAttempt('config default ok');
+      },
+      async attemptBase64() {
+        assert.fail('an in-flight 402 is not a size-limit error — base64 must not be tried');
+        return okAttempt('');
+      },
+    };
+
+    try {
+      await transcribe(wav, {
+        jobDir: dir,
+        logPath: path.join(dir, 'stage.log'),
+        timeoutMs: 5000,
+        resolveKey: async () => 'sk-or-test',
+        stt: fakeStt,
+        // no `retry` — the stage must fall back to the config defaults
+        sleep: async (ms: number) => {
+          sleeps.push(ms);
+        },
+      } as unknown as TranscribeContext);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    assert.deepEqual(sleeps, [120_000], 'the config default STT_RETRY_AFTER_MAX_MS (120 s) clamps a 600 s hint');
+    assert.equal(calls, 2, 'the clamped wait is still followed by exactly one retry');
+  });
+
+  it('402 without the in-flight marker (no credit left) ⇒ definitive, one attempt, no wait', async () => {
+    const dir = tmpDir();
+    const wav = path.join(dir, 'audio.wav');
+    writeSyntheticWav(wav);
+
+    const sleeps: number[] = [];
+    let calls = 0;
+    const fakeStt: SpeechToTextPort = {
+      async attemptMultipart() {
+        calls += 1;
+        return failAttempt(402, OUT_OF_CREDIT_402);
+      },
+      async attemptBase64() {
+        calls += 1;
+        return failAttempt(402, OUT_OF_CREDIT_402);
+      },
+    };
+
+    let message = '';
+    try {
+      await transcribe(wav, makeContext(dir, fakeStt, sleeps));
+      assert.fail('an out-of-credit 402 must fail the stage');
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    assert.equal(calls, 1, 'out of credit is definitive: exactly one attempt, no retry');
+    assert.equal(sleeps.length, 0, 'no wait may happen when the account is simply out of credit');
+    assert.equal(message, 'Transcription failed (HTTP 402).');
   });
 
   it('cancelling during the wait ends the job at once, without waiting out the backoff', async () => {

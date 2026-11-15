@@ -11,11 +11,13 @@ export interface Config {
   sttRetryMaxAttempts: number;
   sttRetryBaseDelayMs: number;
   sttRetryMaxDelayMs: number;
+  /** Ceiling for a provider-requested wait (`Retry-After`), e.g. OpenRouter's in-flight 402. */
+  sttRetryAfterMaxMs: number;
   llmProvider: string;
   llmModel: string;
-  /** OpenRouter provider slug the summarization model is pinned to (blank = no pin, absent = `deepinfra`). */
+  /** OpenRouter provider slug the summarization model is pinned to (blank = no pin, absent = `google-vertex/global`). */
   llmProviderPin: string;
-  /** Quantization filter applied to the pinned provider (blank = any quantization, absent = `fp8`). */
+  /** Quantization filter applied to the pinned provider (blank = any quantization; blank by default). */
   llmQuantization: string;
   llmThinking: string;
   pollMs: number;
@@ -40,10 +42,11 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     sttRetryMaxAttempts: boundedInt(env.STT_RETRY_MAX_ATTEMPTS, 3, 1),
     sttRetryBaseDelayMs: boundedInt(env.STT_RETRY_BASE_DELAY_MS, 1000, 0),
     sttRetryMaxDelayMs: boundedInt(env.STT_RETRY_MAX_DELAY_MS, 8000, 0),
+    sttRetryAfterMaxMs: boundedInt(env.STT_RETRY_AFTER_MAX_MS, 120000, 0),
     llmProvider: envVar(env.LLM_PROVIDER, 'openrouter'),
-    llmModel: envVar(env.LLM_MODEL, 'deepseek/deepseek-v4.1-flash-1017'),
-    llmProviderPin: envVarAllowBlank(env.LLM_PROVIDER_PIN, 'deepinfra'),
-    llmQuantization: envVarAllowBlank(env.LLM_QUANTIZATION, 'fp8'),
+    llmModel: envVar(env.LLM_MODEL, 'meta/muse-ember'),
+    llmProviderPin: envVarAllowBlank(env.LLM_PROVIDER_PIN, 'google-vertex/global'),
+    llmQuantization: envVarAllowBlank(env.LLM_QUANTIZATION, ''),
     llmThinking: envVar(env.LLM_THINKING, 'high'),
     pollMs: boundedInt(env.WORKER_POLL_MS, 2000, 1),
     jobTimeoutMs: boundedInt(env.JOB_TIMEOUT_MS, 1800000, 1),
@@ -84,8 +87,8 @@ export function envVar(raw: string | undefined, fallback: string): string {
  *
  * Used by the two OpenRouter routing settings, whose documented "blank = no pin
  * / no quantization filter" must survive a cleared `.env` key: through `envVar`,
- * `LLM_PROVIDER_PIN=` would silently fall back to `deepinfra` and re-pin the
- * request (404 when the model has no deepinfra endpoint).
+ * `LLM_PROVIDER_PIN=` would silently fall back to `google-vertex/global` and
+ * re-pin the request (404 when the model has no such endpoint).
  */
 export function envVarAllowBlank(raw: string | undefined, fallback: string): string {
   if (raw === undefined) return fallback;

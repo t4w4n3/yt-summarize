@@ -4,10 +4,13 @@ import {
   alignedChunkBytes,
   CHUNK_DURATION_SEC,
   chooseInitialStrategy,
-  isRetryableStatus,
+  isRetryableFailure,
   joinTranscriptParts,
   nextAfterBase64Failure,
   nextAfterMultipartFailure,
+  parseRetryAfter,
+  RETRY_AFTER_MAX_MS,
+  retryAfterDelayMs,
   retryDelayMs,
 } from '../../domain/transcription/policy.ts';
 import type { AudioSplitterPort, SpeechToTextPort, TranscriptionAttempt } from '../../domain/transcription/ports.ts';
@@ -20,14 +23,19 @@ export { CHUNK_DURATION_SEC, MULTIPART_LIMIT } from '../../domain/transcription/
 
 const API_URL = 'https://openrouter.ai/api/v1/audio/transcriptions';
 
-/** Bounded retry budget for transient provider failures (429 / 5xx). */
+/** Bounded retry budget for transient provider failures (429 / 5xx, in-flight 402). */
 export interface RetryOptions {
   /** Total attempts per request, first try included (≥ 1). */
   readonly maxAttempts: number;
   /** Cap for the first backoff delay; doubles per attempt. */
   readonly baseDelayMs: number;
-  /** Hard ceiling for any single delay, so the job budget stays bounded. */
+  /** Hard ceiling for any single backoff delay, so the job budget stays bounded. */
   readonly maxDelayMs: number;
+  /**
+   * Ceiling for a provider-requested wait (`Retry-After`), which is usually
+   * larger than the backoff ceiling. Defaults to RETRY_AFTER_MAX_MS.
+   */
+  readonly retryAfterMaxMs?: number;
 }
 
 /** Injectable wait — aborts when the signal does. */
@@ -100,6 +108,23 @@ async function transcribeBase64Raw(
   });
 }
 
+/**
+ * Reads the provider's `Retry-After` hint, in milliseconds.
+ *
+ * The header is authoritative; OpenRouter also echoes it inside the error body
+ * (`error.metadata.headers['Retry-After']`), which is the only copy a truncated
+ * body keeps. Either way the wait is only a hint — the policy clamps it.
+ */
+function retryAfterMsFrom(response: Response, body: unknown): number | undefined {
+  const fromHeader = parseRetryAfter(response.headers.get('retry-after') ?? '');
+  if (fromHeader !== null) return fromHeader;
+  const echoed = (body as { error?: { metadata?: { headers?: Record<string, unknown> } } } | undefined)?.error?.metadata
+    ?.headers;
+  const raw = echoed?.['Retry-After'] ?? echoed?.['retry-after'];
+  if (typeof raw !== 'string') return undefined;
+  return parseRetryAfter(raw) ?? undefined;
+}
+
 async function responseToAttempt(response: Response): Promise<TranscriptionAttempt> {
   let body: unknown = {};
   let raw = '';
@@ -120,6 +145,8 @@ async function responseToAttempt(response: Response): Promise<TranscriptionAttem
     ok,
     text,
     errorDetails: errorDetails || raw,
+    // Only read on a failed attempt: a 2xx never enters the retry loop.
+    retryAfterMs: retryAfterMsFrom(response, body),
   };
 }
 
@@ -143,13 +170,17 @@ function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * Runs one provider request, retrying it while the status is transient
- * (429 / 5xx). Bounded twice over: `maxAttempts` caps the number of calls,
- * `maxDelayMs` caps each wait, so the worst case added to a job is
- * (maxAttempts − 1) × maxDelayMs. Definitive errors (400, 404, 413, …) return
- * immediately — the size policy, not the retry loop, decides what happens next.
+ * Runs one provider request, retrying it while the failure is transient
+ * (429 / 5xx, or a 402 whose body says the in-flight budget is the blocker).
  *
- * The status alone decides: the adapter reports `ok` exactly for 2xx bodies
+ * Bounded three times over: `maxAttempts` caps the number of calls, `maxDelayMs`
+ * caps each backoff wait, and `retryAfterMaxMs` caps a provider-requested wait
+ * (`Retry-After`), so the worst case added to a job is
+ * (maxAttempts − 1) × max(maxDelayMs, retryAfterMaxMs). Definitive errors
+ * (400, 404, 413, out-of-credit 402, …) return immediately — the size policy,
+ * not the retry loop, decides what happens next.
+ *
+ * The status and body decide: the adapter reports `ok` exactly for 2xx bodies
  * that carry text, and a 2xx is never transient, so a succeeded attempt can
  * never enter this loop.
  */
@@ -160,9 +191,13 @@ async function attemptWithRetry(
   const { retry, sleep, signal, logPath } = options;
   const maxAttempts = Math.max(1, retry.maxAttempts);
   let attempt = await request();
-  for (let n = 1; n < maxAttempts && isRetryableStatus(attempt.httpStatus); n += 1) {
-    const delay = retryDelayMs(n, retry.baseDelayMs, retry.maxDelayMs);
-    appendLog(logPath, `HTTP ${attempt.httpStatus} is transient, retry ${n}/${maxAttempts - 1} in ${delay}ms`);
+  for (let n = 1; n < maxAttempts && isRetryableFailure(attempt); n += 1) {
+    // A provider-requested wait beats our backoff: the provider knows when its
+    // budget settles, and retrying sooner only earns the same refusal.
+    const hinted = retryAfterDelayMs(attempt.retryAfterMs, retry.retryAfterMaxMs ?? RETRY_AFTER_MAX_MS);
+    const delay = hinted ?? retryDelayMs(n, retry.baseDelayMs, retry.maxDelayMs);
+    const source = hinted === null ? '' : ' (Retry-After)';
+    appendLog(logPath, `HTTP ${attempt.httpStatus} is transient, retry ${n}/${maxAttempts - 1} in ${delay}ms${source}`);
     await sleep(delay, signal);
     attempt = await request();
   }
@@ -394,6 +429,7 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
     maxAttempts: config.sttRetryMaxAttempts,
     baseDelayMs: config.sttRetryBaseDelayMs,
     maxDelayMs: config.sttRetryMaxDelayMs,
+    retryAfterMaxMs: config.sttRetryAfterMaxMs,
   };
   const sleep: SleepFn = context.sleep ?? defaultSleep;
   const retried = (request: () => Promise<TranscriptionAttempt>) =>

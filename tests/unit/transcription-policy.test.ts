@@ -17,12 +17,17 @@ import {
   chooseInitialStrategy,
   fitsMultipart,
   isBase64LimitError,
+  isInFlightBudgetExhausted,
   isMultipartLimitError,
+  isRetryableFailure,
   isRetryableStatus,
   joinTranscriptParts,
   MULTIPART_LIMIT,
   nextAfterBase64Failure,
   nextAfterMultipartFailure,
+  parseRetryAfter,
+  RETRY_AFTER_MAX_MS,
+  retryAfterDelayMs,
   retryDelayMs,
 } from '../../src/domain/transcription/policy.ts';
 
@@ -235,5 +240,73 @@ describe('domain/transcription/policy — transient failures (429 / 5xx)', () =>
       retryDelayMs(-3, 1000, 8000, () => 0.5),
       750,
     );
+  });
+});
+
+describe('domain/transcription/policy — in-flight budget (402)', () => {
+  // Body observed on job 1954b724 (chunk 6/6 of a 100-minute video).
+  const IN_FLIGHT_402 =
+    '{"error":{"message":"This request would exceed your available credits given your current in-flight requests.","code":402,"metadata":{"reason":"in_flight_budget_exhausted","headers":{"Retry-After":"120"}}}} HTTP 402';
+  const OUT_OF_CREDIT_402 = '{"error":{"message":"Insufficient credits","code":402}} HTTP 402';
+
+  it('isInFlightBudgetExhausted: the 402 body naming in_flight_budget_exhausted is transient', () => {
+    assert.equal(isInFlightBudgetExhausted(IN_FLIGHT_402), true);
+  });
+
+  it('isInFlightBudgetExhausted: an out-of-credit 402 and empty bodies are not', () => {
+    assert.equal(isInFlightBudgetExhausted(OUT_OF_CREDIT_402), false);
+    assert.equal(isInFlightBudgetExhausted(''), false);
+  });
+
+  it('isRetryableFailure: 402 in-flight is retried, plain 402 is not', () => {
+    assert.equal(isRetryableFailure({ httpStatus: 402, errorDetails: IN_FLIGHT_402 }), true);
+    assert.equal(isRetryableFailure({ httpStatus: 402, errorDetails: OUT_OF_CREDIT_402 }), false);
+  });
+
+  it('isRetryableFailure: 429 / 5xx stay retryable whatever the body', () => {
+    assert.equal(isRetryableFailure({ httpStatus: 429, errorDetails: 'HTTP 429' }), true);
+    assert.equal(isRetryableFailure({ httpStatus: 503, errorDetails: '' }), true);
+    assert.equal(isRetryableFailure({ httpStatus: 400, errorDetails: IN_FLIGHT_402 }), false);
+    assert.equal(isRetryableFailure({ httpStatus: 200, errorDetails: '' }), false);
+  });
+
+  it('parseRetryAfter: delta-seconds become milliseconds', () => {
+    assert.equal(parseRetryAfter('120'), 120_000);
+    assert.equal(parseRetryAfter('0'), 0);
+    assert.equal(parseRetryAfter(' 5 '), 5000);
+  });
+
+  it('parseRetryAfter: an HTTP-date becomes the remaining wait from `now`', () => {
+    const now = Date.parse('2026-11-15T07:43:00.000Z');
+    assert.equal(parseRetryAfter('Sun, 15 Nov 2026 07:45:00 GMT', now), 120_000);
+  });
+
+  it('parseRetryAfter: an already-past HTTP-date waits 0, garbage is ignored', () => {
+    const now = Date.parse('2026-11-15T07:50:00.000Z');
+    assert.equal(parseRetryAfter('Sun, 15 Nov 2026 07:45:00 GMT', now), 0);
+    assert.equal(parseRetryAfter('soon'), null);
+    assert.equal(parseRetryAfter(''), null);
+  });
+
+  it('retryAfterDelayMs: the hint is honoured as-is under the ceiling', () => {
+    assert.equal(retryAfterDelayMs(120_000), 120_000);
+    assert.equal(retryAfterDelayMs(30_000, 120_000), 30_000);
+  });
+
+  it('retryAfterDelayMs: a huge hint is clamped to maxMs', () => {
+    assert.equal(retryAfterDelayMs(600_000, 120_000), 120_000);
+    assert.equal(retryAfterDelayMs(600_000), RETRY_AFTER_MAX_MS);
+  });
+
+  it('retryAfterDelayMs: a zero hint or a zero ceiling means "do not wait"', () => {
+    assert.equal(retryAfterDelayMs(0), 0);
+    assert.equal(retryAfterDelayMs(120_000, 0), 0);
+  });
+
+  it('retryAfterDelayMs: no hint / not a number ⇒ null, so the backoff takes over', () => {
+    assert.equal(retryAfterDelayMs(undefined), null);
+    assert.equal(retryAfterDelayMs(Number.NaN), null);
+    assert.equal(retryAfterDelayMs(-1), null);
+    assert.equal(retryAfterDelayMs(Number.POSITIVE_INFINITY), null);
   });
 });

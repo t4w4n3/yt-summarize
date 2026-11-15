@@ -162,7 +162,7 @@ describe('summarize — OpenRouter provider pin', () => {
     assert.deepEqual(providerRouting('deepinfra', ''), { only: ['deepinfra'], allow_fallbacks: false });
   });
 
-  it('sends the pinned provider and quantization in the request body', async () => {
+  it('sends the pinned provider in the request body', async () => {
     const dir = tmpDir();
     const transcript = writeTranscript(dir, 't');
     let body: { provider?: unknown } = {};
@@ -179,9 +179,10 @@ describe('summarize — OpenRouter provider pin', () => {
         lang: 'en',
       } as StageContext);
       assert.equal(md, '# Pinned');
+      // The shipped default pins one endpoint with no quantization filter
+      // (`LLM_QUANTIZATION` blank), so the request carries no `quantizations`.
       assert.deepEqual(body.provider, {
         only: [config.llmProviderPin],
-        quantizations: [config.llmQuantization],
         allow_fallbacks: false,
       });
     } finally {

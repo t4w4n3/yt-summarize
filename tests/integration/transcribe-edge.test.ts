@@ -72,7 +72,8 @@ function stubFetch(handler: (opts: RequestInit) => Response | Promise<Response> 
 }
 
 function jsonResponse(status: number, payload: unknown, ok = true): Response {
-  return { ok, status, json: async () => payload } as unknown as Response;
+  // A real Response always carries headers; the adapter reads `Retry-After` from them.
+  return { ok, status, json: async () => payload, headers: new Headers() } as unknown as Response;
 }
 
 afterEach(() => {
@@ -96,7 +97,13 @@ describe('transcribe — default adapter error handling', () => {
     writeSyntheticWav(wav, 1024);
 
     stubFetch(
-      () => ({ ok: true, status: 200, json: async () => Promise.reject(new Error('bad json')) }) as unknown as Response,
+      () =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => Promise.reject(new Error('bad json')),
+          headers: new Headers(),
+        }) as unknown as Response,
     );
 
     await assert.rejects(transcribe(wav, baseContext(dir)), (err: unknown) => {

@@ -43,10 +43,12 @@ services:
       DATA_DIR: "/data"
       ARTIFACTS_DIR: "/artifacts"
       STT_MODEL: "${STT_MODEL}"
-      # Retry borné des erreurs transitoires du provider STT (429 / 5xx).
+      # Retry borné des erreurs transitoires du provider STT (429 / 5xx, et le
+      # 402 « in-flight budget » qui demande juste d'attendre).
       STT_RETRY_MAX_ATTEMPTS: "${STT_RETRY_MAX_ATTEMPTS}"
       STT_RETRY_BASE_DELAY_MS: "${STT_RETRY_BASE_DELAY_MS}"
       STT_RETRY_MAX_DELAY_MS: "${STT_RETRY_MAX_DELAY_MS}"
+      STT_RETRY_AFTER_MAX_MS: "${STT_RETRY_AFTER_MAX_MS}"
       LLM_PROVIDER: "${LLM_PROVIDER}"
       LLM_MODEL: "${LLM_MODEL}"
       # Pin OpenRouter to one provider endpoint (slug) + quantization, so two

@@ -141,13 +141,14 @@ Runtime settings live in `.env` (created by `mise run setup`; see `.env.example`
 | `DATA_DIR` | `/data` | SQLite job database directory (shared `jobs-data` volume) |
 | `ARTIFACTS_DIR` | `/artifacts` | Stage artifacts directory (`artifacts` volume) |
 | `STT_MODEL` | `microsoft/mai-transcribe-2` | Speech-to-text model (OpenRouter) |
-| `STT_RETRY_MAX_ATTEMPTS` | `3` | Attempts per transcription request, first try included (transient 429/5xx only) |
+| `STT_RETRY_MAX_ATTEMPTS` | `3` | Attempts per transcription request, first try included (transient failures only: 429/5xx, and the 402 whose body says `in_flight_budget_exhausted`) |
 | `STT_RETRY_BASE_DELAY_MS` | `1000` | First retry delay; doubles per attempt (half fixed, half jitter) |
-| `STT_RETRY_MAX_DELAY_MS` | `8000` | Ceiling for any single retry delay — worst case added to a job is (attempts − 1) × this |
+| `STT_RETRY_MAX_DELAY_MS` | `8000` | Ceiling for any single backoff delay |
+| `STT_RETRY_AFTER_MAX_MS` | `120000` | Ceiling for a provider-requested wait (`Retry-After`), which overrides the backoff — worst case added to a job is (attempts − 1) × max of the two ceilings |
 | `LLM_PROVIDER` | `openrouter` | Chat provider for summarization |
-| `LLM_MODEL` | `deepseek/deepseek-v4.1-flash-1017` | Summarization model (OpenRouter) |
-| `LLM_PROVIDER_PIN` | `deepinfra` | OpenRouter provider slug the summarization request is pinned to (`provider.only`, fallbacks disabled); blank = OpenRouter default routing |
-| `LLM_QUANTIZATION` | `fp8` | Quantization filter applied to the pinned provider (`provider.quantizations`); blank = any quantization |
+| `LLM_MODEL` | `meta/muse-ember` | Summarization model (OpenRouter) |
+| `LLM_PROVIDER_PIN` | `google-vertex/global` | OpenRouter provider slug the summarization request is pinned to (`provider.only`, fallbacks disabled); blank = OpenRouter default routing |
+| `LLM_QUANTIZATION` | *(blank)* | Quantization filter applied to the pinned provider (`provider.quantizations`); blank = any quantization |
 | `LLM_THINKING` | `high` | Reasoning effort for the summarization model |
 | `WORKER_POLL_MS` | `2000` | Worker polling interval between queue checks |
 | `JOB_TIMEOUT_MS` | `1800000` | Whole-job timeout (30 min) before the job fails |

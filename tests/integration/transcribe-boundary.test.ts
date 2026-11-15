@@ -68,8 +68,9 @@ type FetchHandler = (opts: RequestInit) => Response | Promise<Response>;
 
 const originalFetch = globalThis.fetch;
 
-function jsonResponse(status: number, payload: unknown, ok = true): Response {
-  return { ok, status, json: async () => payload } as unknown as Response;
+function jsonResponse(status: number, payload: unknown, ok = true, headers: Record<string, string> = {}): Response {
+  // A real Response always carries headers; the adapter reads `Retry-After` from them.
+  return { ok, status, json: async () => payload, headers: new Headers(headers) } as unknown as Response;
 }
 
 /** Install a typed stub for global fetch and record every call. */
@@ -202,6 +203,137 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
       assert.ok(usedJson, 'LIMIT+1 should go via input_audio JSON');
     } finally {
       fs.promises.stat = origStat as typeof fs.promises.stat;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a 402 in-flight refusal carries the Retry-After header into the retry wait', async () => {
+    const dir = tmpDir();
+    const wav = path.join(dir, 'audio.wav');
+    writeSyntheticWav(wav, 1024);
+
+    let call = 0;
+    stubFetch(() => {
+      call += 1;
+      if (call === 1) {
+        // Header only: the body does not echo the hint back under metadata.headers.
+        return jsonResponse(
+          402,
+          {
+            error: {
+              message: 'This request would exceed your available credits given your current in-flight requests.',
+              code: 402,
+              metadata: { reason: 'in_flight_budget_exhausted' },
+            },
+          },
+          false,
+          { 'Retry-After': '120' },
+        );
+      }
+      return jsonResponse(200, { text: 'after the wait' });
+    });
+
+    const sleeps: number[] = [];
+    const out = await transcribe(wav, {
+      ...baseContext(dir),
+      sleep: async (ms: number) => {
+        sleeps.push(ms);
+      },
+    });
+
+    try {
+      assert.equal(call, 2, 'the in-flight 402 is retried once');
+      assert.deepEqual(sleeps, [120_000], 'the Retry-After header (120 s) sets the wait');
+      assert.equal(fs.readFileSync(out, 'utf8').trim(), 'after the wait');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('the Retry-After header wins over the copy OpenRouter echoes in the body', async () => {
+    const dir = tmpDir();
+    const wav = path.join(dir, 'audio.wav');
+    writeSyntheticWav(wav, 1024);
+
+    let call = 0;
+    stubFetch(() => {
+      call += 1;
+      if (call === 1) {
+        return jsonResponse(
+          402,
+          {
+            error: {
+              message: 'in-flight budget exhausted',
+              code: 402,
+              metadata: {
+                reason: 'in_flight_budget_exhausted',
+                // A stale echo: the authoritative hint is the header below.
+                headers: { 'Retry-After': '600' },
+              },
+            },
+          },
+          false,
+          { 'Retry-After': '60' },
+        );
+      }
+      return jsonResponse(200, { text: 'header wins' });
+    });
+
+    const sleeps: number[] = [];
+    const out = await transcribe(wav, {
+      ...baseContext(dir),
+      sleep: async (ms: number) => {
+        sleeps.push(ms);
+      },
+    });
+
+    try {
+      assert.deepEqual(sleeps, [60_000], 'header 60 s wins over the body echo of 600 s');
+      assert.equal(fs.readFileSync(out, 'utf8').trim(), 'header wins');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a Retry-After echoed only in the error body (no header) still sets the wait', async () => {
+    const dir = tmpDir();
+    const wav = path.join(dir, 'audio.wav');
+    writeSyntheticWav(wav, 1024);
+
+    let call = 0;
+    stubFetch(() => {
+      call += 1;
+      if (call === 1) {
+        // Shape of the real OpenRouter refusal on job 1954b724: no header visible
+        // to the client, the hint only survives inside error.metadata.headers.
+        return jsonResponse(
+          402,
+          {
+            error: {
+              message: 'This request would exceed your available credits given your current in-flight requests.',
+              code: 402,
+              metadata: { reason: 'in_flight_budget_exhausted', headers: { 'Retry-After': '120' } },
+            },
+          },
+          false,
+        );
+      }
+      return jsonResponse(200, { text: 'echoed hint' });
+    });
+
+    const sleeps: number[] = [];
+    const out = await transcribe(wav, {
+      ...baseContext(dir),
+      sleep: async (ms: number) => {
+        sleeps.push(ms);
+      },
+    });
+
+    try {
+      assert.equal(call, 2, 'the in-flight 402 is retried once');
+      assert.deepEqual(sleeps, [120_000], 'the body-echoed Retry-After (120 s) sets the wait');
+      assert.equal(fs.readFileSync(out, 'utf8').trim(), 'echoed hint');
+    } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });

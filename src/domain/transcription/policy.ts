@@ -77,6 +77,50 @@ export function isRetryableStatus(httpStatus: number): boolean {
   return httpStatus === 429 || (httpStatus >= 500 && httpStatus <= 599);
 }
 
+/* ── In-flight budget (402) ───────────────────────────────────────────────────
+ *
+ * OpenRouter refuses a request when the *estimated* cost of requests still
+ * settling plus the new one exceeds a budget derived from the key's remaining
+ * credit. It answers 402 with `reason: in_flight_budget_exhausted` and a
+ * `Retry-After` hint: waiting is enough, the condition heals by itself.
+ * A plain 402 (no credit left) stays definitive — retrying it burns the job.
+ */
+
+/** Ceiling for a provider-requested wait, so one hint cannot eat the job budget. */
+export const RETRY_AFTER_MAX_MS = 120_000;
+
+/** True when the 402 body names the in-flight budget as the blocker. */
+export function isInFlightBudgetExhausted(errorDetails: string): boolean {
+  return errorDetails.includes('in_flight_budget_exhausted');
+}
+
+/** Retryable = transient status (429 / 5xx) or a 402 that only asks to wait. */
+export function isRetryableFailure(attempt: { readonly httpStatus: number; readonly errorDetails: string }): boolean {
+  if (isRetryableStatus(attempt.httpStatus)) return true;
+  return attempt.httpStatus === 402 && isInFlightBudgetExhausted(attempt.errorDetails);
+}
+
+const DELTA_SECONDS = /^\d+$/;
+
+/**
+ * `Retry-After` is either delta-seconds (`120`) or an HTTP-date. Returns the
+ * wait in milliseconds, or null when the value carries no usable hint.
+ */
+export function parseRetryAfter(raw: string, nowMs: number = Date.now()): number | null {
+  const value = raw.trim();
+  if (DELTA_SECONDS.test(value)) return Number(value) * 1000;
+  const date = Date.parse(value);
+  // An empty or unparseable value is NaN; a past date is already 0.
+  if (Number.isNaN(date)) return null;
+  return Math.max(0, date - nowMs);
+}
+
+/** Provider-requested wait, clamped to `maxMs`; null when there is no hint. */
+export function retryAfterDelayMs(retryAfterMs: number | undefined, maxMs: number = RETRY_AFTER_MAX_MS): number | null {
+  if (retryAfterMs === undefined || !Number.isFinite(retryAfterMs) || retryAfterMs < 0) return null;
+  return Math.min(retryAfterMs, maxMs);
+}
+
 export function retryDelayMs(
   attempt: number,
   baseMs: number = RETRY_BASE_DELAY_MS,

@@ -1,5 +1,5 @@
 /**
- * Integration tests for the pipeline orchestrator (src/worker/pipeline.ts).
+ * Integration tests for the pipeline orchestrator (src/application/pipeline-runner.ts).
  *
  * Drives runPipeline() — the download→convert→transcribe→summarize chain —
  * with injected fake stage functions, so no real subprocesses or HTTP calls
@@ -20,6 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, it } from 'node:test';
+import { createFilesystemArtifactStore } from '../../src/infrastructure/outbound/filesystem/artifact-store.ts';
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-data-'));
 const artifactsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-art-'));
@@ -29,7 +30,7 @@ process.env.ARTIFACTS_DIR = artifactsDir;
 
 const dbMod = await import('../../src/infrastructure/outbound/sqlite/job-store.ts');
 const { config } = await import('../../src/shared/config.ts');
-const pipelineMod = await import('../../src/worker/pipeline.ts');
+const pipelineMod = await import('../../src/application/pipeline-runner.ts');
 const { StageError } = await import('../../src/infrastructure/outbound/stages/process.ts');
 
 type Stages = NonNullable<Parameters<typeof pipelineMod.runPipeline>[3]>;
@@ -64,6 +65,13 @@ function makeJob(db: DatabaseSync, id: string, lang: string | null) {
   const row = dbMod.getJob(db, claimed.id);
   assert.ok(row);
   return row;
+}
+
+function depsFor(db: DatabaseSync, artifactsDir = config.artifactsDir) {
+  return {
+    jobStore: dbMod.createSqliteJobStore(db),
+    artifactStore: createFilesystemArtifactStore(artifactsDir),
+  };
 }
 
 interface FakeStages extends Stages {
@@ -125,7 +133,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     const fakes = makeFakes();
     const audio = path.join(jobDir('happy'), 'audio.m4a');
 
-    await pipelineMod.runPipeline(db, job, new AbortController().signal, fakes);
+    await pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config);
 
     assert.deepEqual(fakes.calls, ['download', 'convert', 'transcribe', 'summarize']);
     const row = dbMod.getJob(db, 'happy');
@@ -147,11 +155,14 @@ describe('pipeline — orchestration (injected fakes)', () => {
     fakes.downloader.download = async () => {
       throw new StageError('boom', '');
     };
-    await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes), (err: unknown) => {
-      assert.ok(err instanceof StageError);
-      assert.equal((err as Staged).stage, 'downloading');
-      return true;
-    });
+    await assert.rejects(
+      pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config),
+      (err: unknown) => {
+        assert.ok(err instanceof StageError);
+        assert.equal((err as Staged).stage, 'downloading');
+        return true;
+      },
+    );
   });
 
   it('preserves an explicit stage on a StageError from a later stage', async () => {
@@ -161,11 +172,14 @@ describe('pipeline — orchestration (injected fakes)', () => {
     fakes.summarizer.summarize = async () => {
       throw new StageError('llm down', 'summarizing');
     };
-    await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes), (err: unknown) => {
-      assert.ok(err instanceof StageError);
-      assert.equal((err as Staged).stage, 'summarizing');
-      return true;
-    });
+    await assert.rejects(
+      pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config),
+      (err: unknown) => {
+        assert.ok(err instanceof StageError);
+        assert.equal((err as Staged).stage, 'summarizing');
+        return true;
+      },
+    );
   });
 
   it('attributes a plain Error to the current stage', async () => {
@@ -175,11 +189,14 @@ describe('pipeline — orchestration (injected fakes)', () => {
     fakes.converter.convert = async () => {
       throw new Error('ffmpeg broke');
     };
-    await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes), (err: unknown) => {
-      assert.equal((err as Staged).message, 'ffmpeg broke');
-      assert.equal((err as Staged).stage, 'converting');
-      return true;
-    });
+    await assert.rejects(
+      pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config),
+      (err: unknown) => {
+        assert.equal((err as Staged).message, 'ffmpeg broke');
+        assert.equal((err as Staged).stage, 'converting');
+        return true;
+      },
+    );
   });
 
   it('wraps a non-Error rejection in a StageError with the current stage', async () => {
@@ -189,12 +206,15 @@ describe('pipeline — orchestration (injected fakes)', () => {
     fakes.transcriber.transcribe = async () => {
       throw 'unexpected string';
     };
-    await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes), (err: unknown) => {
-      assert.ok(err instanceof StageError);
-      assert.equal((err as Staged).message, 'unexpected string');
-      assert.equal((err as Staged).stage, 'transcribing');
-      return true;
-    });
+    await assert.rejects(
+      pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config),
+      (err: unknown) => {
+        assert.ok(err instanceof StageError);
+        assert.equal((err as Staged).message, 'unexpected string');
+        assert.equal((err as Staged).stage, 'transcribing');
+        return true;
+      },
+    );
   });
 
   it('keeps the downloaded audio in finally when convert fails (retry resumes from it)', async () => {
@@ -205,7 +225,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     fakes.converter.convert = async () => {
       throw new Error('explode');
     };
-    await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes));
+    await assert.rejects(pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config));
     // Intentional change for retry: completed-stage artifacts survive a
     // failure so a retry does not pay for them again; only the failed
     // stage's partial output is dropped (see 'keep-audio' case above).
@@ -219,7 +239,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     fs.writeFileSync(path.join(jobDir('resume-t'), 'transcript.txt'), 'already transcribed text');
     fs.writeFileSync(path.join(jobDir('resume-t'), '.title'), 'Cached title');
     const fakes = makeFakes();
-    await pipelineMod.runPipeline(db, job, new AbortController().signal, fakes);
+    await pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config);
     assert.deepEqual(fakes.calls, ['summarize'], `calls ${fakes.calls} must skip paid stages when transcript exists`);
     const row = dbMod.getJob(db, 'resume-t');
     assert.equal(row?.status, 'done');
@@ -236,7 +256,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     fs.writeFileSync(path.join(jobDir('resume-w'), 'audio.wav'), wav);
     fs.writeFileSync(path.join(jobDir('resume-w'), '.title'), 'Wav title');
     const fakes = makeFakes();
-    await pipelineMod.runPipeline(db, job, new AbortController().signal, fakes);
+    await pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config);
     assert.deepEqual(fakes.calls, ['transcribe', 'summarize'], `calls ${fakes.calls} must resume from audio.wav`);
     assert.equal(dbMod.getJob(db, 'resume-w')?.title, 'Wav title');
   });
@@ -248,7 +268,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     fs.writeFileSync(path.join(jobDir('resume-a'), 'audio.m4a'), 'audio');
     fs.writeFileSync(path.join(jobDir('resume-a'), '.title'), 'Audio title');
     const fakes = makeFakes();
-    await pipelineMod.runPipeline(db, job, new AbortController().signal, fakes);
+    await pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config);
     assert.deepEqual(
       fakes.calls,
       ['convert', 'transcribe', 'summarize'],
@@ -265,7 +285,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     fs.writeFileSync(path.join(jobDir('resume-x'), 'audio.wav'), 'RIFF');
     fs.writeFileSync(path.join(jobDir('resume-x'), 'audio.m4a'), '');
     const fakes = makeFakes();
-    await pipelineMod.runPipeline(db, job, new AbortController().signal, fakes);
+    await pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config);
     assert.deepEqual(
       fakes.calls,
       ['download', 'convert', 'transcribe', 'summarize'],
@@ -282,7 +302,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
       void input;
       throw new Error('ffmpeg broke');
     };
-    await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes));
+    await assert.rejects(pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config));
     assert.ok(
       fs.existsSync(path.join(jobDir('keep-audio'), 'audio.m4a')),
       'downloaded audio.m4a must survive a convert failure so retry skips re-download',
@@ -301,7 +321,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
       fs.writeFileSync(path.join(jobDir('drop-partial'), 'audio.m4a'), 'partial');
       throw new StageError('yt-dlp failed', 'downloading');
     };
-    await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes));
+    await assert.rejects(pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config));
     assert.ok(
       !fs.existsSync(path.join(jobDir('drop-partial'), 'audio.m4a')),
       'partial audio.m4a must be removed after a download failure',
@@ -320,7 +340,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     fakes.summarizer.summarize = async () => {
       throw new StageError('llm down', 'summarizing');
     };
-    await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes));
+    await assert.rejects(pipelineMod.runPipeline(job, depsFor(db), new AbortController().signal, fakes, config));
     assert.ok(
       fs.existsSync(path.join(jobDir('keep-t'), 'transcript.txt')),
       'transcript.txt must survive a summarize failure so retry skips STT',
@@ -333,7 +353,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     const job = makeJob(db, 'pipe-cfg', null);
     const customDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipe-cfg-'));
     const fakes = makeFakes();
-    await pipelineMod.runPipeline(db, job, new AbortController().signal, fakes, {
+    await pipelineMod.runPipeline(job, depsFor(db, customDir), new AbortController().signal, fakes, {
       ...config,
       artifactsDir: customDir,
       mullvadEnabled: false,
@@ -350,12 +370,12 @@ describe('pipeline — orchestration (injected fakes)', () => {
     db = freshDb();
     const fr = makeJob(db, 'fr', 'fr');
     const f1 = makeFakes();
-    await pipelineMod.runPipeline(db, fr, new AbortController().signal, f1);
+    await pipelineMod.runPipeline(fr, depsFor(db), new AbortController().signal, f1, config);
     assert.deepEqual(f1.langs, ['fr']);
 
     const en = makeJob(db, 'en', null);
     const f2 = makeFakes();
-    await pipelineMod.runPipeline(db, en, new AbortController().signal, f2);
+    await pipelineMod.runPipeline(en, depsFor(db), new AbortController().signal, f2, config);
     assert.deepEqual(f2.langs, ['en']);
   });
 });

@@ -21,8 +21,8 @@ describe('P3 — focused constants modules', () => {
     assert.ok(cfg.dbPath().endsWith('jobs.db'));
   });
 
-  it('timeouts.ts exports stageTimeoutMs with correct per-stage values', async () => {
-    const t = await import('../../src/shared/timeouts.ts');
+  it('application/stage-timeouts exports stageTimeoutMs with correct per-stage values', async () => {
+    const t = await import('../../src/application/stage-timeouts.ts');
     assert.equal(t.stageTimeoutMs('downloading'), 10 * 60 * 1000);
     assert.equal(t.stageTimeoutMs('converting'), 15 * 60 * 1000);
     assert.equal(t.stageTimeoutMs('transcribing'), 25 * 60 * 1000);
@@ -34,7 +34,7 @@ describe('P3 — focused constants modules', () => {
     // Facade must re-export from the focused modules (not duplicate definitions)
     assert.match(src, /from\s+['"]\.\/config\.ts['"]/);
     assert.match(src, /from\s+['"]\.\.\/domain\/job\/entity\.ts['"]/);
-    assert.match(src, /from\s+['"]\.\/timeouts\.ts['"]/);
+    assert.match(src, /from\s+['"]\.\.\/application\/stage-timeouts\.ts['"]/);
     // Must not still define STAGES/STAGE_TIMEOUTS inline (duplicated knowledge)
     // Allow at most re-export lines; original definitions should be gone.
     assert.doesNotMatch(src, /export const STAGES =/);
@@ -54,11 +54,11 @@ describe('P3 — focused constants modules', () => {
   });
 
   it('internal consumers import from focused modules, not the big ball', () => {
-    const pipeline = fs.readFileSync('src/worker/pipeline.ts', 'utf8');
+    const pipeline = fs.readFileSync('src/application/pipeline-runner.ts', 'utf8');
     // pipeline needs STAGES + stageTimeoutMs + config — should import from focused files
     assert.match(pipeline, /from\s+['"]\.\.\/domain\/job\/entity\.ts['"]/);
-    assert.match(pipeline, /from\s+['"]\.\.\/shared\/timeouts\.ts['"]/);
-    assert.match(pipeline, /from\s+['"]\.\.\/shared\/config\.ts['"]/);
+    assert.match(pipeline, /from\s+['"]\.\/stage-timeouts\.ts['"]/);
+    assert.match(pipeline, /from\s+['"]\.\/config\.ts['"]/);
     assert.doesNotMatch(pipeline, /from\s+['"]\.\.\/shared\/constants\.ts['"]/);
 
     const db = fs.readFileSync('src/infrastructure/outbound/sqlite/job-store.ts', 'utf8');

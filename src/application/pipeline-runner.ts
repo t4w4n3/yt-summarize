@@ -1,47 +1,51 @@
-import type { DatabaseSync } from 'node:sqlite';
-import type { RuntimeConfig } from '../application/config.ts';
-import { type StagedError, StageError } from '../application/errors.ts';
-import { friendlyError, stageOf } from '../application/friendly-error.ts';
-import type { PipelineStagePorts } from '../application/ports/stage-ports.ts';
 import type { Job, Stage } from '../domain/job/entity.ts';
 import { STAGES } from '../domain/job/entity.ts';
-import { createFilesystemArtifactStore } from '../infrastructure/outbound/filesystem/artifact-store.ts';
-import { createSqliteJobStore } from '../infrastructure/outbound/sqlite/job-store.ts';
-import { createPipelineStagePorts } from '../infrastructure/outbound/stages/stage-ports.ts';
-import { loadConfig } from '../shared/config.ts';
-import { stageTimeoutMs } from '../shared/timeouts.ts';
-
-export type { StagedError };
-// Canonical owners live in the application layer (phase 1D); re-exported so
-// existing import paths (`worker/pipeline.ts`) keep working.
-export { friendlyError, stageOf };
+import type { RuntimeConfig } from './config.ts';
+import { type StagedError, StageError } from './errors.ts';
+import type { ArtifactStore } from './ports/artifact-store.ts';
+import type { JobStore } from './ports/job-store.ts';
+import type { PipelineStagePorts } from './ports/stage-ports.ts';
+import { stageTimeoutMs } from './stage-timeouts.ts';
 
 /**
  * The four outbound ports run in sequence. Injectable so tests can stub the
- * real subprocess/HTTP adapters; defaults to the real implementations.
+ * real subprocess/HTTP adapters; the worker composition root supplies the
+ * real adapters.
  */
 export type PipelineStages = PipelineStagePorts;
 
-const realStages: PipelineStages = createPipelineStagePorts();
+/** Dependencies injected into the application pipeline use case. */
+export interface PipelineDependencies {
+  jobStore: JobStore;
+  artifactStore: ArtifactStore;
+}
 
 /**
  * Artifact resume (retry without paying again) is governed by the
  * ArtifactStore probe + resume policy: transcript > wav > downloaded audio.
+ *
+ * The runner is a pure use case: it only knows the JobStore, ArtifactStore
+ * and stage ports it receives, so it can be driven with fakes in unit tests.
  */
 export async function runPipeline(
-  db: DatabaseSync,
   job: Job,
+  dependencies: PipelineDependencies,
   signal: AbortSignal,
-  stages: PipelineStages = realStages,
-  runtimeConfig?: RuntimeConfig,
+  stages: PipelineStages,
+  runtimeConfig: RuntimeConfig,
 ): Promise<void> {
-  const cfg = runtimeConfig ?? loadConfig(process.env);
-  const store = createSqliteJobStore(db);
-  const artifacts = createFilesystemArtifactStore(cfg.artifactsDir);
+  const store = dependencies.jobStore;
+  const artifacts = dependencies.artifactStore;
   const jobDir = artifacts.ensureJobDir(job.id);
   const logPath = artifacts.pathsFor(job.id).logPath;
   const onHeartbeat = () => store.heartbeat(job.id);
-  const context = { jobDir, logPath, onHeartbeat, timeoutMs: stageTimeoutMs('downloading', cfg.jobTimeoutMs), signal };
+  const context = {
+    jobDir,
+    logPath,
+    onHeartbeat,
+    timeoutMs: stageTimeoutMs('downloading', runtimeConfig.jobTimeoutMs),
+    signal,
+  };
   let audioPath: string | undefined;
   let wavPath: string | undefined;
   let transcriptPath: string | undefined;
@@ -49,8 +53,6 @@ export async function runPipeline(
   let currentStage: Stage | null = null;
   let succeeded = false;
 
-  // Resume probe: furthest valid artifact on disk wins (see helpers above).
-  // The ArtifactStore probes feed the pure policy in application/resume-policy.
   const probe = artifacts.probe(job.id);
   const resume = probe.resume;
   if (resume !== null) {
@@ -69,7 +71,7 @@ export async function runPipeline(
           jobId: job.id,
           url: job.url,
           ...context,
-          timeoutMs: stageTimeoutMs(currentStage, cfg.jobTimeoutMs),
+          timeoutMs: stageTimeoutMs(currentStage, runtimeConfig.jobTimeoutMs),
         });
         audioPath = downloaded.audioPath;
         title = downloaded.title;
@@ -81,10 +83,8 @@ export async function runPipeline(
         wavPath = await stages.converter.convert({
           audioPath: audioPath as string,
           ...context,
-          timeoutMs: stageTimeoutMs(currentStage, cfg.jobTimeoutMs),
+          timeoutMs: stageTimeoutMs(currentStage, runtimeConfig.jobTimeoutMs),
         });
-        // The wav now carries everything the download did; drop the raw
-        // audio early so a later failure leaves at most one copy on disk.
         artifacts.removeFile(audioPath);
         audioPath = undefined;
       }
@@ -94,7 +94,7 @@ export async function runPipeline(
       transcriptPath = await stages.transcriber.transcribe({
         wavPath: wavPath as string,
         ...context,
-        timeoutMs: stageTimeoutMs(currentStage, cfg.jobTimeoutMs),
+        timeoutMs: stageTimeoutMs(currentStage, runtimeConfig.jobTimeoutMs),
       });
       artifacts.removeFile(audioPath);
       artifacts.removeFile(wavPath);
@@ -108,7 +108,7 @@ export async function runPipeline(
     const markdown = await stages.summarizer.summarize({
       transcriptPath: transcriptPath as string,
       ...context,
-      timeoutMs: stageTimeoutMs(currentStage, cfg.jobTimeoutMs),
+      timeoutMs: stageTimeoutMs(currentStage, runtimeConfig.jobTimeoutMs),
       lang: job.lang || 'en',
     });
     artifacts.writeSummary(job.id, markdown);
@@ -117,8 +117,6 @@ export async function runPipeline(
   } catch (error) {
     // Attribute first, then drop only the failed stage's partial output so
     // completed-stage artifacts survive for a retry (see probe comment).
-    // In particular: transcribing/summarizing failures keep the wav, the
-    // chunk transcripts and the transcript — the paid STT work is not lost.
     let failedStage: string | null = currentStage;
     if (error instanceof StageError) {
       if (!error.stage && currentStage !== null) error.stage = currentStage;

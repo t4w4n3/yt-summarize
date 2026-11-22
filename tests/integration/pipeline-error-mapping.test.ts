@@ -1,5 +1,5 @@
 /**
- * Unit tests for the pure error-mapping helpers in src/worker/pipeline.ts.
+ * Unit tests for the pure error-mapping helpers in src/application/pipeline-runner.ts.
  *
  * `stageOf` and `friendlyError` convert arbitrary thrown errors into
  * stage-attributed, user-facing messages. This is the mapping the whole
@@ -10,8 +10,8 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { friendlyError, stageOf } from '../../src/application/friendly-error.ts';
 import { StageError } from '../../src/infrastructure/outbound/stages/process.ts';
-import { friendlyError, stageOf } from '../../src/worker/pipeline.ts';
 
 describe('pipeline — stage attribution & friendly errors', () => {
   it('stageOf returns the stage for a StageError', () => {

@@ -17,7 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, it } from 'node:test';
-import { claimNextJob, createJob, markDone } from '../../src/infrastructure/outbound/sqlite/job-store.ts';
+import { claimNextJob, createJob } from '../../src/infrastructure/outbound/sqlite/job-store.ts';
 import { StageError } from '../../src/infrastructure/outbound/stages/process.ts';
 import { createWorker, runWithTimeout } from '../../src/worker/worker-core.ts';
 
@@ -99,9 +99,9 @@ describe('worker-core — polling loop', () => {
       staleAfterMs: 60_000,
       jobTimeoutMs: 1_800_000,
       sleep: instantSleep,
-      runJob: async (db, job) => {
+      runJob: async (job, deps) => {
         ran = job.id;
-        markDone(db, job.id, 'T', '# done');
+        deps.jobStore.markDone(job.id, 'T', '# done');
       },
     });
     const worked = await w.runOnce();
@@ -176,9 +176,9 @@ describe('worker-core — polling loop', () => {
       staleAfterMs: 60_000,
       jobTimeoutMs: 1_800_000,
       sleep: instantSleep,
-      runJob: async (db, job) => {
+      runJob: async (job, deps) => {
         runs++;
-        markDone(db, job.id, 't', 'md');
+        deps.jobStore.markDone(job.id, 't', 'md');
       },
     });
     await w.runOnce();
@@ -214,9 +214,9 @@ describe('worker-core — polling loop', () => {
       staleAfterMs: 60_000,
       jobTimeoutMs: 1_800_000,
       sleep: instantSleep,
-      runJob: async (db, job) => {
+      runJob: async (job, deps) => {
         runs++;
-        markDone(db, job.id, 't', 'md');
+        deps.jobStore.markDone(job.id, 't', 'md');
         w.stop(); // stop after the first job
       },
     });

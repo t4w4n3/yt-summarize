@@ -1,15 +1,19 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { RuntimeConfig } from '../application/config.ts';
+import { friendlyError, stageOf } from '../application/friendly-error.ts';
+import type { PipelineDependencies, PipelineStages } from '../application/pipeline-runner.ts';
+import { runPipeline } from '../application/pipeline-runner.ts';
+import type { ArtifactStore } from '../application/ports/artifact-store.ts';
 import type { JobStore } from '../application/ports/job-store.ts';
 import type { Job } from '../domain/job/entity.ts';
+import { createFilesystemArtifactStore } from '../infrastructure/outbound/filesystem/artifact-store.ts';
 import { createSqliteJobStore, getJob } from '../infrastructure/outbound/sqlite/job-store.ts';
 import { createPipelineStagePorts } from '../infrastructure/outbound/stages/stage-ports.ts';
-import type { PipelineStages } from './pipeline.ts';
-import { friendlyError, runPipeline, stageOf } from './pipeline.ts';
+import { loadConfig } from '../shared/config.ts';
 
 export type SleepFn = (ms: number) => Promise<void>;
 
-export type RunJobFn = (db: DatabaseSync, job: Job, signal: AbortSignal) => Promise<void>;
+export type RunJobFn = (job: Job, dependencies: PipelineDependencies, signal: AbortSignal) => Promise<void>;
 
 export interface WorkerOptions {
   db: DatabaseSync;
@@ -18,6 +22,8 @@ export interface WorkerOptions {
   pollMs: number;
   staleAfterMs: number;
   jobTimeoutMs: number;
+  /** Artifact store port (defaults to the filesystem adapter from runtime config). */
+  artifacts?: ArtifactStore;
   /** Stage ports used by the default pipeline (defaults to real adapters). */
   stages?: PipelineStages;
   /** Runtime settings threaded into the default pipeline. */
@@ -41,9 +47,13 @@ const HEARTBEAT_MS = 10_000;
 
 export function createWorker(opts: WorkerOptions): Worker {
   const { db } = opts;
+  const runtimeConfig = opts.runtimeConfig ?? loadConfig(process.env);
   const store = opts.store ?? createSqliteJobStore(db);
-  const stages = opts.stages ?? createPipelineStagePorts(undefined, opts.runtimeConfig);
-  const runJob: RunJobFn = opts.runJob ?? ((d, job, signal) => runPipeline(d, job, signal, stages, opts.runtimeConfig));
+  const artifacts = opts.artifacts ?? createFilesystemArtifactStore(runtimeConfig.artifactsDir);
+  const stages = opts.stages ?? createPipelineStagePorts(undefined, runtimeConfig);
+  const dependencies: PipelineDependencies = { jobStore: store, artifactStore: artifacts };
+  const runJob: RunJobFn =
+    opts.runJob ?? ((job, deps, signal) => runPipeline(job, deps, signal, stages, runtimeConfig));
   const sleep: SleepFn = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   let stopping = false;
 
@@ -67,7 +77,7 @@ export function createWorker(opts: WorkerOptions): Worker {
       const controller = new AbortController();
       const beat = setInterval(() => store.heartbeat(job.id), HEARTBEAT_MS);
       try {
-        await runWithTimeout(() => runJob(db, job, controller.signal), opts.jobTimeoutMs, controller);
+        await runWithTimeout(() => runJob(job, dependencies, controller.signal), opts.jobTimeoutMs, controller);
         console.log(`Completed ${job.id}`);
       } catch (error) {
         console.error(`Failed ${job.id}:`, error);

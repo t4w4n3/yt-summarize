@@ -83,8 +83,8 @@ describe('architecture — layer dependencies (archunit)', () => {
     assert.equal(violations.length, 0, `domain → application violations:\n${violationMessage(violations)}`);
   });
 
-  it('domain must not depend on the shared config or timeout readers', async () => {
-    for (const target of ['src/shared/config.ts', 'src/shared/timeouts.ts'] as const) {
+  it('domain must not depend on the shared config reader', async () => {
+    for (const target of ['src/shared/config.ts'] as const) {
       const rule = projectFiles().inFolder('src/domain/**').shouldNot().dependOnFiles().inPath(target);
       const violations = await rule.check();
       assert.equal(violations.length, 0, `domain → ${target} violations:\n${violationMessage(violations)}`);
@@ -112,12 +112,8 @@ describe('architecture — layer dependencies (archunit)', () => {
     }
   });
 
-  it('application must not depend on shared persistence, config readers, or timeouts', async () => {
-    for (const target of [
-      'src/infrastructure/outbound/sqlite/job-store.ts',
-      'src/shared/config.ts',
-      'src/shared/timeouts.ts',
-    ] as const) {
+  it('application must not depend on shared persistence or config readers', async () => {
+    for (const target of ['src/infrastructure/outbound/sqlite/job-store.ts', 'src/shared/config.ts'] as const) {
       const rule = projectFiles().inFolder('src/application/**').shouldNot().dependOnFiles().inPath(target);
       const violations = await rule.check();
       assert.equal(violations.length, 0, `application → ${target} violations:\n${violationMessage(violations)}`);

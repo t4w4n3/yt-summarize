@@ -1,9 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite';
+import type { RuntimeConfig } from '../application/config.ts';
 import { type StagedError, StageError } from '../application/errors.ts';
 import { friendlyError, stageOf } from '../application/friendly-error.ts';
 import type { PipelineStagePorts } from '../application/ports/stage-ports.ts';
 import type { Stage } from '../domain/job/entity.ts';
-import { config } from '../shared/config.ts';
+import { loadConfig } from '../shared/config.ts';
 import type { JobRow } from '../shared/db.ts';
 import { createSqliteJobStore } from '../shared/db.ts';
 import { STAGES } from '../shared/job.ts';
@@ -33,13 +34,15 @@ export async function runPipeline(
   job: JobRow,
   signal: AbortSignal,
   stages: PipelineStages = realStages,
+  runtimeConfig?: RuntimeConfig,
 ): Promise<void> {
+  const cfg = runtimeConfig ?? loadConfig(process.env);
   const store = createSqliteJobStore(db);
-  const artifacts = createFilesystemArtifactStore(config.artifactsDir);
+  const artifacts = createFilesystemArtifactStore(cfg.artifactsDir);
   const jobDir = artifacts.ensureJobDir(job.id);
   const logPath = artifacts.pathsFor(job.id).logPath;
   const onHeartbeat = () => store.heartbeat(job.id);
-  const context = { jobDir, logPath, onHeartbeat, timeoutMs: stageTimeoutMs('downloading'), signal };
+  const context = { jobDir, logPath, onHeartbeat, timeoutMs: stageTimeoutMs('downloading', cfg.jobTimeoutMs), signal };
   let audioPath: string | undefined;
   let wavPath: string | undefined;
   let transcriptPath: string | undefined;
@@ -67,7 +70,7 @@ export async function runPipeline(
           jobId: job.id,
           url: job.url,
           ...context,
-          timeoutMs: stageTimeoutMs(currentStage),
+          timeoutMs: stageTimeoutMs(currentStage, cfg.jobTimeoutMs),
         });
         audioPath = downloaded.audioPath;
         title = downloaded.title;
@@ -79,7 +82,7 @@ export async function runPipeline(
         wavPath = await stages.converter.convert({
           audioPath: audioPath as string,
           ...context,
-          timeoutMs: stageTimeoutMs(currentStage),
+          timeoutMs: stageTimeoutMs(currentStage, cfg.jobTimeoutMs),
         });
         // The wav now carries everything the download did; drop the raw
         // audio early so a later failure leaves at most one copy on disk.
@@ -92,7 +95,7 @@ export async function runPipeline(
       transcriptPath = await stages.transcriber.transcribe({
         wavPath: wavPath as string,
         ...context,
-        timeoutMs: stageTimeoutMs(currentStage),
+        timeoutMs: stageTimeoutMs(currentStage, cfg.jobTimeoutMs),
       });
       artifacts.removeFile(audioPath);
       artifacts.removeFile(wavPath);
@@ -106,7 +109,7 @@ export async function runPipeline(
     const markdown = await stages.summarizer.summarize({
       transcriptPath: transcriptPath as string,
       ...context,
-      timeoutMs: stageTimeoutMs(currentStage),
+      timeoutMs: stageTimeoutMs(currentStage, cfg.jobTimeoutMs),
       lang: job.lang || 'en',
     });
     artifacts.writeSummary(job.id, markdown);

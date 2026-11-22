@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { config } from '../../shared/config.ts';
+import type { RuntimeConfig } from '../../application/config.ts';
+import { loadConfig } from '../../shared/config.ts';
 import { resolveOpenRouterKey } from './openrouter.ts';
 import type { StageContext } from './process.ts';
 import { StageError } from './process.ts';
@@ -51,7 +52,12 @@ export function extractContent(body: unknown): string | null {
 // The summarizer is a single text-in/text-out HTTPS call, exactly like the
 // transcription stage. No agent runtime is needed: system prompt + transcript
 // in, Markdown out.
-export async function summarize(transcriptPath: string, context: StageContext): Promise<string> {
+export async function summarize(
+  transcriptPath: string,
+  context: StageContext,
+  runtimeConfig?: RuntimeConfig,
+): Promise<string> {
+  const cfg = runtimeConfig ?? loadConfig(process.env);
   const apiKey = await resolveOpenRouterKey();
   // The prompt ships with an {{OUTPUT_LANGUAGE}} slot filled per job; anything
   // that isn't a clean two-letter code falls back to English.
@@ -64,7 +70,7 @@ export async function summarize(transcriptPath: string, context: StageContext): 
   // Pin the summarization endpoint: OpenRouter otherwise routes to whichever
   // provider of the model is cheapest/fastest right now, which changes output
   // quality and price between two identical requests.
-  const provider = providerRouting(config.llmProviderPin, config.llmQuantization);
+  const provider = providerRouting(cfg.llmProviderPin, cfg.llmQuantization);
 
   const controller = new AbortController();
   const timeoutMs = context.timeoutMs || 10 * 60 * 1000;
@@ -75,13 +81,13 @@ export async function summarize(transcriptPath: string, context: StageContext): 
   try {
     appendLog(
       context.logPath,
-      `$ POST ${API_URL} (model=${config.llmModel}, provider=${config.llmProviderPin}/${config.llmQuantization}, reasoning=${config.llmThinking}, lang=${lang})`,
+      `$ POST ${API_URL} (model=${cfg.llmModel}, provider=${cfg.llmProviderPin}/${cfg.llmQuantization}, reasoning=${cfg.llmThinking}, lang=${lang})`,
     );
     response = await fetch(API_URL, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: config.llmModel,
+        model: cfg.llmModel,
         ...(provider ? { provider } : {}),
         messages: [
           { role: 'system', content: systemPrompt },
@@ -90,7 +96,7 @@ export async function summarize(transcriptPath: string, context: StageContext): 
             content: `Summarize this video transcript into the requested Markdown structure.\n\n${transcript}`,
           },
         ],
-        reasoning: { effort: config.llmThinking },
+        reasoning: { effort: cfg.llmThinking },
       }),
       signal,
     });

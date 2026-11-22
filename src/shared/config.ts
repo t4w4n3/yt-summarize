@@ -23,6 +23,8 @@ export interface Config {
   pollMs: number;
   jobTimeoutMs: number;
   staleAfterMs: number;
+  mullvadEnabled: boolean;
+  mullvadProxy: string;
 }
 
 /**
@@ -51,6 +53,8 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     pollMs: boundedInt(env.WORKER_POLL_MS, 2000, 1),
     jobTimeoutMs: boundedInt(env.JOB_TIMEOUT_MS, 1800000, 1),
     staleAfterMs: boundedInt(env.STALE_AFTER_MS, 600000, 1),
+    mullvadEnabled: envBool(env.MULLVAD_ENABLED, false),
+    mullvadProxy: envVar(env.MULLVAD_PROXY, 'socks5h://127.0.0.1:1080'),
   };
 }
 

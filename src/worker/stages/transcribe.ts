@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { RuntimeConfig } from '../../application/config.ts';
 import {
   alignedChunkBytes,
   CHUNK_DURATION_SEC,
@@ -14,7 +15,7 @@ import {
   retryDelayMs,
 } from '../../domain/transcription/policy.ts';
 import type { AudioSplitterPort, SpeechToTextPort, TranscriptionAttempt } from '../../domain/transcription/ports.ts';
-import { config } from '../../shared/config.ts';
+import { loadConfig } from '../../shared/config.ts';
 import * as openrouter from './openrouter.ts';
 import type { StageContext } from './process.ts';
 import { runProcess, StageError } from './process.ts';
@@ -71,14 +72,15 @@ async function transcribeMultipartRaw(
   apiKey: string,
   signal: AbortSignal,
   logPath: string | undefined,
+  sttModel: string,
 ): Promise<Response> {
   const audio = await fs.promises.readFile(wavPath);
   const form = new FormData();
-  form.append('model', config.sttModel);
+  form.append('model', sttModel);
   form.append('file', new Blob([new Uint8Array(audio)], { type: 'audio/wav' }), path.basename(wavPath));
   appendLog(
     logPath,
-    `$ POST ${API_URL} (model=${config.sttModel}, file=${path.basename(wavPath)}, ${audio.length} bytes, mode=multipart)`,
+    `$ POST ${API_URL} (model=${sttModel}, file=${path.basename(wavPath)}, ${audio.length} bytes, mode=multipart)`,
   );
   return doFetch(API_URL, {
     method: 'POST',
@@ -93,17 +95,18 @@ async function transcribeBase64Raw(
   apiKey: string,
   signal: AbortSignal,
   logPath: string | undefined,
+  sttModel: string,
 ): Promise<Response> {
   const audio = await fs.promises.readFile(wavPath);
   const b64 = audio.toString('base64');
   appendLog(
     logPath,
-    `$ POST ${API_URL} (model=${config.sttModel}, file=${path.basename(wavPath)}, ${audio.length} bytes, mode=base64:input_audio)`,
+    `$ POST ${API_URL} (model=${sttModel}, file=${path.basename(wavPath)}, ${audio.length} bytes, mode=base64:input_audio)`,
   );
   return doFetch(API_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: config.sttModel, input_audio: b64 }),
+    body: JSON.stringify({ model: sttModel, input_audio: b64 }),
     signal,
   });
 }
@@ -204,11 +207,11 @@ async function attemptWithRetry(
   return attempt;
 }
 
-function createDefaultStt(logPath: string | undefined): SpeechToTextPort {
+function createDefaultStt(logPath: string | undefined, sttModel: string): SpeechToTextPort {
   return {
     async attemptMultipart(wavPath, apiKey, signal): Promise<TranscriptionAttempt> {
       try {
-        const response = await transcribeMultipartRaw(wavPath, apiKey, signal, logPath);
+        const response = await transcribeMultipartRaw(wavPath, apiKey, signal, logPath, sttModel);
         return await responseToAttempt(response);
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') throw error;
@@ -220,7 +223,7 @@ function createDefaultStt(logPath: string | undefined): SpeechToTextPort {
     },
     async attemptBase64(wavPath, apiKey, signal): Promise<TranscriptionAttempt> {
       try {
-        const response = await transcribeBase64Raw(wavPath, apiKey, signal, logPath);
+        const response = await transcribeBase64Raw(wavPath, apiKey, signal, logPath, sttModel);
         return await responseToAttempt(response);
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') throw error;
@@ -440,7 +443,12 @@ function hasCachedChunkTranscripts(jobDir: string): boolean {
   }
 }
 
-export async function transcribe(wavPath: string, context: TranscribeContext): Promise<string> {
+export async function transcribe(
+  wavPath: string,
+  context: TranscribeContext,
+  runtimeConfig?: RuntimeConfig,
+): Promise<string> {
+  const cfg = runtimeConfig ?? loadConfig(process.env);
   const resolveKey = context.resolveKey ?? openrouter.resolveOpenRouterKey;
   const apiKey = await resolveKey();
 
@@ -453,13 +461,13 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
   // This is the Balanced Coupling fix — high-strength intrusive fetch/fs is now
   // behind a weak contract (SpeechToTextPort / AudioSplitterPort), so
   // high-distance (core, volatile STT provider) is balanced by low strength.
-  const stt: SpeechToTextPort = context.stt ?? createDefaultStt(context.logPath);
+  const stt: SpeechToTextPort = context.stt ?? createDefaultStt(context.logPath, cfg.sttModel);
   const splitter: AudioSplitterPort = context.splitter ?? createDefaultSplitter();
   const retry: RetryOptions = context.retry ?? {
-    maxAttempts: config.sttRetryMaxAttempts,
-    baseDelayMs: config.sttRetryBaseDelayMs,
-    maxDelayMs: config.sttRetryMaxDelayMs,
-    retryAfterMaxMs: config.sttRetryAfterMaxMs,
+    maxAttempts: cfg.sttRetryMaxAttempts,
+    baseDelayMs: cfg.sttRetryBaseDelayMs,
+    maxDelayMs: cfg.sttRetryMaxDelayMs,
+    retryAfterMaxMs: cfg.sttRetryAfterMaxMs,
   };
   const sleep: SleepFn = context.sleep ?? defaultSleep;
   const retried = (request: () => Promise<TranscriptionAttempt>) =>

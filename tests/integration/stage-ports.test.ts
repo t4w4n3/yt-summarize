@@ -39,4 +39,39 @@ describe('stage ports — facade shape', () => {
       '/job/transcript.txt:fr',
     );
   });
+
+  it('forwards the runtime config to adapters that need it', async () => {
+    const runtimeConfig = {
+      artifactsDir: '/artifacts',
+      jobTimeoutMs: 1800000,
+      sttModel: 'injected/stt-model',
+      sttRetryMaxAttempts: 3,
+      sttRetryBaseDelayMs: 1000,
+      sttRetryMaxDelayMs: 8000,
+      sttRetryAfterMaxMs: 120000,
+      llmProvider: 'openrouter',
+      llmModel: 'injected/llm-model',
+      llmProviderPin: 'injected/provider',
+      llmQuantization: '',
+      llmThinking: 'high',
+      mullvadEnabled: true,
+      mullvadProxy: 'socks5h://127.0.0.1:9999',
+    };
+    const ports = createPipelineStagePorts(
+      {
+        download: async (_job, _ctx, cfg) => ({ audioPath: cfg?.mullvadProxy ?? '', title: '' }),
+        convert: async (audioPath, _ctx) => audioPath,
+        transcribe: async (_wavPath, _ctx, cfg) => cfg?.sttModel ?? '',
+        summarize: async (_path, _ctx, cfg) => cfg?.llmModel ?? '',
+      },
+      runtimeConfig,
+    );
+    const context = { jobDir: '/job', logPath: '/log', timeoutMs: 1, signal: undefined };
+    assert.equal(
+      (await ports.downloader.download({ jobId: 'j1', url: 'u', ...context })).audioPath,
+      'socks5h://127.0.0.1:9999',
+    );
+    assert.equal(await ports.transcriber.transcribe({ wavPath: '/job/a.wav', ...context }), 'injected/stt-model');
+    assert.equal(await ports.summarizer.summarize({ transcriptPath: '/job/t.txt', ...context }), 'injected/llm-model');
+  });
 });

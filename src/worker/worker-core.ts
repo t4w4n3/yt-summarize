@@ -1,7 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite';
+import type { RuntimeConfig } from '../application/config.ts';
 import type { JobStore } from '../application/ports/job-store.ts';
 import { createSqliteJobStore, getJob, type JobRow } from '../shared/db.ts';
+import type { PipelineStages } from './pipeline.ts';
 import { friendlyError, runPipeline, stageOf } from './pipeline.ts';
+import { createPipelineStagePorts } from './stages/stage-ports.ts';
 
 export type SleepFn = (ms: number) => Promise<void>;
 
@@ -14,6 +17,10 @@ export interface WorkerOptions {
   pollMs: number;
   staleAfterMs: number;
   jobTimeoutMs: number;
+  /** Stage ports used by the default pipeline (defaults to real adapters). */
+  stages?: PipelineStages;
+  /** Runtime settings threaded into the default pipeline. */
+  runtimeConfig?: RuntimeConfig;
   /** Injected pipeline runner (defaults to the real runPipeline). */
   runJob?: RunJobFn;
   /** Injected sleeper (defaults to a real timer). Tests substitute an instant sleep. */
@@ -34,7 +41,8 @@ const HEARTBEAT_MS = 10_000;
 export function createWorker(opts: WorkerOptions): Worker {
   const { db } = opts;
   const store = opts.store ?? createSqliteJobStore(db);
-  const runJob: RunJobFn = opts.runJob ?? ((d, job, signal) => runPipeline(d, job, signal));
+  const stages = opts.stages ?? createPipelineStagePorts(undefined, opts.runtimeConfig);
+  const runJob: RunJobFn = opts.runJob ?? ((d, job, signal) => runPipeline(d, job, signal, stages, opts.runtimeConfig));
   const sleep: SleepFn = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   let stopping = false;
 

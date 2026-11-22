@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { mullvadSettings } from '../../shared/config.ts';
+import type { RuntimeConfig } from '../../application/config.ts';
+import { loadConfig } from '../../shared/config.ts';
 import type { StageContext } from './process.ts';
 import { runProcess, StageError } from './process.ts';
 
@@ -9,7 +10,12 @@ export interface DownloadResult {
   title: string;
 }
 
-export async function download(job: { url: string }, context: StageContext): Promise<DownloadResult> {
+export async function download(
+  job: { url: string },
+  context: StageContext,
+  runtimeConfig?: RuntimeConfig,
+): Promise<DownloadResult> {
+  const cfg = runtimeConfig ?? loadConfig(process.env);
   const output = path.join(context.jobDir, 'audio.%(ext)s');
   const titlePath = path.join(context.jobDir, '.title');
   const args = [
@@ -31,7 +37,7 @@ export async function download(job: { url: string }, context: StageContext): Pro
   // socks5h = résolution DNS par le proxy (DNS aussi via le tunnel).
   // Les réglages passent par shared/config, seul à savoir lire l'expression
   // ${VAR:-défaut} que podman-compose laisse brute quand la variable manque.
-  const mullvad = mullvadSettings();
+  const mullvad = { enabled: cfg.mullvadEnabled, proxy: cfg.mullvadProxy };
   if (mullvad.enabled) {
     args.push('--proxy', mullvad.proxy);
   }

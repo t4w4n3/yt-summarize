@@ -5,9 +5,10 @@ import express from 'express';
 import type { Job, JobStatus } from '../domain/job/entity.ts';
 import { normalizeLang } from '../domain/lang.ts';
 import { extractVideoIdFromUrl, validateYouTubeUrl } from '../domain/youtube/validation.ts';
-import { config } from '../shared/config.ts';
+import { loadConfig } from '../shared/config.ts';
 import { createSqliteJobStore, openDatabase } from '../shared/db.ts';
 
+const runtimeConfig = loadConfig(process.env);
 const app = express();
 const db = openDatabase();
 const store = createSqliteJobStore(db);
@@ -126,8 +127,8 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   return res.status(500).json({ error: 'Unexpected server error.' });
 });
 
-const server = app.listen(config.port, '0.0.0.0', () => {
-  console.log(`Summarize YT app listening on http://0.0.0.0:${config.port}`);
+const server = app.listen(runtimeConfig.port, '0.0.0.0', () => {
+  console.log(`Summarize YT app listening on http://0.0.0.0:${runtimeConfig.port}`);
 });
 
 function shutdown(signal: string): void {

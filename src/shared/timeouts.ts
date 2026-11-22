@@ -8,6 +8,6 @@ const STAGE_TIMEOUTS: Record<Stage, number> = Object.freeze({
   summarizing: 10 * 60 * 1000,
 });
 
-export function stageTimeoutMs(stage: Stage | string): number {
-  return STAGE_TIMEOUTS[stage as Stage] || config.jobTimeoutMs;
+export function stageTimeoutMs(stage: Stage | string, jobTimeoutMs?: number): number {
+  return STAGE_TIMEOUTS[stage as Stage] || jobTimeoutMs || config.jobTimeoutMs;
 }

@@ -3,6 +3,7 @@
  * Wraps the real subprocess/HTTP stage functions behind the application
  * ports so `worker/pipeline.ts` only depends on the port contracts.
  */
+import type { RuntimeConfig } from '../../application/config.ts';
 import type { PipelineStagePorts, StageContext } from '../../application/ports/stage-ports.ts';
 import { convert } from './convert.ts';
 import { download } from './download.ts';
@@ -36,19 +37,21 @@ function contextOf(input: {
 
 export function createPipelineStagePorts(
   stageFunctions: PipelineStageFunctions = defaultStageFunctions,
+  runtimeConfig?: RuntimeConfig,
 ): PipelineStagePorts {
   return {
     downloader: {
-      download: (input) => stageFunctions.download({ url: input.url }, contextOf(input)),
+      download: (input) => stageFunctions.download({ url: input.url }, contextOf(input), runtimeConfig),
     },
     converter: {
       convert: (input) => stageFunctions.convert(input.audioPath, contextOf(input)),
     },
     transcriber: {
-      transcribe: (input) => stageFunctions.transcribe(input.wavPath, contextOf(input)),
+      transcribe: (input) => stageFunctions.transcribe(input.wavPath, contextOf(input), runtimeConfig),
     },
     summarizer: {
-      summarize: (input) => stageFunctions.summarize(input.transcriptPath, { ...contextOf(input), lang: input.lang }),
+      summarize: (input) =>
+        stageFunctions.summarize(input.transcriptPath, { ...contextOf(input), lang: input.lang }, runtimeConfig),
     },
   };
 }

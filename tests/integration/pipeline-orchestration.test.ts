@@ -328,6 +328,24 @@ describe('pipeline — orchestration (injected fakes)', () => {
     assert.ok(!fs.existsSync(path.join(jobDir('keep-t'), 'audio.wav')), 'audio.wav must be cleaned after transcribe');
   });
 
+  it('uses an explicitly injected artifactsDir instead of the default', async () => {
+    db = freshDb();
+    const job = makeJob(db, 'pipe-cfg', null);
+    const customDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipe-cfg-'));
+    const fakes = makeFakes();
+    await pipelineMod.runPipeline(db, job, new AbortController().signal, fakes, {
+      ...config,
+      artifactsDir: customDir,
+      mullvadEnabled: false,
+      mullvadProxy: 'socks5h://127.0.0.1:1080',
+    });
+    assert.ok(
+      fs.existsSync(path.join(customDir, 'pipe-cfg', 'summary.md')),
+      `summary.md must be written under the injected artifactsDir ${customDir}`,
+    );
+    fs.rmSync(customDir, { recursive: true, force: true });
+  });
+
   it('passes job.lang through to summarize (and defaults NULL to en)', async () => {
     db = freshDb();
     const fr = makeJob(db, 'fr', 'fr');

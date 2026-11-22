@@ -1,18 +1,11 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 
-/** Error carrying the pipeline stage that produced it, for friendly mapping. */
-export class StageError extends Error {
-  stage: string;
-  details: string;
+// Canonical owner is the application layer (phase 1D); re-exported so all
+// existing stage imports (`stages/process.ts`) keep working.
+import { StageError } from '../../application/errors.ts';
 
-  constructor(message: string, stage: string, details = '', options?: ErrorOptions) {
-    super(message, options);
-    this.name = 'StageError';
-    this.stage = stage;
-    this.details = details;
-  }
-}
+export { StageError };
 
 /**
  * Per-stage inputs shared by every pipeline stage. `jobDir` and `logPath`

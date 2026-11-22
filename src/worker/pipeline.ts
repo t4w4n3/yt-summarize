@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
+import { type StagedError, StageError } from '../application/errors.ts';
+import { friendlyError, stageOf } from '../application/friendly-error.ts';
+import { decideResumePoint } from '../application/resume-policy.ts';
 import { config } from '../shared/config.ts';
 import type { JobRow } from '../shared/db.ts';
 import { heartbeat, markDone, updateStage } from '../shared/db.ts';
@@ -8,15 +11,13 @@ import { STAGES } from '../shared/job.ts';
 import { stageTimeoutMs } from '../shared/timeouts.ts';
 import { convert } from './stages/convert.ts';
 import { download } from './stages/download.ts';
-import { StageError } from './stages/process.ts';
 import { summarize } from './stages/summarize.ts';
 import { transcribe } from './stages/transcribe.ts';
 
-/**
- * Any error escaping the pipeline carries the stage it failed in, so the
- * worker can attribute failures even for non-StageError exceptions.
- */
-export type StagedError = Error & { stage?: string | null };
+export type { StagedError };
+// Canonical owners live in the application layer (phase 1D); re-exported so
+// existing import paths (`worker/pipeline.ts`) keep working.
+export { friendlyError, stageOf };
 
 /**
  * The four outbound stages run in sequence. Injectable so tests can stub the
@@ -30,12 +31,6 @@ export interface PipelineStages {
 }
 
 const realStages: PipelineStages = { download, convert, transcribe, summarize };
-
-export function stageOf(error: unknown): string | null {
-  if (error instanceof StageError) return error.stage;
-  if (error instanceof Error) return (error as StagedError).stage ?? null;
-  return null;
-}
 
 /*
  * Artifact resume (retry without paying again).
@@ -154,21 +149,27 @@ export async function runPipeline(
   let succeeded = false;
 
   // Resume probe: furthest valid artifact on disk wins (see helpers above).
+  // The fs probes below feed the pure policy in application/resume-policy.
   const cachedTranscript = path.join(jobDir, 'transcript.txt');
   const cachedWav = path.join(jobDir, 'audio.wav');
-  const resumeFromTranscript = hasTextContent(cachedTranscript);
-  const resumeFromWav = !resumeFromTranscript && isValidWav(cachedWav);
-  const cachedAudio = resumeFromTranscript || resumeFromWav ? undefined : findDownloadedAudio(jobDir);
-  if (resumeFromTranscript || resumeFromWav || cachedAudio) {
+  const hasTranscript = hasTextContent(cachedTranscript);
+  const hasWav = !hasTranscript && isValidWav(cachedWav);
+  const cachedAudio = hasTranscript || hasWav ? undefined : findDownloadedAudio(jobDir);
+  const resume = decideResumePoint({
+    hasTranscript,
+    hasWav,
+    hasDownloadedAudio: cachedAudio !== undefined,
+  });
+  if (resume !== null) {
     title = title || readCachedTitle(jobDir) || 'Untitled YouTube video';
   }
-  if (resumeFromTranscript) transcriptPath = cachedTranscript;
-  if (resumeFromWav) wavPath = cachedWav;
-  if (cachedAudio) audioPath = cachedAudio;
+  if (resume === 'summarizing') transcriptPath = cachedTranscript;
+  if (resume === 'transcribing') wavPath = cachedWav;
+  if (resume === 'converting') audioPath = cachedAudio;
 
   try {
-    if (!resumeFromTranscript) {
-      if (!resumeFromWav && !cachedAudio) {
+    if (resume !== 'summarizing') {
+      if (resume === null) {
         currentStage = STAGES[0];
         updateStage(db, job.id, currentStage, 5);
         const downloaded = await stages.download(job, { ...context, timeoutMs: stageTimeoutMs(currentStage) });
@@ -176,7 +177,7 @@ export async function runPipeline(
         title = downloaded.title;
       }
 
-      if (!resumeFromWav) {
+      if (resume !== 'transcribing') {
         currentStage = STAGES[1];
         updateStage(db, job.id, currentStage, 25);
         wavPath = await stages.convert(audioPath as string, { ...context, timeoutMs: stageTimeoutMs(currentStage) });
@@ -241,36 +242,4 @@ export async function runPipeline(
       rmQuietly(path.join(jobDir, 'audio.wav'));
     }
   }
-}
-
-export function friendlyError(error: unknown): string {
-  if (error instanceof StageError) {
-    const detail = error.details ? ` ${error.details.slice(-600)}` : '';
-    if (error.stage === 'downloading') {
-      const searchable = `${error.message} ${error.details}`.toLowerCase();
-      const isInfra =
-        searchable.includes('connection refused') ||
-        searchable.includes('connection timed out') ||
-        searchable.includes('network is unreachable') ||
-        searchable.includes('connection reset') ||
-        searchable.includes('econnrefused') ||
-        searchable.includes('econnreset') ||
-        searchable.includes('etimedout') ||
-        searchable.includes('ehostunreach') ||
-        searchable.includes('transporterror') ||
-        searchable.includes('proxy') ||
-        searchable.includes('socks') ||
-        searchable.includes('timed out');
-      if (isInfra)
-        return `The download service is temporarily unavailable (network error). Please try again in a few minutes. If the problem persists, an operator should check the VPN sidecar and worker logs.${detail}`;
-      return `YouTube could not provide this video. Check that it is public and the URL is correct.${detail}`;
-    }
-    if (error.stage === 'transcribing' && error.message.includes('model is missing')) return error.message;
-    if (error.stage === 'summarizing' && /credential|auth|api key|401|403/i.test(`${error.message} ${detail}`))
-      return 'The summarizer could not resolve the OpenRouter credential. Check the GPG mounts and worker logs.';
-    return `${error.message}${detail}`;
-  }
-  if (error instanceof Error && error.message) return error.message;
-  if (error instanceof Error) return 'The worker stopped unexpectedly.';
-  return typeof error === 'string' && error ? error : 'The worker stopped unexpectedly.';
 }

@@ -29,38 +29,13 @@ function now(): string {
   return new Date().toISOString();
 }
 
-export function extractVideoIdFromUrl(value: string): string | null {
-  try {
-    const url = new URL(value.trim());
-    const hostname = url.hostname.toLowerCase();
-    // youtu.be short links (including www.youtu.be)
-    if (hostname === 'youtu.be' || hostname === 'www.youtu.be' || hostname.endsWith('.youtu.be')) {
-      const raw = url.pathname.slice(1).split('/')[0] ?? '';
-      const id = (raw.split('?')[0] ?? '').split('#')[0] ?? '';
-      if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) return id;
-      return null;
-    }
-    const isYouTubeHost =
-      hostname === 'youtube.com' ||
-      hostname.endsWith('.youtube.com') ||
-      hostname === 'youtube-nocookie.com' ||
-      hostname.endsWith('.youtube-nocookie.com');
-    if (!isYouTubeHost) return null;
-    // Standard watch URL: /watch?v=VIDEOID
-    if (url.pathname === '/watch') {
-      const v = url.searchParams.get('v');
-      if (v && /^[A-Za-z0-9_-]{11}$/.test(v)) return v;
-      return null;
-    }
-    // Shorts, embed, v, live: /shorts/VIDEOID etc.
-    const parts = url.pathname.split('/').filter(Boolean);
-    if (parts.length >= 2 && ['shorts', 'embed', 'v', 'live'].includes(parts[0] ?? '')) {
-      const id = parts[1] ?? null;
-      if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) return id;
-    }
-  } catch {}
-  return null;
-}
+import { DEDUP_STATUSES } from '../domain/job/dedup.ts';
+// Single source for the URL rules lives in the domain (phase 1A). Imported
+// for local use and re-exported so existing import paths (`shared/db.ts`)
+// keep working.
+import { extractVideoIdFromUrl } from '../domain/youtube/validation.ts';
+
+export { extractVideoIdFromUrl };
 
 function asJobRow(row: unknown): JobRow {
   return row as JobRow;
@@ -137,16 +112,17 @@ export function getJob(db: DatabaseSync, id: string): JobRow | null {
 // different language must produce a new note. Legacy NULL langs count as 'en'.
 export function findExistingJobByVideoId(db: DatabaseSync, videoId: string | null, lang = 'en'): JobRow | null {
   if (!videoId) return null;
+  const inStatuses = DEDUP_STATUSES.map((s) => `'${s}'`).join(',');
   // Prefer canonical video_id column, fallback to URL substring for legacy rows without backfill
   let row = db
     .prepare(
-      `SELECT * FROM jobs WHERE video_id = ? AND COALESCE(lang, 'en') = ? AND status IN ('queued','running','done') ORDER BY CASE status WHEN 'done' THEN 0 WHEN 'running' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`,
+      `SELECT * FROM jobs WHERE video_id = ? AND COALESCE(lang, 'en') = ? AND status IN (${inStatuses}) ORDER BY CASE status WHEN 'done' THEN 0 WHEN 'running' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`,
     )
     .get(videoId, lang);
   if (row) return asJobRow(row);
   row = db
     .prepare(
-      `SELECT * FROM jobs WHERE video_id IS NULL AND url LIKE '%' || ? || '%' AND COALESCE(lang, 'en') = ? AND status IN ('queued','running','done') ORDER BY created_at DESC LIMIT 1`,
+      `SELECT * FROM jobs WHERE video_id IS NULL AND url LIKE '%' || ? || '%' AND COALESCE(lang, 'en') = ? AND status IN (${inStatuses}) ORDER BY created_at DESC LIMIT 1`,
     )
     .get(videoId, lang);
   return row ? asJobRow(row) : null;

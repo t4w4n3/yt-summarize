@@ -1,10 +1,5 @@
-export const STAGES = ['downloading', 'converting', 'transcribing', 'summarizing'] as const;
-export type Stage = (typeof STAGES)[number];
+// Canonical owner is the domain entity (phase 1C); re-exported so existing
+// import paths (`shared/job.ts`) keep working until the phase-2 ports.
 
-export const STATUS = Object.freeze({
-  QUEUED: 'queued',
-  RUNNING: 'running',
-  DONE: 'done',
-  FAILED: 'failed',
-} satisfies Record<string, JobStatus>);
-export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
+export type { JobStatus, Stage } from '../domain/job/entity.ts';
+export { STAGES, STATUS } from '../domain/job/entity.ts';

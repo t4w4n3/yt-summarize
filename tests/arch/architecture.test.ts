@@ -6,16 +6,19 @@
  * blocked imports fail the test with the exact violating dependency.
  *
  * Conventions under test:
- *  - src/domain/** is pure domain: no imports from worker/app/vpn/shared adapters.
+ *  - src/domain/** is pure domain: no imports from application, worker/app/vpn/shared adapters.
+ *  - src/application/** is use cases + ports: no imports from worker/app/vpn/infrastructure adapters,
+ *    nor from the shared persistence (db) or config readers (phase-1 precursor of config injection).
  *  - src/app (inbound adapter) must not reach into worker internals.
  *  - shared is a bottom layer: must not depend upwards into app/worker/vpn.
  *  - src must not import test fixtures (tests/**, e2e/**).
- *  - tests/unit must target domain only — no outbound-adapter imports.
+ *  - tests/unit must target domain/application only — no outbound-adapter imports.
  *
  * Each rule uses the framework-agnostic `check()` API so it works under
  * Node's native `node:test` runner (strict) without Jest/Vitest matchers.
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { describe, it } from 'node:test';
 import { projectFiles } from 'archunit';
 
@@ -46,6 +49,41 @@ describe('architecture — layer dependencies (archunit)', () => {
     const rule = projectFiles().inFolder('src/domain/**').shouldNot().dependOnFiles().inPath('src/shared/db.ts');
     const violations = await rule.check();
     assert.equal(violations.length, 0, `domain → shared/db violations:\n${violationMessage(violations)}`);
+  });
+
+  it('domain must not depend on the application layer', async () => {
+    const rule = projectFiles().inFolder('src/domain/**').shouldNot().dependOnFiles().inFolder('src/application/**');
+    const violations = await rule.check();
+    assert.equal(violations.length, 0, `domain → application violations:\n${violationMessage(violations)}`);
+  });
+
+  it('domain must not depend on infrastructure adapters', async () => {
+    // Activates in phase 2 when src/infrastructure/ first exists: archunit
+    // reports "no files found" as a violation for an empty target glob.
+    if (!fs.existsSync('src/infrastructure')) return;
+    const rule = projectFiles().inFolder('src/domain/**').shouldNot().dependOnFiles().inFolder('src/infrastructure/**');
+    const violations = await rule.check();
+    assert.equal(violations.length, 0, `domain → infrastructure violations:\n${violationMessage(violations)}`);
+  });
+
+  it('application must not depend on infrastructure adapters or worker/app/vpn', async () => {
+    // The infrastructure target activates in phase 2 (see above); the
+    // worker/app/vpn targets are enforced now. archunit needs an existing
+    // target folder, so skip infrastructure while it does not exist.
+    for (const target of ['src/infrastructure/**', 'src/worker/**', 'src/app/**', 'src/vpn/**'] as const) {
+      if (target === 'src/infrastructure/**' && !fs.existsSync('src/infrastructure')) continue;
+      const rule = projectFiles().inFolder('src/application/**').shouldNot().dependOnFiles().inFolder(target);
+      const violations = await rule.check();
+      assert.equal(violations.length, 0, `application → ${target} violations:\n${violationMessage(violations)}`);
+    }
+  });
+
+  it('application must not depend on shared persistence or the config reader', async () => {
+    for (const target of ['src/shared/db.ts', 'src/shared/config.ts'] as const) {
+      const rule = projectFiles().inFolder('src/application/**').shouldNot().dependOnFiles().inPath(target);
+      const violations = await rule.check();
+      assert.equal(violations.length, 0, `application → ${target} violations:\n${violationMessage(violations)}`);
+    }
   });
 
   it('app (inbound) must not depend on worker internals', async () => {

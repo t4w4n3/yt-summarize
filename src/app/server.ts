@@ -2,16 +2,11 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
+import { normalizeLang } from '../domain/lang.ts';
+import { extractVideoIdFromUrl, validateYouTubeUrl } from '../domain/youtube/validation.ts';
 import { config } from '../shared/config.ts';
 import type { JobRow } from '../shared/db.ts';
-import {
-  createJob,
-  extractVideoIdFromUrl,
-  findExistingJobByVideoId,
-  getJob,
-  openDatabase,
-  retryFailedJob,
-} from '../shared/db.ts';
+import { createJob, findExistingJobByVideoId, getJob, openDatabase, retryFailedJob } from '../shared/db.ts';
 
 const app = express();
 const db = openDatabase();
@@ -19,56 +14,6 @@ const publicDir = path.join(import.meta.dirname, 'public');
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
-
-function validateYouTubeUrl(value: unknown): string | null {
-  if (typeof value !== 'string' || value.length > 2048) return 'Enter a YouTube video URL.';
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return 'Enter a valid YouTube video URL.';
-  }
-  const hostname = url.hostname.toLowerCase();
-  const allowedHosts = new Set([
-    'youtube.com',
-    'www.youtube.com',
-    'm.youtube.com',
-    'music.youtube.com',
-    'youtu.be',
-    'www.youtu.be',
-    'youtube-nocookie.com',
-    'www.youtube-nocookie.com',
-  ]);
-  if (!['http:', 'https:'].includes(url.protocol) || !allowedHosts.has(hostname))
-    return 'Only youtube.com and youtu.be video URLs are supported.';
-  if (url.username || url.password || url.port) return 'This URL contains unsupported credentials or a port.';
-  const isShort = hostname === 'youtu.be' || hostname === 'www.youtu.be' || hostname.endsWith('.youtu.be');
-  let id: string | null = null;
-  if (isShort) {
-    const raw = url.pathname.slice(1).split('/')[0] ?? '';
-    id = (raw.split('?')[0] ?? '').split('#')[0] ?? '';
-    if (id === '') id = null;
-  } else {
-    const isYouTubeHost =
-      hostname === 'youtube.com' ||
-      hostname.endsWith('.youtube.com') ||
-      hostname === 'youtube-nocookie.com' ||
-      hostname.endsWith('.youtube-nocookie.com');
-    if (!isYouTubeHost) return 'Only youtube.com and youtu.be video URLs are supported.';
-    if (url.pathname === '/watch') {
-      id = url.searchParams.get('v');
-    } else {
-      const parts = url.pathname.split('/').filter(Boolean);
-      if (parts.length >= 2 && ['shorts', 'embed', 'v', 'live'].includes(parts[0] ?? '')) {
-        id = parts[1] ?? null;
-      } else {
-        return 'Use a standard YouTube watch URL or a youtu.be link.';
-      }
-    }
-  }
-  if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return 'That URL does not contain a valid single YouTube video ID.';
-  return null;
-}
 
 interface PublicJob {
   jobId: string;
@@ -98,14 +43,6 @@ function publicJob(job: JobRow | null): PublicJob | null {
 interface CreateBody {
   url?: unknown;
   lang?: unknown;
-}
-
-/** Normalize the optional ISO 639-1 output language; null when invalid. */
-function normalizeLang(value: unknown): string | null {
-  if (value === undefined || value === null || value === '') return 'en';
-  if (typeof value !== 'string') return null;
-  const code = value.trim().toLowerCase();
-  return /^[a-z]{2}$/.test(code) ? code : null;
 }
 
 app.post('/api/summarize', (req: Request<object, unknown, CreateBody>, res: Response) => {

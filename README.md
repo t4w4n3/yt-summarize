@@ -10,6 +10,7 @@ This documentation follows [Diataxis](https://diataxis.fr/):
 - **How-to guides** — [How-to guides](#how-to-guides): solve a specific problem (VPN, backup, local iteration).
 - **Reference** — [Reference](#reference): commands, configuration, and API facts.
 - **Explanation** — [How it works](#how-it-works): concepts that clarify why the system behaves the way it does.
+- **Domain language & decisions** — [GLOSSARY.md](GLOSSARY.md) and [docs/adr/](docs/adr/): canonical terms and the recorded target-architecture choices.
 
 Contributor task reference lives in [AGENTS.md](AGENTS.md); UI rules live in [DESIGN.md](DESIGN.md). The authoritative command list is `mise tasks`, and every task documents its own flags (`mise run <task> --help`).
 

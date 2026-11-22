@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { type StagedError, StageError } from '../application/errors.ts';
 import { friendlyError, stageOf } from '../application/friendly-error.ts';
+import type { PipelineStagePorts } from '../application/ports/stage-ports.ts';
 import type { Stage } from '../domain/job/entity.ts';
 import { config } from '../shared/config.ts';
 import type { JobRow } from '../shared/db.ts';
@@ -8,10 +9,7 @@ import { createSqliteJobStore } from '../shared/db.ts';
 import { STAGES } from '../shared/job.ts';
 import { stageTimeoutMs } from '../shared/timeouts.ts';
 import { createFilesystemArtifactStore } from './artifacts.ts';
-import { convert } from './stages/convert.ts';
-import { download } from './stages/download.ts';
-import { summarize } from './stages/summarize.ts';
-import { transcribe } from './stages/transcribe.ts';
+import { createPipelineStagePorts } from './stages/stage-ports.ts';
 
 export type { StagedError };
 // Canonical owners live in the application layer (phase 1D); re-exported so
@@ -19,17 +17,12 @@ export type { StagedError };
 export { friendlyError, stageOf };
 
 /**
- * The four outbound stages run in sequence. Injectable so tests can stub the
+ * The four outbound ports run in sequence. Injectable so tests can stub the
  * real subprocess/HTTP adapters; defaults to the real implementations.
  */
-export interface PipelineStages {
-  download: typeof download;
-  convert: typeof convert;
-  transcribe: typeof transcribe;
-  summarize: typeof summarize;
-}
+export type PipelineStages = PipelineStagePorts;
 
-const realStages: PipelineStages = { download, convert, transcribe, summarize };
+const realStages: PipelineStages = createPipelineStagePorts();
 
 /**
  * Artifact resume (retry without paying again) is governed by the
@@ -70,7 +63,12 @@ export async function runPipeline(
       if (resume === null) {
         currentStage = STAGES[0];
         store.updateStage(job.id, currentStage, 5);
-        const downloaded = await stages.download(job, { ...context, timeoutMs: stageTimeoutMs(currentStage) });
+        const downloaded = await stages.downloader.download({
+          jobId: job.id,
+          url: job.url,
+          ...context,
+          timeoutMs: stageTimeoutMs(currentStage),
+        });
         audioPath = downloaded.audioPath;
         title = downloaded.title;
       }
@@ -78,7 +76,11 @@ export async function runPipeline(
       if (resume !== 'transcribing') {
         currentStage = STAGES[1];
         store.updateStage(job.id, currentStage, 25);
-        wavPath = await stages.convert(audioPath as string, { ...context, timeoutMs: stageTimeoutMs(currentStage) });
+        wavPath = await stages.converter.convert({
+          audioPath: audioPath as string,
+          ...context,
+          timeoutMs: stageTimeoutMs(currentStage),
+        });
         // The wav now carries everything the download did; drop the raw
         // audio early so a later failure leaves at most one copy on disk.
         artifacts.removeFile(audioPath);
@@ -87,7 +89,8 @@ export async function runPipeline(
 
       currentStage = STAGES[2];
       store.updateStage(job.id, currentStage, 45);
-      transcriptPath = await stages.transcribe(wavPath as string, {
+      transcriptPath = await stages.transcriber.transcribe({
+        wavPath: wavPath as string,
         ...context,
         timeoutMs: stageTimeoutMs(currentStage),
       });
@@ -100,7 +103,8 @@ export async function runPipeline(
     currentStage = STAGES[3];
     store.updateStage(job.id, currentStage, 70);
     // Legacy rows have a NULL lang column; NULL means English.
-    const markdown = await stages.summarize(transcriptPath as string, {
+    const markdown = await stages.summarizer.summarize({
+      transcriptPath: transcriptPath as string,
       ...context,
       timeoutMs: stageTimeoutMs(currentStage),
       lang: job.lang || 'en',

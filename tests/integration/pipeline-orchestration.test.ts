@@ -83,29 +83,36 @@ function makeFakes(): FakeStages {
     calls: [],
     langs: [],
     files,
-    async download(job) {
-      fakes.calls.push('download');
-      const j = job as { url: string; id: string };
-      const p = path.join(jobDir(j.id), 'audio.m4a');
-      files.push(p);
-      fs.writeFileSync(p, 'audio');
-      return { audioPath: p, title: 'Test title' };
+    downloader: {
+      download: async (input) => {
+        fakes.calls.push('download');
+        const p = path.join(input.jobDir, 'audio.m4a');
+        files.push(p);
+        fs.writeFileSync(p, 'audio');
+        return { audioPath: p, title: 'Test title' };
+      },
     },
-    async convert(audioPath) {
-      fakes.calls.push('convert');
-      const p = path.join(jobDir(path.basename(path.dirname(audioPath))), 'audio.wav');
-      files.push(p);
-      fs.writeFileSync(p, 'wav');
-      return p;
+    converter: {
+      convert: async (input) => {
+        fakes.calls.push('convert');
+        const p = path.join(input.jobDir, 'audio.wav');
+        files.push(p);
+        fs.writeFileSync(p, 'wav');
+        return p;
+      },
     },
-    async transcribe(wavPath) {
-      fakes.calls.push('transcribe');
-      return path.join(jobDir(path.basename(path.dirname(wavPath))), 'transcript.txt');
+    transcriber: {
+      transcribe: async (input) => {
+        fakes.calls.push('transcribe');
+        return path.join(input.jobDir, 'transcript.txt');
+      },
     },
-    async summarize(_transcriptPath, ctx) {
-      fakes.calls.push('summarize');
-      fakes.langs.push(ctx.lang ?? '');
-      return '# Summary';
+    summarizer: {
+      summarize: async (input) => {
+        fakes.calls.push('summarize');
+        fakes.langs.push(input.lang ?? '');
+        return '# Summary';
+      },
     },
   };
   return fakes;
@@ -137,7 +144,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     db = freshDb();
     const job = makeJob(db, 'stg', null);
     const fakes = makeFakes();
-    fakes.download = async () => {
+    fakes.downloader.download = async () => {
       throw new StageError('boom', '');
     };
     await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes), (err: unknown) => {
@@ -151,7 +158,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     db = freshDb();
     const job = makeJob(db, 'keep', null);
     const fakes = makeFakes();
-    fakes.summarize = async () => {
+    fakes.summarizer.summarize = async () => {
       throw new StageError('llm down', 'summarizing');
     };
     await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes), (err: unknown) => {
@@ -165,7 +172,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     db = freshDb();
     const job = makeJob(db, 'plain', null);
     const fakes = makeFakes();
-    fakes.convert = async () => {
+    fakes.converter.convert = async () => {
       throw new Error('ffmpeg broke');
     };
     await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes), (err: unknown) => {
@@ -179,7 +186,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     db = freshDb();
     const job = makeJob(db, 'nonerr', null);
     const fakes = makeFakes();
-    fakes.transcribe = async () => {
+    fakes.transcriber.transcribe = async () => {
       throw 'unexpected string';
     };
     await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes), (err: unknown) => {
@@ -195,7 +202,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     const job = makeJob(db, 'clean', null);
     const fakes = makeFakes();
     const producedAudio = path.join(jobDir('clean'), 'audio.m4a');
-    fakes.convert = async () => {
+    fakes.converter.convert = async () => {
       throw new Error('explode');
     };
     await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes));
@@ -270,9 +277,9 @@ describe('pipeline — orchestration (injected fakes)', () => {
     db = freshDb();
     const job = makeJob(db, 'keep-audio', null);
     const fakes = makeFakes();
-    fakes.convert = async (audioPath: string) => {
+    fakes.converter.convert = async (input) => {
       fs.writeFileSync(path.join(jobDir('keep-audio'), 'audio.wav'), 'partial');
-      void audioPath;
+      void input;
       throw new Error('ffmpeg broke');
     };
     await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes));
@@ -290,7 +297,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     db = freshDb();
     const job = makeJob(db, 'drop-partial', null);
     const fakes = makeFakes();
-    fakes.download = async () => {
+    fakes.downloader.download = async () => {
       fs.writeFileSync(path.join(jobDir('drop-partial'), 'audio.m4a'), 'partial');
       throw new StageError('yt-dlp failed', 'downloading');
     };
@@ -305,12 +312,12 @@ describe('pipeline — orchestration (injected fakes)', () => {
     db = freshDb();
     const job = makeJob(db, 'keep-t', null);
     const fakes = makeFakes();
-    fakes.transcribe = async (_wavPath: string) => {
+    fakes.transcriber.transcribe = async () => {
       const p = path.join(jobDir('keep-t'), 'transcript.txt');
       fs.writeFileSync(p, 'transcribed');
       return p;
     };
-    fakes.summarize = async () => {
+    fakes.summarizer.summarize = async () => {
       throw new StageError('llm down', 'summarizing');
     };
     await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes));

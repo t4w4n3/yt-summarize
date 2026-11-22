@@ -10,7 +10,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, it } from 'node:test';
 import type { Job } from '../../src/domain/job/entity.ts';
-import { createSqliteJobStore } from '../../src/shared/db.ts';
+import { createSqliteJobStore } from '../../src/infrastructure/outbound/sqlite/job-store.ts';
 
 const SCHEMA = `
   CREATE TABLE jobs (

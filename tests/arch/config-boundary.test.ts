@@ -14,7 +14,7 @@
  * Out of scope, deliberately:
  *  - src/shared/config.ts        — the one reader (and the only place that
  *                                  knows about the compose literal).
- *  - src/shared/secrets.ts       — OPENROUTER_API_KEY fallback by design.
+ *  - src/infrastructure/outbound/secrets/openrouter.ts       — OPENROUTER_API_KEY fallback by design.
  *  - src/vpn/**                  — separate sidecar process, own env contract.
  */
 import assert from 'node:assert/strict';

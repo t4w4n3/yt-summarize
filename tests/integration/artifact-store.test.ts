@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
-import { createFilesystemArtifactStore } from '../../src/worker/artifacts.ts';
+import { createFilesystemArtifactStore } from '../../src/infrastructure/outbound/filesystem/artifact-store.ts';
 
 let root: string | undefined;
 

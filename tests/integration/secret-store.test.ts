@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 import { OpenRouterSecretError } from '../../src/application/ports/secret-store.ts';
-import { createOpenRouterSecretStore } from '../../src/shared/secrets.ts';
+import { createOpenRouterSecretStore } from '../../src/infrastructure/outbound/secrets/openrouter.ts';
 
 let dir: string | undefined;
 

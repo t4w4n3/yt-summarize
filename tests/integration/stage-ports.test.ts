@@ -8,7 +8,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { createPipelineStagePorts } from '../../src/worker/stages/stage-ports.ts';
+import { createPipelineStagePorts } from '../../src/infrastructure/outbound/stages/stage-ports.ts';
 
 describe('stage ports — facade shape', () => {
   it('exposes exactly the four thin outbound ports', () => {

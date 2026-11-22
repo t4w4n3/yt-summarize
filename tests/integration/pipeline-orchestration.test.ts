@@ -27,10 +27,10 @@ const artifactsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-art-'));
 process.env.DATA_DIR = dataDir;
 process.env.ARTIFACTS_DIR = artifactsDir;
 
-const dbMod = await import('../../src/shared/db.ts');
+const dbMod = await import('../../src/infrastructure/outbound/sqlite/job-store.ts');
 const { config } = await import('../../src/shared/config.ts');
 const pipelineMod = await import('../../src/worker/pipeline.ts');
-const { StageError } = await import('../../src/worker/stages/process.ts');
+const { StageError } = await import('../../src/infrastructure/outbound/stages/process.ts');
 
 type Stages = NonNullable<Parameters<typeof pipelineMod.runPipeline>[3]>;
 

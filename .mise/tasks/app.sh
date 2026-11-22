@@ -12,4 +12,4 @@ trap 'metrics_end $?' EXIT
 DATA_DIR="${DATA_DIR:-.local/data}"
 mkdir -p "$DATA_DIR"
 echo "App: http://localhost:${usage_port}/  (jobs DB in $DATA_DIR)"
-PORT="${usage_port}" DATA_DIR="$DATA_DIR" node src/app/server.ts
+PORT="${usage_port}" DATA_DIR="$DATA_DIR" node src/infrastructure/inbound/http.ts

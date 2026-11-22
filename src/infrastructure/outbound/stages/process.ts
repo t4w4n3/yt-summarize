@@ -1,10 +1,9 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { StageError } from '../../../application/errors.ts';
+import type { StageContext as AppStageContext } from '../../../application/ports/stage-ports.ts';
 
-// Canonical owner is the application layer (phase 1D); re-exported so all
-// existing stage imports (`stages/process.ts`) keep working.
-import { StageError } from '../../application/errors.ts';
-
+export type { StageContext as AppStageContext } from '../../../application/ports/stage-ports.ts';
 export { StageError };
 
 /**
@@ -12,12 +11,7 @@ export { StageError };
  * are always provided by the pipeline; `signal` carries job cancellation,
  * `onHeartbeat` keeps the SQLite lease alive during long subprocesses.
  */
-export interface StageContext {
-  jobDir: string;
-  logPath: string;
-  onHeartbeat?: () => void;
-  timeoutMs?: number;
-  signal?: AbortSignal;
+export interface StageContext extends AppStageContext {
   /** ISO 639-1 code for the summary output language (summarize stage only). */
   lang?: string;
 }

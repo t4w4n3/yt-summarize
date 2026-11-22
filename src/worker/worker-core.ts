@@ -1,14 +1,15 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { RuntimeConfig } from '../application/config.ts';
 import type { JobStore } from '../application/ports/job-store.ts';
-import { createSqliteJobStore, getJob, type JobRow } from '../shared/db.ts';
+import type { Job } from '../domain/job/entity.ts';
+import { createSqliteJobStore, getJob } from '../infrastructure/outbound/sqlite/job-store.ts';
+import { createPipelineStagePorts } from '../infrastructure/outbound/stages/stage-ports.ts';
 import type { PipelineStages } from './pipeline.ts';
 import { friendlyError, runPipeline, stageOf } from './pipeline.ts';
-import { createPipelineStagePorts } from './stages/stage-ports.ts';
 
 export type SleepFn = (ms: number) => Promise<void>;
 
-export type RunJobFn = (db: DatabaseSync, job: JobRow, signal: AbortSignal) => Promise<void>;
+export type RunJobFn = (db: DatabaseSync, job: Job, signal: AbortSignal) => Promise<void>;
 
 export interface WorkerOptions {
   db: DatabaseSync;

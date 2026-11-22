@@ -6,8 +6,8 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ArtifactPaths, ArtifactProbeResult, ArtifactStore } from '../application/ports/artifact-store.ts';
-import { decideResumePoint } from '../application/resume-policy.ts';
+import type { ArtifactPaths, ArtifactProbeResult, ArtifactStore } from '../../../application/ports/artifact-store.ts';
+import { decideResumePoint } from '../../../application/resume-policy.ts';
 
 function hasTextContent(file: string): boolean {
   try {

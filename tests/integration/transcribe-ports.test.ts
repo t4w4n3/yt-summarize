@@ -17,8 +17,8 @@ import type {
   SpeechToTextPort,
   TranscriptionAttempt,
 } from '../../src/domain/transcription/ports.ts';
-import type { TranscribeContext } from '../../src/worker/stages/transcribe.ts';
-import { transcribe } from '../../src/worker/stages/transcribe.ts';
+import type { TranscribeContext } from '../../src/infrastructure/outbound/stages/transcribe.ts';
+import { transcribe } from '../../src/infrastructure/outbound/stages/transcribe.ts';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'transcribe-ports-test-'));

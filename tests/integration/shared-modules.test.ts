@@ -2,11 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { describe, it } from 'node:test';
 
-// P3 — split shared/constants.ts into focused modules with single volatility.
-// Test-first: these imports will fail until the split is implemented.
-describe('P3 — shared/constants split into focused modules', () => {
-  it('job.ts exports STAGES/STATUS with correct values (supporting, stable)', async () => {
-    const job = await import('../../src/shared/job.ts');
+// P3 — constants are focused modules with single volatility.
+describe('P3 — focused constants modules', () => {
+  it('domain job entity exports STAGES/STATUS with correct values (supporting, stable)', async () => {
+    const job = await import('../../src/domain/job/entity.ts');
     assert.deepEqual(job.STAGES, ['downloading', 'converting', 'transcribing', 'summarizing']);
     assert.equal(job.STATUS.QUEUED, 'queued');
     assert.equal(job.STATUS.RUNNING, 'running');
@@ -34,7 +33,7 @@ describe('P3 — shared/constants split into focused modules', () => {
     const src = fs.readFileSync('src/shared/constants.ts', 'utf8');
     // Facade must re-export from the focused modules (not duplicate definitions)
     assert.match(src, /from\s+['"]\.\/config\.ts['"]/);
-    assert.match(src, /from\s+['"]\.\/job\.ts['"]/);
+    assert.match(src, /from\s+['"]\.\.\/domain\/job\/entity\.ts['"]/);
     assert.match(src, /from\s+['"]\.\/timeouts\.ts['"]/);
     // Must not still define STAGES/STAGE_TIMEOUTS inline (duplicated knowledge)
     // Allow at most re-export lines; original definitions should be gone.
@@ -42,10 +41,10 @@ describe('P3 — shared/constants split into focused modules', () => {
     assert.doesNotMatch(src, /const STAGE_TIMEOUTS/);
   });
 
-  it('job.ts has no config/timeout knowledge (single volatility)', () => {
-    const src = fs.readFileSync('src/shared/job.ts', 'utf8');
+  it('domain job entity has no config/timeout knowledge (single volatility)', () => {
+    const src = fs.readFileSync('src/domain/job/entity.ts', 'utf8');
     assert.doesNotMatch(src, /STT_MODEL|LLM_MODEL|dbPath|stageTimeoutMs|STAGE_TIMEOUTS/);
-    assert.doesNotMatch(src, /from\s+['"]\.\/config/);
+    assert.doesNotMatch(src, /from\s+['"]\.\.\/shared\/config/);
   });
 
   it('config.ts has no STAGES/STATUS/timeout knowledge (single volatility)', () => {
@@ -57,16 +56,16 @@ describe('P3 — shared/constants split into focused modules', () => {
   it('internal consumers import from focused modules, not the big ball', () => {
     const pipeline = fs.readFileSync('src/worker/pipeline.ts', 'utf8');
     // pipeline needs STAGES + stageTimeoutMs + config — should import from focused files
-    assert.match(pipeline, /from\s+['"]\.\.\/shared\/job\.ts['"]/);
+    assert.match(pipeline, /from\s+['"]\.\.\/domain\/job\/entity\.ts['"]/);
     assert.match(pipeline, /from\s+['"]\.\.\/shared\/timeouts\.ts['"]/);
     assert.match(pipeline, /from\s+['"]\.\.\/shared\/config\.ts['"]/);
     assert.doesNotMatch(pipeline, /from\s+['"]\.\.\/shared\/constants\.ts['"]/);
 
-    const db = fs.readFileSync('src/shared/db.ts', 'utf8');
-    assert.match(db, /from\s+['"]\.\/config\.ts['"]/);
-    assert.match(db, /from\s+['"]\.\/job\.ts['"]/);
+    const db = fs.readFileSync('src/infrastructure/outbound/sqlite/job-store.ts', 'utf8');
+    assert.match(db, /from\s+['"]\.\.\/\.\.\/\.\.\/shared\/config\.ts['"]/);
+    assert.match(db, /from\s+['"]\.\.\/\.\.\/\.\.\/domain\/job\/entity\.ts['"]/);
     // db should not pull timeouts
     assert.doesNotMatch(db, /from\s+['"]\.\.\/shared\/constants/);
-    assert.doesNotMatch(db, /from\s+['"]\.\/constants/);
+    assert.doesNotMatch(db, /from\s+['"]\.\.\/constants/);
   });
 });

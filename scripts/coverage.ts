@@ -7,11 +7,11 @@
  * per layer:
  *
  *   domain  — pure logic, no I/O (src/domain/**)
- *   worker  — outbound adapters / orchestration (src/worker/**: stages,
- *             pipeline, worker bootstrap)
+ *   worker  — outbound adapter bootstrap / orchestration (src/worker/**: pipeline,
+ *             worker bootstrap)
+ *   infrastructure — inbound + outbound adapters (src/infrastructure/**)
  *   shared  — shared supporting modules (src/shared/**)
  *   vpn     — Mullvad SOCKS sidecar client (src/vpn/**)
- *   app     — web app surface (src/app/**)
  *
  * Zero dependencies: uses `node --test --experimental-test-coverage` with the
  * `lcov` reporter and parses the output with scripts/cov-parse.ts.

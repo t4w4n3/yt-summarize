@@ -1,6 +1,6 @@
 /**
  * Integration tests at the outbound-adapter boundary: transcribe stage limits.
- * These are NOT playwright-mocked UI tests — they exercise src/worker/stages/transcribe.ts
+ * These are NOT playwright-mocked UI tests — they exercise src/infrastructure/outbound/stages/transcribe.ts
  * against the real file boundary (25 MB multipart limit) by stubbing only the
  * outbound fetch and injecting a fake key resolver. A regression here would have
  * caught the 413 Multipart body exceeds the 25 MB upload limit (input_audio) bug
@@ -16,14 +16,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
-import type { TranscribeContext } from '../../src/worker/stages/transcribe.ts';
+import type { TranscribeContext } from '../../src/infrastructure/outbound/stages/transcribe.ts';
 import {
   CHUNK_DURATION_SEC,
   MULTIPART_LIMIT,
   splitWavIntoChunks,
   splitWavManual,
   transcribe,
-} from '../../src/worker/stages/transcribe.ts';
+} from '../../src/infrastructure/outbound/stages/transcribe.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers to synthesize a valid PCM WAV without invoking ffmpeg.

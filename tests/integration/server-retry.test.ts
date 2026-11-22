@@ -1,6 +1,6 @@
 /**
  * Integration test for POST /api/jobs/:id/retry against the real app server
- * (src/app/server.ts) on an ephemeral port + a seeded temp SQLite DB.
+ * (src/infrastructure/inbound/http.ts) on an ephemeral port + a seeded temp SQLite DB.
  *
  * Seeded *before* the server starts: one failed job (retryable), one queued
  * and one done job (409), plus the unknown-id 404 case. No worker runs here,
@@ -27,7 +27,7 @@ const FAILED_ID = '11111111-1111-4111-8111-111111111111';
 const QUEUED_ID = '22222222-2222-4222-8222-222222222222';
 const DONE_ID = '33333333-3333-4333-8333-333333333333';
 
-const dbMod = await import('../../src/shared/db.ts');
+const dbMod = await import('../../src/infrastructure/outbound/sqlite/job-store.ts');
 
 let port = 0;
 let base = '';
@@ -73,7 +73,7 @@ before(async () => {
 
   port = await freePort();
   base = `http://127.0.0.1:${port}`;
-  child = spawn('node', ['src/app/server.ts'], {
+  child = spawn('node', ['src/infrastructure/inbound/http.ts'], {
     cwd: path.join(import.meta.dirname, '..', '..'),
     env: { ...process.env, PORT: String(port), DATA_DIR: dataDir, ARTIFACTS_DIR: artifactsDir },
     stdio: ['ignore', 'pipe', 'pipe'],

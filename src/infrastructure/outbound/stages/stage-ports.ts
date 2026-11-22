@@ -3,8 +3,8 @@
  * Wraps the real subprocess/HTTP stage functions behind the application
  * ports so `worker/pipeline.ts` only depends on the port contracts.
  */
-import type { RuntimeConfig } from '../../application/config.ts';
-import type { PipelineStagePorts, StageContext } from '../../application/ports/stage-ports.ts';
+import type { RuntimeConfig } from '../../../application/config.ts';
+import type { PipelineStagePorts, StageContext } from '../../../application/ports/stage-ports.ts';
 import { convert } from './convert.ts';
 import { download } from './download.ts';
 import { summarize } from './summarize.ts';

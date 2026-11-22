@@ -1,5 +1,5 @@
 // Fake pipeline worker for e2e tests.
-// Reuses the real job store (src/shared/db.ts) and walks each claimed job
+// Reuses the real job store (src/infrastructure/outbound/sqlite/job-store.ts) and walks each claimed job
 // through the same 4 stages the container worker would, then marks it done
 // with canned output. No yt-dlp, ffmpeg, gpg, or OpenRouter involved.
 //
@@ -10,8 +10,15 @@
 //   FAKE_POLL_MS      claim loop interval (default 150)
 
 import http from 'node:http';
-import { claimNextJob, heartbeat, markDone, markFailed, openDatabase, updateStage } from '../src/shared/db.ts';
-import { STAGES } from '../src/shared/job.ts';
+import { STAGES } from '../src/domain/job/entity.ts';
+import {
+  claimNextJob,
+  heartbeat,
+  markDone,
+  markFailed,
+  openDatabase,
+  updateStage,
+} from '../src/infrastructure/outbound/sqlite/job-store.ts';
 
 const HEALTH_PORT = Number(process.env.FAKE_WORKER_PORT || 4175);
 const STAGE_DELAY_MS = Number(process.env.FAKE_STAGE_DELAY_MS || 250);

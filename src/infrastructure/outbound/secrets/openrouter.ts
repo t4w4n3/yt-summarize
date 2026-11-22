@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { OpenRouterSecretError, type SecretStore } from '../application/ports/secret-store.ts';
+import { OpenRouterSecretError, type SecretStore } from '../../../application/ports/secret-store.ts';
 
-export type { OpenRouterSecretErrorCode } from '../application/ports/secret-store.ts';
+export type { OpenRouterSecretErrorCode } from '../../../application/ports/secret-store.ts';
 export { OpenRouterSecretError };
 
 // Single contract for secret layout — podman secret → legacy GPG → env var

@@ -1,14 +1,17 @@
-// Pragmatic shared-model: app+worker share JobRow via jobs-data volume.
-// Balanced today because volatility=low (supporting, single-team, same image,
-// polling via BEGIN IMMEDIATE) — not VOLATILITY shields the tight Model+High-Distance coupling.
+// Pragmatic shared-model: app+worker share the jobs-data volume (single-team,
+// same image, polling via BEGIN IMMEDIATE). Volatility stays low — not VOLATILITY shielding
+// a tight Model+High-Distance coupling.
 // Revisit if queue/history UI lands (volatility → high) — extract JobStorePort / published language via publicJob().
+// SQLite outbound adapter. Rows come from sqlite with snake_case columns;
+// the adapter maps them to the domain Job entity before they cross the port
+// boundary.
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { config, dbPath } from './config.ts';
-import type { JobStatus } from './job.ts';
-import { STATUS } from './job.ts';
+import type { JobStatus } from '../../../domain/job/entity.ts';
+import { STATUS } from '../../../domain/job/entity.ts';
+import { config, dbPath } from '../../../shared/config.ts';
 
-export interface JobRow {
+interface JobDbRow {
   id: string;
   url: string;
   status: JobStatus;
@@ -29,8 +32,8 @@ function now(): string {
   return new Date().toISOString();
 }
 
-import type { JobStore } from '../application/ports/job-store.ts';
-import { DEDUP_STATUSES } from '../domain/job/dedup.ts';
+import type { JobStore } from '../../../application/ports/job-store.ts';
+import { DEDUP_STATUSES } from '../../../domain/job/dedup.ts';
 import {
   createJobEntity,
   heartbeatJob,
@@ -41,16 +44,16 @@ import {
   STAGES,
   type Stage,
   updateJobStage,
-} from '../domain/job/entity.ts';
+} from '../../../domain/job/entity.ts';
 // Single source for the URL rules lives in the domain (phase 1A). Imported
 // for local use and re-exported so existing import paths (`shared/db.ts`)
 // keep working.
-import { extractVideoIdFromUrl } from '../domain/youtube/validation.ts';
+import { extractVideoIdFromUrl } from '../../../domain/youtube/validation.ts';
 
 export { extractVideoIdFromUrl };
 
-function asJobRow(row: unknown): JobRow {
-  return row as JobRow;
+function asJobDbRow(row: unknown): JobDbRow {
+  return row as JobDbRow;
 }
 
 export function openDatabase(): DatabaseSync {
@@ -106,7 +109,7 @@ export function createJob(
   url: string,
   videoId?: string | null,
   lang?: string | null,
-): JobRow | null {
+): Job | null {
   const timestamp = now();
   const vid = videoId || extractVideoIdFromUrl(url);
   db.prepare(
@@ -115,14 +118,14 @@ export function createJob(
   return getJob(db, id);
 }
 
-export function getJob(db: DatabaseSync, id: string): JobRow | null {
+export function getJob(db: DatabaseSync, id: string): Job | null {
   const row = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
-  return row ? asJobRow(row) : null;
+  return row ? jobDbRowToJob(asJobDbRow(row)) : null;
 }
 
 // Dedup is per video AND per output language: requesting the same video in a
 // different language must produce a new note. Legacy NULL langs count as 'en'.
-export function findExistingJobByVideoId(db: DatabaseSync, videoId: string | null, lang = 'en'): JobRow | null {
+export function findExistingJobByVideoId(db: DatabaseSync, videoId: string | null, lang = 'en'): Job | null {
   if (!videoId) return null;
   const inStatuses = DEDUP_STATUSES.map((s) => `'${s}'`).join(',');
   // Prefer canonical video_id column, fallback to URL substring for legacy rows without backfill
@@ -131,16 +134,16 @@ export function findExistingJobByVideoId(db: DatabaseSync, videoId: string | nul
       `SELECT * FROM jobs WHERE video_id = ? AND COALESCE(lang, 'en') = ? AND status IN (${inStatuses}) ORDER BY CASE status WHEN 'done' THEN 0 WHEN 'running' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`,
     )
     .get(videoId, lang);
-  if (row) return asJobRow(row);
+  if (row) return jobDbRowToJob(asJobDbRow(row));
   row = db
     .prepare(
       `SELECT * FROM jobs WHERE video_id IS NULL AND url LIKE '%' || ? || '%' AND COALESCE(lang, 'en') = ? AND status IN (${inStatuses}) ORDER BY created_at DESC LIMIT 1`,
     )
     .get(videoId, lang);
-  return row ? asJobRow(row) : null;
+  return row ? jobDbRowToJob(asJobDbRow(row)) : null;
 }
 
-export function claimNextJob(db: DatabaseSync): JobRow | null {
+export function claimNextJob(db: DatabaseSync): Job | null {
   db.exec('BEGIN IMMEDIATE');
   try {
     const next = db.prepare(`SELECT id FROM jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1`).get() as
@@ -222,7 +225,7 @@ export function markFailed(db: DatabaseSync, id: string, error: string, stage: s
  * pipeline resumes from those artifacts instead of paying for them again.
  * Returns the re-queued row, or null when the job is unknown or not failed.
  */
-export function retryFailedJob(db: DatabaseSync, id: string): JobRow | null {
+export function retryFailedJob(db: DatabaseSync, id: string): Job | null {
   const timestamp = now();
   const result = db
     .prepare(
@@ -244,7 +247,7 @@ export function closeDatabase(db: DatabaseSync): void {
  * first validate through the entity transitions so the domain owns the
  * state machine while the adapter only persists the result.
  */
-export function jobRowToJob(row: JobRow): Job {
+export function jobDbRowToJob(row: JobDbRow): Job {
   return {
     id: row.id,
     url: row.url,
@@ -272,19 +275,19 @@ export function createSqliteJobStore(db: DatabaseSync): JobStore {
       const videoId = input.videoId || extractVideoIdFromUrl(input.url);
       createJobEntity({ id: input.id, url: input.url, videoId: videoId ?? null, lang: input.lang ?? null }, now());
       const row = createJob(db, input.id, input.url, videoId, input.lang ?? null);
-      return row ? jobRowToJob(row) : null;
+      return row ? row : null;
     },
     get(id) {
       const row = getJob(db, id);
-      return row ? jobRowToJob(row) : null;
+      return row ? row : null;
     },
     findExisting(videoId, lang) {
       const row = findExistingJobByVideoId(db, videoId, lang);
-      return row ? jobRowToJob(row) : null;
+      return row ? row : null;
     },
     claimNext() {
       const row = claimNextJob(db);
-      return row ? jobRowToJob(row) : null;
+      return row ? row : null;
     },
     reclaimStaleJobs(staleAfterMs) {
       return reclaimStaleJobs(db, staleAfterMs);
@@ -292,44 +295,44 @@ export function createSqliteJobStore(db: DatabaseSync): JobStore {
     updateStage(id, stage, progress) {
       const row = getJob(db, id);
       if (!row) return null;
-      updateJobStage(jobRowToJob(row), stage, progress, now());
+      updateJobStage(row, stage, progress, now());
       updateStage(db, id, stage, progress);
       const after = getJob(db, id);
-      return after ? jobRowToJob(after) : null;
+      return after ? after : null;
     },
     heartbeat(id) {
       const row = getJob(db, id);
       if (!row) return null;
-      const job = jobRowToJob(row);
+      const job = row;
       if (job.status !== STATUS.RUNNING) return job;
       heartbeatJob(job, now());
       heartbeat(db, id);
       const after = getJob(db, id);
-      return after ? jobRowToJob(after) : job;
+      return after ? after : job;
     },
     markDone(id, title, markdown) {
       const row = getJob(db, id);
       if (!row) return null;
-      markJobDone(jobRowToJob(row), title, markdown, now());
+      markJobDone(row, title, markdown, now());
       markDone(db, id, title, markdown);
       const after = getJob(db, id);
-      return after ? jobRowToJob(after) : null;
+      return after ? after : null;
     },
     markFailed(id, error, stage) {
       const row = getJob(db, id);
       if (!row) return null;
       const knownStage = stage && (STAGES as readonly string[]).includes(stage) ? (stage as Stage) : null;
-      markJobFailed(jobRowToJob(row), error, knownStage, now());
+      markJobFailed(row, error, knownStage, now());
       markFailed(db, id, error, stage || null);
       const after = getJob(db, id);
-      return after ? jobRowToJob(after) : null;
+      return after ? after : null;
     },
     retryFailed(id) {
       const row = getJob(db, id);
       if (!row || row.status !== STATUS.FAILED) return null;
-      retryJob(jobRowToJob(row), now());
+      retryJob(row, now());
       const retried = retryFailedJob(db, id);
-      return retried ? jobRowToJob(retried) : null;
+      return retried ? retried : null;
     },
   };
 }

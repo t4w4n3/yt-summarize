@@ -19,8 +19,8 @@ import type {
   SpeechToTextPort,
   TranscriptionAttempt,
 } from '../../src/domain/transcription/ports.ts';
-import type { TranscribeContext } from '../../src/worker/stages/transcribe.ts';
-import { transcribe } from '../../src/worker/stages/transcribe.ts';
+import type { TranscribeContext } from '../../src/infrastructure/outbound/stages/transcribe.ts';
+import { transcribe } from '../../src/infrastructure/outbound/stages/transcribe.ts';
 
 const RETRY = { maxAttempts: 3, baseDelayMs: 1000, maxDelayMs: 8000 } as const;
 

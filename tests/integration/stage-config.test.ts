@@ -10,10 +10,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 import type { RuntimeConfig } from '../../src/application/config.ts';
+import { download } from '../../src/infrastructure/outbound/stages/download.ts';
+import { summarize } from '../../src/infrastructure/outbound/stages/summarize.ts';
+import { type TranscribeContext, transcribe } from '../../src/infrastructure/outbound/stages/transcribe.ts';
 import { loadConfig } from '../../src/shared/config.ts';
-import { download } from '../../src/worker/stages/download.ts';
-import { summarize } from '../../src/worker/stages/summarize.ts';
-import { type TranscribeContext, transcribe } from '../../src/worker/stages/transcribe.ts';
 
 function runtimeConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return { ...loadConfig({}), ...overrides };

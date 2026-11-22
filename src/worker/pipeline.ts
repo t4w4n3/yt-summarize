@@ -3,14 +3,13 @@ import type { RuntimeConfig } from '../application/config.ts';
 import { type StagedError, StageError } from '../application/errors.ts';
 import { friendlyError, stageOf } from '../application/friendly-error.ts';
 import type { PipelineStagePorts } from '../application/ports/stage-ports.ts';
-import type { Stage } from '../domain/job/entity.ts';
+import type { Job, Stage } from '../domain/job/entity.ts';
+import { STAGES } from '../domain/job/entity.ts';
+import { createFilesystemArtifactStore } from '../infrastructure/outbound/filesystem/artifact-store.ts';
+import { createSqliteJobStore } from '../infrastructure/outbound/sqlite/job-store.ts';
+import { createPipelineStagePorts } from '../infrastructure/outbound/stages/stage-ports.ts';
 import { loadConfig } from '../shared/config.ts';
-import type { JobRow } from '../shared/db.ts';
-import { createSqliteJobStore } from '../shared/db.ts';
-import { STAGES } from '../shared/job.ts';
 import { stageTimeoutMs } from '../shared/timeouts.ts';
-import { createFilesystemArtifactStore } from './artifacts.ts';
-import { createPipelineStagePorts } from './stages/stage-ports.ts';
 
 export type { StagedError };
 // Canonical owners live in the application layer (phase 1D); re-exported so
@@ -31,7 +30,7 @@ const realStages: PipelineStages = createPipelineStagePorts();
  */
 export async function runPipeline(
   db: DatabaseSync,
-  job: JobRow,
+  job: Job,
   signal: AbortSignal,
   stages: PipelineStages = realStages,
   runtimeConfig?: RuntimeConfig,

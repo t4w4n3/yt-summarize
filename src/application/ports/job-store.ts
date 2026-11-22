@@ -1,6 +1,6 @@
 /**
  * Outbound port for job persistence. The application layer owns this
- * contract; the SQLite adapter in `shared/db.ts` implements it.
+ * contract; the SQLite adapter in `infrastructure/outbound/sqlite/job-store.ts` implements it.
  */
 import type { Job, JobStatus, Stage } from '../../domain/job/entity.ts';
 

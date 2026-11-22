@@ -1,5 +1,5 @@
 /**
- * Integration tests for the shared SQLite job model (src/shared/db.ts).
+ * Integration tests for the shared SQLite job model (src/infrastructure/outbound/sqlite/job-store.ts).
  *
  * Drives the app↔worker shared-DB contract against a real temporary SQLite
  * database: job lifecycle (create→claim→heartbeat→done/failed), stale reclaim,
@@ -28,7 +28,7 @@ import {
   reclaimStaleJobs,
   retryFailedJob,
   updateStage,
-} from '../../src/shared/db.ts';
+} from '../../src/infrastructure/outbound/sqlite/job-store.ts';
 
 const SCHEMA = `
   CREATE TABLE jobs (
@@ -90,17 +90,17 @@ describe('shared db — job lifecycle state machine', () => {
     assert.ok(created);
     assert.equal(created.id, 'j1');
     assert.equal(created.status, 'queued');
-    assert.equal(created.video_id, 'dQw4w9WgXcQ');
+    assert.equal(created.videoId, 'dQw4w9WgXcQ');
 
     const fromDb = getJob(d, 'j1');
-    assert.equal(fromDb?.video_id, 'dQw4w9WgXcQ');
+    assert.equal(fromDb?.videoId, 'dQw4w9WgXcQ');
     assert.equal(fromDb?.lang, null);
   });
 
   it('createJob honours an explicit lang and explicit video id', () => {
     const d = freshDb();
     const created = createJob(d, 'j2', 'https://example.invalid/watch?v=abc', 'forced-id', 'fr');
-    assert.equal(created?.video_id, 'forced-id');
+    assert.equal(created?.videoId, 'forced-id');
     assert.equal(created?.lang, 'fr');
     assert.equal(getJob(d, 'j2')?.lang, 'fr');
   });
@@ -114,7 +114,7 @@ describe('shared db — job lifecycle state machine', () => {
     const claim1 = claimNextJob(d);
     assert.equal(claim1?.id, 'a');
     assert.equal(claim1?.status, 'running');
-    assert.ok(claim1?.claimed_at);
+    assert.ok(claim1?.claimedAt);
 
     const claim2 = claimNextJob(d);
     assert.equal(claim2?.id, 'b');
@@ -139,9 +139,9 @@ describe('shared db — job lifecycle state machine', () => {
     const d = freshDb();
     createJob(d, 'h', 'https://youtu.be/HHHHHHHHHHH');
     claimNextJob(d);
-    const before = getJob(d, 'h')?.last_heartbeat_at;
+    const before = getJob(d, 'h')?.lastHeartbeatAt;
     heartbeat(d, 'h');
-    const after = getJob(d, 'h')?.last_heartbeat_at;
+    const after = getJob(d, 'h')?.lastHeartbeatAt;
     assert.ok(before && after && after <= new Date().toISOString());
   });
 
@@ -243,8 +243,8 @@ describe('shared db — job lifecycle state machine', () => {
     assert.equal(retried.error, null, `rt error ${retried.error} must be cleared after retry`);
     assert.equal(retried.stage, null, `rt stage ${retried.stage} must be cleared after retry`);
     assert.equal(retried.progress, 0, `rt progress ${retried.progress} must reset to 0 after retry`);
-    assert.equal(retried.claimed_at, null, 'rt claimed_at must be cleared after retry');
-    assert.equal(retried.last_heartbeat_at, null, 'rt last_heartbeat_at must be cleared after retry');
+    assert.equal(retried.claimedAt, null, 'rt claimed_at must be cleared after retry');
+    assert.equal(retried.lastHeartbeatAt, null, 'rt last_heartbeat_at must be cleared after retry');
     assert.equal(getJob(d, 'rt')?.status, 'queued');
   });
 

@@ -1,5 +1,5 @@
 /**
- * Behavioral tests for src/worker/stages/openrouter.ts — the stage-boundary
+ * Behavioral tests for src/infrastructure/outbound/stages/openrouter.ts — the stage-boundary
  * credential resolver that translates shared secret failures into StageErrors.
  *
  * We drive the real shared resolveOpenRouterKey by mocking fs/existsSync so the
@@ -12,9 +12,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { afterEach, describe, it, mock } from 'node:test';
-import { OpenRouterSecretError } from '../../src/shared/secrets.ts';
-import { resolveOpenRouterKey } from '../../src/worker/stages/openrouter.ts';
-import { StageError } from '../../src/worker/stages/process.ts';
+import { OpenRouterSecretError } from '../../src/infrastructure/outbound/secrets/openrouter.ts';
+import { resolveOpenRouterKey } from '../../src/infrastructure/outbound/stages/openrouter.ts';
+import { StageError } from '../../src/infrastructure/outbound/stages/process.ts';
 
 const OPENROUTER_SECRET_PATH = '/run/secrets/openrouter_key';
 

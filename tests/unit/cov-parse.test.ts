@@ -29,7 +29,7 @@ const SAMPLE_LCOV = [
   'LH:60',
   'end_of_record',
   '',
-  'SF:src/shared/db.ts',
+  'SF:src/infrastructure/outbound/sqlite/job-store.ts',
   'FNF:14',
   'FNH:1',
   'BRF:5',
@@ -38,7 +38,7 @@ const SAMPLE_LCOV = [
   'LH:62',
   'end_of_record',
   '',
-  'SF:src/worker/stages/download.ts',
+  'SF:src/infrastructure/outbound/stages/download.ts',
   'FNF:1',
   'FNH:0',
   'BRF:0',
@@ -51,10 +51,10 @@ const SAMPLE_LCOV = [
 describe('cov-parse — layerOf', () => {
   it('maps first segment after src/ to the layer', () => {
     assert.equal(layerOf('src/domain/transcription/policy.ts'), 'domain');
-    assert.equal(layerOf('src/worker/stages/download.ts'), 'worker');
-    assert.equal(layerOf('src/shared/db.ts'), 'shared');
+    assert.equal(layerOf('src/infrastructure/outbound/stages/download.ts'), 'infrastructure');
+    assert.equal(layerOf('src/infrastructure/outbound/sqlite/job-store.ts'), 'infrastructure');
     assert.equal(layerOf('src/vpn/socks5.ts'), 'vpn');
-    assert.equal(layerOf('src/app/server.ts'), 'app');
+    assert.equal(layerOf('src/infrastructure/inbound/http.ts'), 'infrastructure');
   });
 
   it('returns null for paths outside src/', () => {
@@ -82,12 +82,12 @@ describe('cov-parse — parseLcov', () => {
       functionsFound: 8,
       functionsHit: 8,
     });
-    assert.deepEqual(f1.path, 'src/shared/db.ts');
-    assert.deepEqual(f1.layer, 'shared');
+    assert.deepEqual(f1.path, 'src/infrastructure/outbound/sqlite/job-store.ts');
+    assert.deepEqual(f1.layer, 'infrastructure');
     assert.equal(f1.linesFound, 208);
     assert.equal(f1.linesHit, 62);
-    assert.deepEqual(f2.path, 'src/worker/stages/download.ts');
-    assert.equal(f2.layer, 'worker');
+    assert.deepEqual(f2.path, 'src/infrastructure/outbound/stages/download.ts');
+    assert.equal(f2.layer, 'infrastructure');
     assert.equal(f2.linesHit, 0);
   });
 
@@ -116,18 +116,15 @@ describe('cov-parse — parseLcov', () => {
 describe('cov-parse — aggregateByLayer', () => {
   it('sums counters by layer and orders domain first', () => {
     const aggregates = aggregateByLayer(parseLcov(SAMPLE_LCOV));
-    assert.equal(aggregates.length, 3);
-    const [a0, a1, a2] = aggregates;
-    assert.ok(a0 && a1 && a2);
+    assert.equal(aggregates.length, 2, 'domain + infrastructure after the adapter move');
+    const [a0, a1] = aggregates;
+    assert.ok(a0 && a1);
     assert.equal(a0.layer, 'domain');
     assert.equal(a0.linesFound, 62);
     assert.equal(a0.linesHit, 60);
-    assert.equal(a1.layer, 'shared');
-    assert.equal(a1.linesFound, 208);
+    assert.equal(a1.layer, 'infrastructure');
+    assert.equal(a1.linesFound, 265);
     assert.equal(a1.linesHit, 62);
-    assert.equal(a2.layer, 'worker');
-    assert.equal(a2.linesFound, 57);
-    assert.equal(a2.linesHit, 0);
   });
 });
 
@@ -202,10 +199,10 @@ describe('cov-parse — rowsForReport', () => {
     assert.equal(domain.branches, (17 / 19) * 100);
     assert.equal(domain.functions, 100);
 
-    const worker = rows.find((r) => r.layer === 'worker');
-    assert.ok(worker);
-    assert.equal(worker.lines, 0); // 0/57 lines
-    assert.equal(worker.branches, null); // 0/0 branches -> null (nothing to cover)
-    assert.equal(worker.functions, 0); // 0/1 functions (FNF:1, FNH:0)
+    const infra = rows.find((r) => r.layer === 'infrastructure');
+    assert.ok(infra);
+    assert.equal(infra.lines, (62 / 265) * 100); // combined outbound files
+    assert.equal(infra.branches, (4 / 5) * 100); // one branch from the sqlite adapter record
+    assert.equal(infra.functions, (1 / 15) * 100); // sqlite adapter record contributes 1/14, stage 0/1
   });
 });

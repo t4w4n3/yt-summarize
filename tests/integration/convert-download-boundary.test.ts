@@ -1,6 +1,6 @@
 /**
  * Behavioral tests for the download and convert stages
- * (src/worker/stages/download.ts, src/worker/stages/convert.ts).
+ * (src/infrastructure/outbound/stages/download.ts, src/infrastructure/outbound/stages/convert.ts).
  *
  * Both invoke external CLIs (yt-dlp / ffmpeg) through runProcess, resolved via
  * PATH. We provide fake `yt-dlp` and `ffmpeg` scripts in a temp bin dir and
@@ -15,10 +15,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, it, mock } from 'node:test';
-import { convert } from '../../src/worker/stages/convert.ts';
-import { download } from '../../src/worker/stages/download.ts';
-import type { StageContext } from '../../src/worker/stages/process.ts';
-import { StageError } from '../../src/worker/stages/process.ts';
+import { convert } from '../../src/infrastructure/outbound/stages/convert.ts';
+import { download } from '../../src/infrastructure/outbound/stages/download.ts';
+import type { StageContext } from '../../src/infrastructure/outbound/stages/process.ts';
+import { StageError } from '../../src/infrastructure/outbound/stages/process.ts';
 
 let binDir: string | undefined;
 let jobDir: string | undefined;

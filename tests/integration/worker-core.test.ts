@@ -17,8 +17,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, it } from 'node:test';
-import { claimNextJob, createJob, markDone } from '../../src/shared/db.ts';
-import { StageError } from '../../src/worker/stages/process.ts';
+import { claimNextJob, createJob, markDone } from '../../src/infrastructure/outbound/sqlite/job-store.ts';
+import { StageError } from '../../src/infrastructure/outbound/stages/process.ts';
 import { createWorker, runWithTimeout } from '../../src/worker/worker-core.ts';
 
 const SCHEMA = `

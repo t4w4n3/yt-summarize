@@ -51,10 +51,14 @@ describe('architecture — layer dependencies (archunit)', () => {
     assert.equal(violations.length, 0, `domain → worker violations:\n${violationMessage(violations)}`);
   });
 
-  it('domain must not depend on app (inbound adapter)', async () => {
-    const rule = projectFiles().inFolder('src/domain/**').shouldNot().dependOnFiles().inFolder('src/app/**');
+  it('domain must not depend on inbound adapter', async () => {
+    const rule = projectFiles()
+      .inFolder('src/domain/**')
+      .shouldNot()
+      .dependOnFiles()
+      .inFolder('src/infrastructure/inbound/**');
     const violations = await rule.check();
-    assert.equal(violations.length, 0, `domain → app violations:\n${violationMessage(violations)}`);
+    assert.equal(violations.length, 0, `domain → inbound violations:\n${violationMessage(violations)}`);
   });
 
   it('domain must not depend on vpn sidecar', async () => {
@@ -64,9 +68,13 @@ describe('architecture — layer dependencies (archunit)', () => {
   });
 
   it('domain must not depend on storage adapter (shared/db)', async () => {
-    const rule = projectFiles().inFolder('src/domain/**').shouldNot().dependOnFiles().inPath('src/shared/db.ts');
+    const rule = projectFiles()
+      .inFolder('src/domain/**')
+      .shouldNot()
+      .dependOnFiles()
+      .inPath('src/infrastructure/outbound/sqlite/job-store.ts');
     const violations = await rule.check();
-    assert.equal(violations.length, 0, `domain → shared/db violations:\n${violationMessage(violations)}`);
+    assert.equal(violations.length, 0, `domain → storage violations:\n${violationMessage(violations)}`);
   });
 
   it('domain must not depend on the application layer', async () => {
@@ -96,7 +104,7 @@ describe('architecture — layer dependencies (archunit)', () => {
     // The infrastructure target activates in phase 2 (see above); the
     // worker/app/vpn targets are enforced now. archunit needs an existing
     // target folder, so skip infrastructure while it does not exist.
-    for (const target of ['src/infrastructure/**', 'src/worker/**', 'src/app/**', 'src/vpn/**'] as const) {
+    for (const target of ['src/infrastructure/**', 'src/worker/**', 'src/vpn/**'] as const) {
       if (target === 'src/infrastructure/**' && !fs.existsSync('src/infrastructure')) continue;
       const rule = projectFiles().inFolder('src/application/**').shouldNot().dependOnFiles().inFolder(target);
       const violations = await rule.check();
@@ -105,21 +113,29 @@ describe('architecture — layer dependencies (archunit)', () => {
   });
 
   it('application must not depend on shared persistence, config readers, or timeouts', async () => {
-    for (const target of ['src/shared/db.ts', 'src/shared/config.ts', 'src/shared/timeouts.ts'] as const) {
+    for (const target of [
+      'src/infrastructure/outbound/sqlite/job-store.ts',
+      'src/shared/config.ts',
+      'src/shared/timeouts.ts',
+    ] as const) {
       const rule = projectFiles().inFolder('src/application/**').shouldNot().dependOnFiles().inPath(target);
       const violations = await rule.check();
       assert.equal(violations.length, 0, `application → ${target} violations:\n${violationMessage(violations)}`);
     }
   });
 
-  it('app (inbound) must not depend on worker internals', async () => {
-    const rule = projectFiles().inFolder('src/app/**').shouldNot().dependOnFiles().inFolder('src/worker/**');
+  it('inbound adapter must not depend on worker internals', async () => {
+    const rule = projectFiles()
+      .inFolder('src/infrastructure/inbound/**')
+      .shouldNot()
+      .dependOnFiles()
+      .inFolder('src/worker/**');
     const violations = await rule.check();
     assert.equal(violations.length, 0, `app → worker violations:\n${violationMessage(violations)}`);
   });
 
-  it('shared must not depend upwards on app / worker / vpn', async () => {
-    for (const target of ['src/app/**', 'src/worker/**', 'src/vpn/**'] as const) {
+  it('shared must not depend upwards on infrastructure / worker / vpn', async () => {
+    for (const target of ['src/infrastructure/**', 'src/worker/**', 'src/vpn/**'] as const) {
       const rule = projectFiles().inFolder('src/shared/**').shouldNot().dependOnFiles().inFolder(target);
       const violations = await rule.check();
       assert.equal(violations.length, 0, `shared → ${target} violations:\n${violationMessage(violations)}`);
@@ -138,18 +154,22 @@ describe('architecture — layer dependencies (archunit)', () => {
     // Fakes over mocks — unit tests drive the domain through ports (pure fns
     // or an in-memory fake port), not through the real outbound adapters.
     // inFolder expects folder globs; use inPath for exact files like db.ts.
-    const folderTargets = ['src/worker/**', 'src/vpn/**', 'src/app/**'] as const;
+    const folderTargets = ['src/infrastructure/**', 'src/worker/**', 'src/vpn/**'] as const;
     for (const target of folderTargets) {
       const rule = projectFiles().inFolder('tests/unit/**').shouldNot().dependOnFiles().inFolder(target);
       const violations = await rule.check();
       assert.equal(violations.length, 0, `tests/unit → ${target} violations:\n${violationMessage(violations)}`);
     }
-    const dbRule = projectFiles().inFolder('tests/unit/**').shouldNot().dependOnFiles().inPath('src/shared/db.ts');
+    const dbRule = projectFiles()
+      .inFolder('tests/unit/**')
+      .shouldNot()
+      .dependOnFiles()
+      .inPath('src/infrastructure/outbound/sqlite/job-store.ts');
     const dbViolations = await dbRule.check();
     assert.equal(
       dbViolations.length,
       0,
-      `tests/unit → src/shared/db.ts violations:\n${violationMessage(dbViolations)}`,
+      `tests/unit → src/infrastructure/outbound/sqlite/job-store.ts violations:\n${violationMessage(dbViolations)}`,
     );
   });
 

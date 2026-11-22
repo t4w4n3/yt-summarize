@@ -4,8 +4,8 @@ import { describe, it } from 'node:test';
 
 // P5 — document the app↔worker shared-DB tradeoff, don't "fix" it yet.
 describe('P5 — pragmatic shared-DB tradeoff is documented', () => {
-  it('src/shared/db.ts documents the shared-model tradeoff', () => {
-    const src = fs.readFileSync('src/shared/db.ts', 'utf8');
+  it('src/infrastructure/outbound/sqlite/job-store.ts documents the shared-model tradeoff', () => {
+    const src = fs.readFileSync('src/infrastructure/outbound/sqlite/job-store.ts', 'utf8');
     assert.match(src, /Pragmatic shared-model/);
     assert.match(src, /app\+worker|app \+ worker|app\/worker/);
     assert.match(src, /jobs-data/);

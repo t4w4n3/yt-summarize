@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { RuntimeConfig } from '../../application/config.ts';
-import { loadConfig } from '../../shared/config.ts';
+import type { RuntimeConfig } from '../../../application/config.ts';
+import { loadConfig } from '../../../shared/config.ts';
 import type { StageContext } from './process.ts';
 import { runProcess, StageError } from './process.ts';
 

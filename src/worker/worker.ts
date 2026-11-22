@@ -1,6 +1,6 @@
+import { closeDatabase, createSqliteJobStore, openDatabase } from '../infrastructure/outbound/sqlite/job-store.ts';
+import { createPipelineStagePorts } from '../infrastructure/outbound/stages/stage-ports.ts';
 import { loadConfig } from '../shared/config.ts';
-import { closeDatabase, createSqliteJobStore, openDatabase } from '../shared/db.ts';
-import { createPipelineStagePorts } from './stages/stage-ports.ts';
 import { createWorker } from './worker-core.ts';
 
 const runtimeConfig = loadConfig(process.env);

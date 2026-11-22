@@ -5,9 +5,9 @@
   "packageManager": "pnpm@12.21.0",
   "description": "Self-hosted YouTube learning-summary workstation",
   "type": "module",
-  "main": "src/app/server.ts",
+  "main": "src/infrastructure/inbound/http.ts",
   "scripts": {
-    "start": "node src/app/server.ts",
+    "start": "node src/infrastructure/inbound/http.ts",
     "start:worker": "node src/worker/worker.ts",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",

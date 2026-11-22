@@ -1,5 +1,5 @@
 /**
- * Behavioral tests for src/worker/stages/summarize.ts — the LLM summarization
+ * Behavioral tests for src/infrastructure/outbound/stages/summarize.ts — the LLM summarization
  * outbound adapter. Exercises the real HTTPS call against a stubbed global
  * fetch, with the OpenRouter key resolved from the env fallback (no podman/GPG
  * present in the test sandbox), plus the pure extractContent helper.
@@ -12,9 +12,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
+import type { StageContext } from '../../src/infrastructure/outbound/stages/process.ts';
+import { extractContent, providerRouting, summarize } from '../../src/infrastructure/outbound/stages/summarize.ts';
 import { config } from '../../src/shared/config.ts';
-import type { StageContext } from '../../src/worker/stages/process.ts';
-import { extractContent, providerRouting, summarize } from '../../src/worker/stages/summarize.ts';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'summarize-test-'));

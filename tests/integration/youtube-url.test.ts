@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { extractVideoIdFromUrl } from '../../src/shared/db.ts';
+import { extractVideoIdFromUrl } from '../../src/infrastructure/outbound/sqlite/job-store.ts';
 
 /**
  * Regression for https://youtu.be/A7w6PDdrWnA

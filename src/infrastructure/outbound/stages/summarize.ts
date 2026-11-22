@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { RuntimeConfig } from '../../application/config.ts';
-import { loadConfig } from '../../shared/config.ts';
+import type { RuntimeConfig } from '../../../application/config.ts';
+import { loadConfig } from '../../../shared/config.ts';
 import { resolveOpenRouterKey } from './openrouter.ts';
 import type { StageContext } from './process.ts';
 import { StageError } from './process.ts';
@@ -64,7 +64,7 @@ export async function summarize(
   const rawLang = typeof context.lang === 'string' ? context.lang.trim().toLowerCase() : '';
   const lang = /^[a-z]{2}$/.test(rawLang) ? rawLang : 'en';
   const systemPrompt = fs
-    .readFileSync(path.join(import.meta.dirname, '..', 'prompts', 'summarize.md'), 'utf8')
+    .readFileSync(path.join(import.meta.dirname, '..', '..', '..', 'worker', 'prompts', 'summarize.md'), 'utf8')
     .replaceAll('{{OUTPUT_LANGUAGE}}', lang);
   const transcript = fs.readFileSync(transcriptPath, 'utf8');
   // Pin the summarization endpoint: OpenRouter otherwise routes to whichever

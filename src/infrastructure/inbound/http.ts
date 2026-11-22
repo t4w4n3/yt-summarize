@@ -2,11 +2,11 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
-import type { Job, JobStatus } from '../domain/job/entity.ts';
-import { normalizeLang } from '../domain/lang.ts';
-import { extractVideoIdFromUrl, validateYouTubeUrl } from '../domain/youtube/validation.ts';
-import { loadConfig } from '../shared/config.ts';
-import { createSqliteJobStore, openDatabase } from '../shared/db.ts';
+import type { Job, JobStatus } from '../../domain/job/entity.ts';
+import { normalizeLang } from '../../domain/lang.ts';
+import { extractVideoIdFromUrl, validateYouTubeUrl } from '../../domain/youtube/validation.ts';
+import { loadConfig } from '../../shared/config.ts';
+import { createSqliteJobStore, openDatabase } from '../outbound/sqlite/job-store.ts';
 
 const runtimeConfig = loadConfig(process.env);
 const app = express();

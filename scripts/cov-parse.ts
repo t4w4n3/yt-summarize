@@ -41,8 +41,8 @@ export interface LayerAggregate {
 /**
  * Map a source path to its layer = first directory segment after `src/`.
  * e.g. `src/domain/transcription/policy.ts` -> `domain`,
- *      `src/worker/stages/download.ts` -> `worker`,
- *      `src/app/server.ts` -> `app`.
+ *      `src/infrastructure/outbound/stages/download.ts` -> `infrastructure`,
+ *      `src/infrastructure/inbound/http.ts` -> `infrastructure`.
  * Returns null for paths outside `src/` (e.g. node_modules, tests).
  */
 export function layerOf(srcPath: string): string | null {

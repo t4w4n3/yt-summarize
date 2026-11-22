@@ -1,5 +1,5 @@
+import type { Stage } from '../domain/job/entity.ts';
 import { config } from './config.ts';
-import type { Stage } from './job.ts';
 
 const STAGE_TIMEOUTS: Record<Stage, number> = Object.freeze({
   downloading: 10 * 60 * 1000,

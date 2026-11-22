@@ -1,8 +1,8 @@
 /**
  * Canonical YouTube URL validation and video-id extraction.
  *
- * Single owner of the YouTube host/path rules (moved here from app/server.ts
- * and shared/db.ts, which duplicated them). Adapters delegate; the domain
+ * Single owner of the YouTube host/path rules (moved here from infrastructure/inbound/http.ts
+ * and infrastructure/outbound/sqlite/job-store.ts, which duplicated them). Adapters delegate; the domain
  * decides. Later ports (phase 2+) build on the same single source.
  */
 

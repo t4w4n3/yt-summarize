@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { RuntimeConfig } from '../../application/config.ts';
+import type { RuntimeConfig } from '../../../application/config.ts';
 import {
   alignedChunkBytes,
   CHUNK_DURATION_SEC,
@@ -13,14 +13,14 @@ import {
   RETRY_AFTER_MAX_MS,
   retryAfterDelayMs,
   retryDelayMs,
-} from '../../domain/transcription/policy.ts';
-import type { AudioSplitterPort, SpeechToTextPort, TranscriptionAttempt } from '../../domain/transcription/ports.ts';
-import { loadConfig } from '../../shared/config.ts';
+} from '../../../domain/transcription/policy.ts';
+import type { AudioSplitterPort, SpeechToTextPort, TranscriptionAttempt } from '../../../domain/transcription/ports.ts';
+import { loadConfig } from '../../../shared/config.ts';
 import * as openrouter from './openrouter.ts';
 import type { StageContext } from './process.ts';
 import { runProcess, StageError } from './process.ts';
 
-export { CHUNK_DURATION_SEC, MULTIPART_LIMIT } from '../../domain/transcription/policy.ts';
+export { CHUNK_DURATION_SEC, MULTIPART_LIMIT } from '../../../domain/transcription/policy.ts';
 
 const API_URL = 'https://openrouter.ai/api/v1/audio/transcriptions';
 

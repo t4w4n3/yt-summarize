@@ -1,5 +1,5 @@
 /**
- * Integration tests at the runProcess subprocess boundary (src/worker/stages/process.ts).
+ * Integration tests at the runProcess subprocess boundary (src/infrastructure/outbound/stages/process.ts).
  *
  * runProcess wraps child_process.spawn with timeout escalations (SIGTERM→SIGKILL),
  * output-size limits, heartbeat ticks and stage attribution. These are real
@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, it, mock } from 'node:test';
-import { runProcess, StageError } from '../../src/worker/stages/process.ts';
+import { runProcess, StageError } from '../../src/infrastructure/outbound/stages/process.ts';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'proc-test-'));

@@ -1,5 +1,5 @@
 /**
- * Edge-path integration tests for the transcribe stage (src/worker/stages/transcribe.ts).
+ * Edge-path integration tests for the transcribe stage (src/infrastructure/outbound/stages/transcribe.ts).
  *
  * The happy/fallback paths are covered by transcribe-boundary.test.ts (real
  * fetch, 413 retry, chunking) and the injected-port paths by
@@ -17,8 +17,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 import type { SpeechToTextPort } from '../../src/domain/transcription/ports.ts';
-import type { TranscribeContext } from '../../src/worker/stages/transcribe.ts';
-import { splitWavIntoChunks, transcribe } from '../../src/worker/stages/transcribe.ts';
+import type { TranscribeContext } from '../../src/infrastructure/outbound/stages/transcribe.ts';
+import { splitWavIntoChunks, transcribe } from '../../src/infrastructure/outbound/stages/transcribe.ts';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'transcribe-edge-'));

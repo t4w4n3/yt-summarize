@@ -1,7 +1,7 @@
 /**
  * Outbound port for OpenRouter credential resolution.
  * The application layer owns the contract; the filesystem/GPG adapter in
- * `shared/secrets.ts` implements it.
+ * `infrastructure/outbound/secrets/openrouter.ts` implements it.
  */
 export type OpenRouterSecretErrorCode = 'invalid-secret' | 'decryption-failed';
 

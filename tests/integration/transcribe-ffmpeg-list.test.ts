@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
-import { splitWavIntoChunks, splitWavManual } from '../../src/worker/stages/transcribe.ts';
+import { splitWavIntoChunks, splitWavManual } from '../../src/infrastructure/outbound/stages/transcribe.ts';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'transcribe-list-'));

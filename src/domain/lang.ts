@@ -1,6 +1,6 @@
 /**
  * Normalization of the optional ISO 639-1 output language (`lang`).
- * Moved here from app/server.ts (phase 1B) — the HTTP adapter keeps
+ * Moved here from infrastructure/inbound/http.ts (phase 1B) — the HTTP adapter keeps
  * only the routing.
  */
 

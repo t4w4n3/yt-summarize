@@ -33,7 +33,7 @@ export default defineConfig({
     // is a loud failure instead: kill the leftover process and rerun.
     // Real app server (same code as the container, host process, temp data dir).
     {
-      command: 'node src/app/server.ts',
+      command: 'node src/infrastructure/inbound/http.ts',
       cwd: path.join(import.meta.dirname, '..'),
       url: appUrl,
       reuseExistingServer: false,

@@ -19,9 +19,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
+import { resolveOpenRouterKey } from '../../src/infrastructure/outbound/stages/openrouter.ts';
+import { providerRouting } from '../../src/infrastructure/outbound/stages/summarize.ts';
 import { config } from '../../src/shared/config.ts';
-import { resolveOpenRouterKey } from '../../src/worker/stages/openrouter.ts';
-import { providerRouting } from '../../src/worker/stages/summarize.ts';
 
 const RUN_LIVE = process.env.RUN_LIVE_TESTS === '1';
 

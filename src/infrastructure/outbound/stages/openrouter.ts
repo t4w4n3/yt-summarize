@@ -1,5 +1,5 @@
-import { OpenRouterSecretError } from '../../application/ports/secret-store.ts';
-import { createOpenRouterSecretStore } from '../../shared/secrets.ts';
+import { OpenRouterSecretError } from '../../../application/ports/secret-store.ts';
+import { createOpenRouterSecretStore } from '../secrets/openrouter.ts';
 import { StageError } from './process.ts';
 
 const secretStore = createOpenRouterSecretStore();

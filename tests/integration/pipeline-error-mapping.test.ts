@@ -10,8 +10,8 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { StageError } from '../../src/infrastructure/outbound/stages/process.ts';
 import { friendlyError, stageOf } from '../../src/worker/pipeline.ts';
-import { StageError } from '../../src/worker/stages/process.ts';
 
 describe('pipeline — stage attribution & friendly errors', () => {
   it('stageOf returns the stage for a StageError', () => {

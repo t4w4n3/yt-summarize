@@ -29,7 +29,19 @@ function now(): string {
   return new Date().toISOString();
 }
 
+import type { JobStore } from '../application/ports/job-store.ts';
 import { DEDUP_STATUSES } from '../domain/job/dedup.ts';
+import {
+  createJobEntity,
+  heartbeatJob,
+  type Job,
+  markJobDone,
+  markJobFailed,
+  retryJob,
+  STAGES,
+  type Stage,
+  updateJobStage,
+} from '../domain/job/entity.ts';
 // Single source for the URL rules lives in the domain (phase 1A). Imported
 // for local use and re-exported so existing import paths (`shared/db.ts`)
 // keep working.
@@ -224,4 +236,100 @@ export function retryFailedJob(db: DatabaseSync, id: string): JobRow | null {
 
 export function closeDatabase(db: DatabaseSync): void {
   db.close();
+}
+
+/**
+ * SQLite JobStore adapter (phase 2A). Delegates to the legacy shared
+ * helpers and maps rows to the domain Job entity; `updateStage`/`mark*`
+ * first validate through the entity transitions so the domain owns the
+ * state machine while the adapter only persists the result.
+ */
+export function jobRowToJob(row: JobRow): Job {
+  return {
+    id: row.id,
+    url: row.url,
+    videoId: row.video_id,
+    lang: row.lang,
+    status: row.status,
+    stage: (STAGES as readonly (string | null | undefined)[]).includes(row.stage) ? (row.stage as Stage) : null,
+    progress: row.progress,
+    title: row.title,
+    error: row.error,
+    markdown: row.markdown,
+    createdAt: row.created_at,
+    claimedAt: row.claimed_at,
+    lastHeartbeatAt: row.last_heartbeat_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * SQLite JobStore adapter (phase 2A).
+ */
+export function createSqliteJobStore(db: DatabaseSync): JobStore {
+  return {
+    create(input) {
+      const videoId = input.videoId || extractVideoIdFromUrl(input.url);
+      createJobEntity({ id: input.id, url: input.url, videoId: videoId ?? null, lang: input.lang ?? null }, now());
+      const row = createJob(db, input.id, input.url, videoId, input.lang ?? null);
+      return row ? jobRowToJob(row) : null;
+    },
+    get(id) {
+      const row = getJob(db, id);
+      return row ? jobRowToJob(row) : null;
+    },
+    findExisting(videoId, lang) {
+      const row = findExistingJobByVideoId(db, videoId, lang);
+      return row ? jobRowToJob(row) : null;
+    },
+    claimNext() {
+      const row = claimNextJob(db);
+      return row ? jobRowToJob(row) : null;
+    },
+    reclaimStaleJobs(staleAfterMs) {
+      return reclaimStaleJobs(db, staleAfterMs);
+    },
+    updateStage(id, stage, progress) {
+      const row = getJob(db, id);
+      if (!row) return null;
+      updateJobStage(jobRowToJob(row), stage, progress, now());
+      updateStage(db, id, stage, progress);
+      const after = getJob(db, id);
+      return after ? jobRowToJob(after) : null;
+    },
+    heartbeat(id) {
+      const row = getJob(db, id);
+      if (!row) return null;
+      const job = jobRowToJob(row);
+      if (job.status !== STATUS.RUNNING) return job;
+      heartbeatJob(job, now());
+      heartbeat(db, id);
+      const after = getJob(db, id);
+      return after ? jobRowToJob(after) : job;
+    },
+    markDone(id, title, markdown) {
+      const row = getJob(db, id);
+      if (!row) return null;
+      markJobDone(jobRowToJob(row), title, markdown, now());
+      markDone(db, id, title, markdown);
+      const after = getJob(db, id);
+      return after ? jobRowToJob(after) : null;
+    },
+    markFailed(id, error, stage) {
+      const row = getJob(db, id);
+      if (!row) return null;
+      const knownStage = stage && (STAGES as readonly string[]).includes(stage) ? (stage as Stage) : null;
+      markJobFailed(jobRowToJob(row), error, knownStage, now());
+      markFailed(db, id, error, stage || null);
+      const after = getJob(db, id);
+      return after ? jobRowToJob(after) : null;
+    },
+    retryFailed(id) {
+      const row = getJob(db, id);
+      if (!row || row.status !== STATUS.FAILED) return null;
+      retryJob(jobRowToJob(row), now());
+      const retried = retryFailedJob(db, id);
+      return retried ? jobRowToJob(retried) : null;
+    },
+  };
 }

@@ -1,5 +1,8 @@
-import { OpenRouterSecretError, resolveOpenRouterKey as resolveFromShared } from '../../shared/secrets.ts';
+import { OpenRouterSecretError } from '../../application/ports/secret-store.ts';
+import { createOpenRouterSecretStore } from '../../shared/secrets.ts';
 import { StageError } from './process.ts';
+
+const secretStore = createOpenRouterSecretStore();
 
 /**
  * Resolve the OpenRouter API key.
@@ -10,7 +13,7 @@ import { StageError } from './process.ts';
  */
 export async function resolveOpenRouterKey(): Promise<string> {
   try {
-    const key = await resolveFromShared();
+    const key = await secretStore.resolveOpenRouterKey();
     if (key) return key;
   } catch (error) {
     if (error instanceof OpenRouterSecretError) {

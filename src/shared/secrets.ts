@@ -1,5 +1,9 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { OpenRouterSecretError, type SecretStore } from '../application/ports/secret-store.ts';
+
+export type { OpenRouterSecretErrorCode } from '../application/ports/secret-store.ts';
+export { OpenRouterSecretError };
 
 // Single contract for secret layout — podman secret → legacy GPG → env var
 // for the OpenRouter key. Downloads go through the Mullvad sidecar.
@@ -7,17 +11,12 @@ import fs from 'node:fs';
 const OPENROUTER_SECRET_PATH = '/run/secrets/openrouter_key';
 const OPENROUTER_LEGACY_GPG = '/secrets/openrouter.gpg';
 
-export type OpenRouterSecretErrorCode = 'invalid-secret' | 'decryption-failed';
-
-/** Stable failure type for OpenRouter credential resolution across module boundaries. */
-export class OpenRouterSecretError extends Error {
-  readonly code: OpenRouterSecretErrorCode;
-
-  constructor(message: string, code: OpenRouterSecretErrorCode, options?: ErrorOptions) {
-    super(message, options);
-    this.name = 'OpenRouterSecretError';
-    this.code = code;
-  }
+export interface OpenRouterSecretStoreOptions {
+  secretPath?: string;
+  legacyGpgPath?: string;
+  apiKey?: string;
+  gnupgHome?: string;
+  gpgTimeoutMs?: number;
 }
 
 /**
@@ -28,53 +27,66 @@ export class OpenRouterSecretError extends Error {
  * decryption fails — callers (worker layer) translate this at the stage boundary
  * so `shared` never depends on `worker`.
  */
-export async function resolveOpenRouterKey(): Promise<string | null> {
-  // 1) podman secret (rootless-friendly, tmpfs 0440)
-  if (fs.existsSync(OPENROUTER_SECRET_PATH)) {
-    const raw = fs.readFileSync(OPENROUTER_SECRET_PATH, 'utf8');
-    const key =
-      raw
-        .trim()
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .at(-1) || '';
-    if (!key) {
-      // empty file → treat as missing, fall through
-    } else if (key.includes('sk-or-missing')) {
-      // dummy placeholder from sync-secrets.sh → treat as missing
-    } else if (key.startsWith('sk-or-')) {
-      return key;
-    } else {
-      throw new OpenRouterSecretError(
-        `secret at ${OPENROUTER_SECRET_PATH} did not contain a valid sk-or- key`,
-        'invalid-secret',
-      );
-    }
-  }
+export function createOpenRouterSecretStore(options: OpenRouterSecretStoreOptions = {}): SecretStore {
+  const secretPath = options.secretPath ?? OPENROUTER_SECRET_PATH;
+  const legacyGpgPath = options.legacyGpgPath ?? OPENROUTER_LEGACY_GPG;
+  const gpgTimeoutMs = options.gpgTimeoutMs ?? 30_000;
+  const gnupgHome = options.gnupgHome ?? process.env.GNUPGHOME ?? '/run/gnupg';
+  return {
+    async resolveOpenRouterKey(): Promise<string | null> {
+      // 1) podman secret (rootless-friendly, tmpfs 0440)
+      if (fs.existsSync(secretPath)) {
+        const raw = fs.readFileSync(secretPath, 'utf8');
+        const key =
+          raw
+            .trim()
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .at(-1) || '';
+        if (!key) {
+          // empty file → treat as missing, fall through
+        } else if (key.includes('sk-or-missing')) {
+          // dummy placeholder from sync-secrets.sh → treat as missing
+        } else if (key.startsWith('sk-or-')) {
+          return key;
+        } else {
+          throw new OpenRouterSecretError(
+            `secret at ${secretPath} did not contain a valid sk-or- key`,
+            'invalid-secret',
+          );
+        }
+      }
 
-  // 2) legacy GPG path (bind mount, requires gnupg + keyring)
-  if (fs.existsSync(OPENROUTER_LEGACY_GPG)) {
-    return decryptViaGpg(OPENROUTER_LEGACY_GPG);
-  }
+      // 2) legacy GPG path (bind mount, requires gnupg + keyring)
+      if (fs.existsSync(legacyGpgPath)) {
+        return decryptViaGpg(legacyGpgPath, { timeoutMs: gpgTimeoutMs, gnupgHome });
+      }
 
-  // 3) env var escape hatch for local dev without podman
-  if (process.env.OPENROUTER_API_KEY?.startsWith('sk-or-')) {
-    return process.env.OPENROUTER_API_KEY.trim();
-  }
+      // 3) env var escape hatch for local dev without podman
+      const apiKey = options.apiKey !== undefined ? options.apiKey : process.env.OPENROUTER_API_KEY;
+      if (apiKey?.startsWith('sk-or-')) {
+        return apiKey.trim();
+      }
 
-  return null;
+      return null;
+    },
+  };
 }
 
-function decryptViaGpg(gpgPath: string): Promise<string> {
+export async function resolveOpenRouterKey(): Promise<string | null> {
+  return createOpenRouterSecretStore().resolveOpenRouterKey();
+}
+
+function decryptViaGpg(gpgPath: string, options: { timeoutMs: number; gnupgHome: string }): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const child = spawn('gpg', ['--quiet', '--batch', '--no-tty', '--decrypt', gpgPath], {
-      env: { ...process.env, GNUPGHOME: process.env.GNUPGHOME || '/run/gnupg' },
+      env: { ...process.env, GNUPGHOME: options.gnupgHome },
     });
     let stdout = '';
     let stderr = '';
     child.stdin.end();
-    const timeout = setTimeout(() => child.kill('SIGKILL'), 30_000);
+    const timeout = setTimeout(() => child.kill('SIGKILL'), options.timeoutMs);
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk;
     });

@@ -2,14 +2,15 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
+import type { Job, JobStatus } from '../domain/job/entity.ts';
 import { normalizeLang } from '../domain/lang.ts';
 import { extractVideoIdFromUrl, validateYouTubeUrl } from '../domain/youtube/validation.ts';
 import { config } from '../shared/config.ts';
-import type { JobRow } from '../shared/db.ts';
-import { createJob, findExistingJobByVideoId, getJob, openDatabase, retryFailedJob } from '../shared/db.ts';
+import { createSqliteJobStore, openDatabase } from '../shared/db.ts';
 
 const app = express();
 const db = openDatabase();
+const store = createSqliteJobStore(db);
 const publicDir = path.join(import.meta.dirname, 'public');
 
 app.disable('x-powered-by');
@@ -17,7 +18,7 @@ app.use(express.json({ limit: '16kb' }));
 
 interface PublicJob {
   jobId: string;
-  status: JobRow['status'];
+  status: JobStatus;
   stage: string | null;
   progress: number;
   title: string | null;
@@ -26,7 +27,7 @@ interface PublicJob {
   updatedAt: string;
 }
 
-function publicJob(job: JobRow | null): PublicJob | null {
+function publicJob(job: Job | null): PublicJob | null {
   if (!job) return null;
   return {
     jobId: job.id,
@@ -35,8 +36,8 @@ function publicJob(job: JobRow | null): PublicJob | null {
     progress: job.progress,
     title: job.title,
     error: job.error,
-    createdAt: job.created_at,
-    updatedAt: job.updated_at,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
   };
 }
 
@@ -52,16 +53,16 @@ app.post('/api/summarize', (req: Request<object, unknown, CreateBody>, res: Resp
   if (!lang) return res.status(400).json({ error: 'The output language must be a two-letter ISO 639-1 code.' });
   const url = (req.body.url as string).trim();
   const videoId = extractVideoIdFromUrl(url);
-  const existing = videoId ? findExistingJobByVideoId(db, videoId, lang) : null;
+  const existing = videoId ? store.findExisting(videoId, lang) : null;
   if (existing) {
     return res.status(200).json({ jobId: existing.id, deduped: true });
   }
-  const job = createJob(db, crypto.randomUUID(), url, videoId, lang);
+  const job = store.create({ id: crypto.randomUUID(), url, videoId, lang });
   return res.status(201).json({ jobId: job?.id });
 });
 
 app.get('/api/jobs/:id', (req: Request<{ id: string }>, res: Response) => {
-  const job = getJob(db, req.params.id);
+  const job = store.get(req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found.' });
   return res.json(publicJob(job));
 });
@@ -71,18 +72,18 @@ app.get('/api/jobs/:id', (req: Request<{ id: string }>, res: Response) => {
 // transcript.txt), so retrying does not pay again for completed stages.
 // 404 unknown, 409 when the job is not failed (queued/running/done).
 app.post('/api/jobs/:id/retry', (req: Request<{ id: string }>, res: Response) => {
-  const existing = getJob(db, req.params.id);
+  const existing = store.get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Job not found.' });
   if (existing.status !== 'failed') return res.status(409).json({ error: 'Only failed jobs can be retried.' });
-  // Conditional UPDATE inside retryFailedJob: if the job stopped being
+  // Conditional UPDATE inside store.retryFailed: if the job stopped being
   // failed between the check and the update, this is a no-op (null) → 409.
-  const retried = retryFailedJob(db, req.params.id);
+  const retried = store.retryFailed(req.params.id);
   if (!retried) return res.status(409).json({ error: 'Only failed jobs can be retried.' });
   return res.status(200).json(publicJob(retried));
 });
 
 app.get('/api/jobs/:id/result', (req: Request<{ id: string }>, res: Response) => {
-  const job = getJob(db, req.params.id);
+  const job = store.get(req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found.' });
   if (job.status !== 'done') return res.status(409).json({ error: job.error || 'This note is not ready yet.' });
   return res.json({
@@ -93,7 +94,7 @@ app.get('/api/jobs/:id/result', (req: Request<{ id: string }>, res: Response) =>
 });
 
 app.get('/api/jobs/:id/result.md', (req: Request<{ id: string }>, res: Response) => {
-  const job = getJob(db, req.params.id);
+  const job = store.get(req.params.id);
   if (!job) return res.status(404).type('text').send('Job not found.');
   if (job.status !== 'done')
     return res

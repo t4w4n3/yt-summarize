@@ -6,9 +6,11 @@
  * blocked imports fail the test with the exact violating dependency.
  *
  * Conventions under test:
- *  - src/domain/** is pure domain: no imports from application, worker/app/vpn/shared adapters.
+ *  - src/domain/** is pure domain: no imports from application, worker/app/vpn/shared adapters,
+ *    nor from the shared config/timeout readers.
  *  - src/application/** is use cases + ports: no imports from worker/app/vpn/infrastructure adapters,
- *    nor from the shared persistence (db) or config readers (phase-1 precursor of config injection).
+ *    nor from the shared persistence (db), config readers, or stage-timeout readers (phase-1 precursor of config injection).
+ *  - src/domain/** and src/application/** import no node built-ins.
  *  - src/app (inbound adapter) must not reach into worker internals.
  *  - shared is a bottom layer: must not depend upwards into app/worker/vpn.
  *  - src must not import test fixtures (tests/**, e2e/**).
@@ -19,11 +21,27 @@
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
 import { describe, it } from 'node:test';
 import { projectFiles } from 'archunit';
 
 function violationMessage(violations: unknown[]): string {
   return violations.map((v: unknown) => JSON.stringify(v, null, 2)).join('\n');
+}
+
+const NODE_BUILDIN_IMPORT = /from\s+['"]node:|import\s+['"]node:|import\(\s*['"]node:/;
+
+function tsFilesUnder(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (current: string): void => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.ts')) out.push(full);
+    }
+  };
+  walk(dir);
+  return out;
 }
 
 describe('architecture — layer dependencies (archunit)', () => {
@@ -57,6 +75,14 @@ describe('architecture — layer dependencies (archunit)', () => {
     assert.equal(violations.length, 0, `domain → application violations:\n${violationMessage(violations)}`);
   });
 
+  it('domain must not depend on the shared config or timeout readers', async () => {
+    for (const target of ['src/shared/config.ts', 'src/shared/timeouts.ts'] as const) {
+      const rule = projectFiles().inFolder('src/domain/**').shouldNot().dependOnFiles().inPath(target);
+      const violations = await rule.check();
+      assert.equal(violations.length, 0, `domain → ${target} violations:\n${violationMessage(violations)}`);
+    }
+  });
+
   it('domain must not depend on infrastructure adapters', async () => {
     // Activates in phase 2 when src/infrastructure/ first exists: archunit
     // reports "no files found" as a violation for an empty target glob.
@@ -78,8 +104,8 @@ describe('architecture — layer dependencies (archunit)', () => {
     }
   });
 
-  it('application must not depend on shared persistence or the config reader', async () => {
-    for (const target of ['src/shared/db.ts', 'src/shared/config.ts'] as const) {
+  it('application must not depend on shared persistence, config readers, or timeouts', async () => {
+    for (const target of ['src/shared/db.ts', 'src/shared/config.ts', 'src/shared/timeouts.ts'] as const) {
       const rule = projectFiles().inFolder('src/application/**').shouldNot().dependOnFiles().inPath(target);
       const violations = await rule.check();
       assert.equal(violations.length, 0, `application → ${target} violations:\n${violationMessage(violations)}`);
@@ -131,5 +157,22 @@ describe('architecture — layer dependencies (archunit)', () => {
     const rule = projectFiles().inFolder('src/**').should().haveNoCycles();
     const violations = await rule.check();
     assert.equal(violations.length, 0, `cycles in src/**:\n${violationMessage(violations)}`);
+  });
+
+  it('domain and application import no node built-ins', () => {
+    const offenders: string[] = [];
+    for (const dir of ['domain', 'application'] as const) {
+      for (const file of tsFilesUnder(path.join('src', dir))) {
+        const lines = fs.readFileSync(file, 'utf8').split('\n');
+        for (const [index, line] of lines.entries()) {
+          if (NODE_BUILDIN_IMPORT.test(line)) offenders.push(`${file}:${index + 1}: ${line.trim()}`);
+        }
+      }
+    }
+    assert.deepEqual(
+      offenders,
+      [],
+      `domain/application must be portable pure code; node: built-ins belong to adapters:\n${offenders.join('\n')}`,
+    );
   });
 });

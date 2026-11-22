@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { claimNextJob, getJob, heartbeat, type JobRow, markFailed, reclaimStaleJobs } from '../shared/db.ts';
+import type { JobStore } from '../application/ports/job-store.ts';
+import { createSqliteJobStore, getJob, type JobRow } from '../shared/db.ts';
 import { friendlyError, runPipeline, stageOf } from './pipeline.ts';
 
 export type SleepFn = (ms: number) => Promise<void>;
@@ -8,6 +9,8 @@ export type RunJobFn = (db: DatabaseSync, job: JobRow, signal: AbortSignal) => P
 
 export interface WorkerOptions {
   db: DatabaseSync;
+  /** JobStore port (defaults to the SQLite adapter over `db`). */
+  store?: JobStore;
   pollMs: number;
   staleAfterMs: number;
   jobTimeoutMs: number;
@@ -30,16 +33,22 @@ const HEARTBEAT_MS = 10_000;
 
 export function createWorker(opts: WorkerOptions): Worker {
   const { db } = opts;
+  const store = opts.store ?? createSqliteJobStore(db);
   const runJob: RunJobFn = opts.runJob ?? ((d, job, signal) => runPipeline(d, job, signal));
   const sleep: SleepFn = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   let stopping = false;
 
   async function runOnce(): Promise<boolean> {
     try {
-      const reclaimed = reclaimStaleJobs(db, opts.staleAfterMs);
+      const reclaimed = store.reclaimStaleJobs(opts.staleAfterMs);
       if (reclaimed) console.log(`Re-queued ${reclaimed} stale job(s)`);
 
-      const job = claimNextJob(db);
+      const claimedJob = store.claimNext();
+      if (!claimedJob) {
+        await sleep(opts.pollMs);
+        return false;
+      }
+      const job = getJob(db, claimedJob.id);
       if (!job) {
         await sleep(opts.pollMs);
         return false;
@@ -47,7 +56,7 @@ export function createWorker(opts: WorkerOptions): Worker {
 
       console.log(`Starting ${job.id}`);
       const controller = new AbortController();
-      const beat = setInterval(() => heartbeat(db, job.id), HEARTBEAT_MS);
+      const beat = setInterval(() => store.heartbeat(job.id), HEARTBEAT_MS);
       try {
         await runWithTimeout(() => runJob(db, job, controller.signal), opts.jobTimeoutMs, controller);
         console.log(`Completed ${job.id}`);
@@ -55,8 +64,8 @@ export function createWorker(opts: WorkerOptions): Worker {
         console.error(`Failed ${job.id}:`, error);
         // The claimed row carries stage=NULL; attribute the failure to the
         // stage the job was actually in when it stopped.
-        const current = getJob(db, job.id);
-        markFailed(db, job.id, friendlyError(error), stageOf(error) || current?.stage || job.stage);
+        const current = store.get(job.id);
+        store.markFailed(job.id, friendlyError(error), stageOf(error) || current?.stage || job.stage);
       } finally {
         clearInterval(beat);
         controller.abort();

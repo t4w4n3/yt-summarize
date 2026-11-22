@@ -24,7 +24,7 @@ import { describe, it } from 'node:test';
 
 const SRC = 'src';
 /** Directories that must reach their settings through shared/config. */
-const GUARDED_DIRS = ['worker', 'app', 'domain'] as const;
+const GUARDED_DIRS = ['worker', 'app', 'domain', 'application'] as const;
 
 /** A read: `process.env.X` or `process.env['X']`. A spread (`...process.env`) is not a read. */
 const ENV_READ = /process\.env(?:\.|\[)/;
@@ -43,7 +43,7 @@ function tsFilesUnder(dir: string): string[] {
 }
 
 describe('architecture — settings come from shared/config', () => {
-  it('worker, app and domain never read process.env directly', () => {
+  it('worker, app, domain and application never read process.env directly', () => {
     const offenders: string[] = [];
     for (const dir of GUARDED_DIRS) {
       for (const file of tsFilesUnder(path.join(SRC, dir))) {

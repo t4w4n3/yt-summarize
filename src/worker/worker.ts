@@ -1,10 +1,12 @@
 import { config } from '../shared/config.ts';
-import { closeDatabase, openDatabase } from '../shared/db.ts';
+import { closeDatabase, createSqliteJobStore, openDatabase } from '../shared/db.ts';
 import { createWorker } from './worker-core.ts';
 
 const db = openDatabase();
+const store = createSqliteJobStore(db);
 const worker = createWorker({
   db,
+  store,
   pollMs: config.pollMs,
   staleAfterMs: config.staleAfterMs,
   jobTimeoutMs: config.jobTimeoutMs,

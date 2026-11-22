@@ -68,7 +68,7 @@ services:
       - "artifacts:/artifacts"
     secrets:
       - "openrouter_key"
-    network_mode: "host"                      # host DNS/network; required on hosts without podman's aardvark-dns
+    network_mode: "host" # host DNS/network; required on hosts without podman's aardvark-dns
     restart: "unless-stopped"
     # Runs as non-root `node` (image default); no HTTP endpoint to probe.
     healthcheck:
@@ -96,7 +96,7 @@ services:
       SOCKS_HOST: "0.0.0.0"
       SOCKS_PORT: "1080"
     volumes:
-      - "${HOME}/.local/mullvad-poc:/mullvad:ro"  # config WireGuard (clé privée, 0600 sur l'hôte)
+      - "${HOME}/.local/mullvad-poc:/mullvad:ro" # config WireGuard (clé privée, 0600 sur l'hôte)
     # unless-stopped: le sidecar redémarre après reboot / SIGTERM (cf. bug
     # 2026-09-01 où on-failure + exit 0 empêchait le restart, laissant
     # 127.0.0.1:1080 fermé → "Connection refused" côté worker). Sans config

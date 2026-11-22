@@ -11,6 +11,7 @@ Summarize YT is a small, tactile desktop for one serious task: turning a video i
 The system is intentionally flat, high-contrast, and slightly physical without becoming nostalgic decoration. The acid-lime accent marks live state and the next useful action; it is never used as general ornament. Content remains the product: the input window gives the source and pipeline priority, while the note window is ready to become the largest reading surface.
 
 **Key Characteristics:**
+
 - Black ink, paper white, ordered dither, and one acid-lime live state.
 - One-pixel desktop geometry: rectangular windows, title bars, square controls.
 - Monospace operational copy paired with a pixel display face for window titles.
@@ -21,9 +22,11 @@ The system is intentionally flat, high-contrast, and slightly physical without b
 The palette is restrained and binary first; lime is the single signal color and red is reserved for recovery.
 
 ### Primary
+
 - **Acid Lime** (`#d9ff3f`): Primary action, active pipeline step, live status LED, and selected output state.
 
 ### Neutral
+
 - **Workstation Paper** (`#f4f4f0`): Dithered desktop ground.
 - **Window White** (`#fbfbf8`): App surfaces, inputs, and raised paper windows.
 - **Black Ink** (`#11110f`): Text, rules, borders, pressed controls, and high-salience status.
@@ -33,6 +36,7 @@ The palette is restrained and binary first; lime is the single signal color and 
 - **Recovery Red** (`#b11818`): Invalid URL and failed worker states only.
 
 ### Named Rules
+
 **The One Signal Rule.** Lime means current, ready, or actionable. It does not decorate inactive surfaces.
 
 ## Typography
@@ -44,12 +48,14 @@ The palette is restrained and binary first; lime is the single signal color and 
 **Character:** Operational copy is compact, legible, and machine-like. Pixel titles are reserved for window names and important section headings, creating a clear layer above the readable workhorse text.
 
 ### Hierarchy
+
 - **Display** (regular, 12px, 1.2): Window titles and compact section headings.
 - **Title** (600, 15px, 1.3): Rendered note title.
 - **Body** (regular, 13px, 1.45): Instructions, supporting explanation, and note prose; keep reading blocks around 65–75ch.
 - **Label** (600, 10px, 1.2, tracked uppercase): Field labels, stage names, metadata, and status text.
 
 ### Named Rules
+
 **The Readable Machine Rule.** Pixel type establishes the workstation; body copy stays in the monospace workhorse face and does not sacrifice legibility for theme.
 
 ## Layout
@@ -63,11 +69,13 @@ The primary app window uses a two-column split: source and four-stage pipeline o
 Depth is structural and pixel-native, not glossy. Surfaces are flat at rest and gain a soft offset shadow to separate the central window from the stippled desktop. Title-bar hatching, borders, and overlapping rectangles carry most of the hierarchy.
 
 ### Shadow Vocabulary
+
 - **Primary window lift** (`7px 7px 0 rgba(17, 17, 15, .18)`): Separates the app window from the desktop.
 - **Utility window lift** (`5px 5px 0 rgba(17, 17, 15, .13)`): Separates small background and shortcut windows.
 - **Action hover lift** (`3px 3px 0 #11110f`): A short state response on interactive buttons only.
 
 ### Named Rules
+
 **The Window Rule.** A shadow belongs to a window or a direct action state; never add floating-card shadows to ordinary content blocks.
 
 ## Shapes
@@ -77,12 +85,14 @@ All controls and windows use square corners (`0`). Borders are black and general
 ## Components
 
 ### Buttons
+
 - **Shape:** Square, bordered, tactile (`0` radius, 2px ink border).
 - **Primary:** Acid-lime surface with ink text; `42px` minimum height and compact horizontal padding.
 - **Hover / Focus:** Hover lifts by one pixel with a small black offset shadow; focus uses a 3px lime outline with 3px offset.
 - **Active / Disabled:** Active inverts to black and removes the offset; disabled uses dither gray and does not move.
 
 ### Cards / Containers
+
 - **Corner Style:** Square, no rounding.
 - **Background:** Window White on the paper desktop.
 - **Shadow Strategy:** Use the window shadow vocabulary only for actual windows.
@@ -90,21 +100,25 @@ All controls and windows use square corners (`0`). Borders are black and general
 - **Internal Padding:** 30px desktop, 18px mobile.
 
 ### Inputs / Fields
+
 - **Style:** Window White fill, 2px ink stroke, square corners, monospace 12px text.
 - **Focus:** White surface with a 3px lime keyboard outline and 3px offset.
 - **Error / Disabled:** Error switches the stroke and message to Recovery Red; busy inputs disable without changing their geometry.
 
 ### Navigation
+
 - **Style:** Sticky, 43px menu bar with a bottom ink rule, compact uppercase controls, and a workstation LED.
 - **State:** Menu actions are text-first and underline on hover; the status area remains quiet and informational.
 - **Mobile:** Secondary menu commands hide while the product name and local-workstation status stay visible.
 
 ### Pipeline Track
+
 The four stages are a horizontal line of numbered square nodes: Download, Convert, Transcribe, Summarize. The current node becomes lime and underlines its label; completed nodes invert to black. On narrow screens, supporting descriptions disappear but the stage sequence remains.
 
 ## Do's and Don'ts
 
 ### Do:
+
 - **Do** use the black/white/dither foundation before reaching for lime.
 - **Do** make the current pipeline stage and recovery message explicit in words, not only color.
 - **Do** preserve the square window grammar across forms, buttons, inputs, and status surfaces.
@@ -112,6 +126,7 @@ The four stages are a horizontal line of numbered square nodes: Download, Conver
 - **Do** use the lime accent for action, selection, and live state.
 
 ### Don't:
+
 - **Don't** introduce gradients, rounded cards, glass effects, or soft dashboard tiles.
 - **Don't** use pixel type for long-form note copy, helper text, or error explanations.
 - **Don't** use acid lime as ambient decoration or apply it to inactive controls.

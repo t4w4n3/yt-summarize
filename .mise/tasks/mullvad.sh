@@ -63,7 +63,9 @@ podman_vpn_run() {
     exit 1
   }
   mkdir -p "$OUT_DIR"
-  podman run --rm \
+  # --user root: wg-quick exige root (auto_su via sudo, absent de l'image).
+  # L'image projet a USER node (non-root); sans root le tunnel ne se monte pas.
+  podman run --rm --user root \
     --cap-add NET_ADMIN \
     --device /dev/net/tun \
     --dns "$VPN_DNS" \
@@ -158,7 +160,7 @@ AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25
 EOF
   echo ">> Container test: wg-quick up + vérification du routage (sans compte Mullvad)"
-  podman run --rm \
+  podman run --rm --user root \
     --cap-add NET_ADMIN \
     --device /dev/net/tun \
     --dns "$VPN_DNS" \
@@ -245,7 +247,7 @@ PersistentKeepalive = 25
 EOF
     local RESULT CODE EXIT
     # shellcheck disable=SC2016  # intentional: no host expansion wanted inside the test container
-    RESULT="$(timeout 60 podman run --rm --cap-add NET_ADMIN --device /dev/net/tun --dns "$VPN_DNS" \
+    RESULT="$(timeout 60 podman run --rm --user root --cap-add NET_ADMIN --device /dev/net/tun --dns "$VPN_DNS" \
       -v "$TMP:/cfg/wg0.conf:ro" "$(pick_image)" \
       sh -c 'wg-quick up /cfg/wg0.conf >/dev/null 2>&1 || exit 2
         EXIT=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null)

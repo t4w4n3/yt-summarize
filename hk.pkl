@@ -1,4 +1,4 @@
-amends "package://github.com/jdx/hk/releases/download/v1.56.1/hk@1.56.1#/Config.pkl"
+amends "package://github.com/jdx/hk/releases/download/v2.11.1/hk@2.11.1#/Config.pkl"
 
 // hk (jdx) — git hook manager, intégré avec mise via HK_MISE=1 (mise.toml [env])
 // `mise install` → [hooks].postinstall = "hk install --mise" installe les hooks git

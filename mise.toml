@@ -1,22 +1,22 @@
 # Development toolchain, managed by mise.
 # `mise install` / `mise run <task>` ensures this version is available to every task.
-# Keep node in sync with image/Dockerfile (node:24-bookworm-slim) and package.json engines (>=24).
+# Keep node in sync with image/Dockerfile (node:26-trixie-slim) and package.json engines (>=26).
 # Keep pnpm in sync with package.json packageManager and the pnpm install line in image/Dockerfile.
 [tools]
-node = "24.18.1"
-pnpm = "11.21.0"
+node = "26.13.1"
+pnpm = "12.21.0"
 # Lint toolchain — used by the `lint*` mise tasks.
-"npm:@biomejs/biome" = "2.5.7" # JS/TS/JSON: lint + format
+"npm:@biomejs/biome" = "2.6.6" # JS/TS/JSON: lint + format
 shellcheck = "0.11.0"          # shell scripts
-shfmt = "3.12.0"               # shell formatting
-pipx = "1.8.0"                 # backend for yamllint
-yamllint = "1.37.1"            # YAML files
-hadolint = "2.12.0"            # Containerfiles/Dockerfiles
-trivy = "0.73.0"               # security scanner: vulns, secrets, misconfig
+shfmt = "3.14.1"               # shell formatting
+pipx = "1.18.16"               # backend for yamllint
+yamllint = "1.38.0"            # YAML files
+hadolint = "2.15.1"            # Containerfiles/Dockerfiles
+trivy = "0.76.2"               # security scanner: vulns, secrets, misconfig
 gitleaks = "8.30.1"            # secrets scanner (worktree + git history)
 # Git hooks — hk (jdx) + pkl (config language for hk.pkl)
-hk = "1.56.1"
-pkl = "0.32.1"
+hk = "2.11.1"
+pkl = "0.33.0"
 
 [env]
 # hk s'intègre avec mise : `hk install --mise` wrappe les hooks avec `mise x`

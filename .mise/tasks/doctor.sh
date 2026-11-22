@@ -22,10 +22,10 @@ fi
 
 echo "toolchain (provided by mise):"
 NODE_MAJOR="$(node --version 2>/dev/null | sed 's/^v\([0-9]*\).*/\1/')"
-if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 24 ]; then
-  ok "node $(node --version) (>= 24 required)"
+if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 26 ]; then
+  ok "node $(node --version) (>= 26 required)"
 else
-  warn "node >= 24 required, got $(node --version 2>/dev/null || echo 'none')"
+  warn "node >= 26 required, got $(node --version 2>/dev/null || echo 'none')"
   fail=1
 fi
 if pnpm --version >/dev/null 2>&1; then

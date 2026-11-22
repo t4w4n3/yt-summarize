@@ -548,6 +548,7 @@ input[type="url"][aria-invalid="true"] {
 .markdown-body li {
   margin: 3px 0;
 }
+/* biome-ignore lint/style/noDescendingSpecificity: .markdown-body strong sets font-weight only, no overlap with .pipeline-step.is-active strong (text-decoration) */
 .markdown-body strong {
   font-weight: 600;
 }
@@ -735,6 +736,7 @@ kbd {
   flex-wrap: wrap;
   min-width: 0;
 }
+/* biome-ignore lint/style/noDescendingSpecificity: .resume-text strong sets font-size only, no overlap with .pipeline-step.is-active strong (text-decoration) */
 .resume-text strong {
   font-size: 10px;
   white-space: nowrap;

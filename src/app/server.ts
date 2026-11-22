@@ -4,7 +4,14 @@ import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
 import { config } from '../shared/config.ts';
 import type { JobRow } from '../shared/db.ts';
-import { createJob, extractVideoIdFromUrl, findExistingJobByVideoId, getJob, openDatabase } from '../shared/db.ts';
+import {
+  createJob,
+  extractVideoIdFromUrl,
+  findExistingJobByVideoId,
+  getJob,
+  openDatabase,
+  retryFailedJob,
+} from '../shared/db.ts';
 
 const app = express();
 const db = openDatabase();
@@ -120,6 +127,21 @@ app.get('/api/jobs/:id', (req: Request<{ id: string }>, res: Response) => {
   const job = getJob(db, req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found.' });
   return res.json(publicJob(job));
+});
+
+// Re-queue a failed job. The worker's pipeline resumes from the artifacts
+// already on disk (downloaded audio, audio.wav, chunk transcripts,
+// transcript.txt), so retrying does not pay again for completed stages.
+// 404 unknown, 409 when the job is not failed (queued/running/done).
+app.post('/api/jobs/:id/retry', (req: Request<{ id: string }>, res: Response) => {
+  const existing = getJob(db, req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Job not found.' });
+  if (existing.status !== 'failed') return res.status(409).json({ error: 'Only failed jobs can be retried.' });
+  // Conditional UPDATE inside retryFailedJob: if the job stopped being
+  // failed between the check and the update, this is a no-op (null) → 409.
+  const retried = retryFailedJob(db, req.params.id);
+  if (!retried) return res.status(409).json({ error: 'Only failed jobs can be retried.' });
+  return res.status(200).json(publicJob(retried));
 });
 
 app.get('/api/jobs/:id/result', (req: Request<{ id: string }>, res: Response) => {

@@ -225,6 +225,27 @@ export function markFailed(db: DatabaseSync, id: string, error: string, stage: s
   ).run(STATUS.FAILED, stage || null, error, timestamp, id, STATUS.RUNNING);
 }
 
+/**
+ * Re-queue a failed job so the worker picks it up again. Only `failed` rows
+ * are eligible: the conditional UPDATE makes a second concurrent retry (or a
+ * retry racing the worker) a no-op returning null instead of double-queueing.
+ * Error/stage/progress/lease are cleared exactly like a stale reclaim, while
+ * url/video_id/lang/title and the artifacts on disk are preserved — the
+ * pipeline resumes from those artifacts instead of paying for them again.
+ * Returns the re-queued row, or null when the job is unknown or not failed.
+ */
+export function retryFailedJob(db: DatabaseSync, id: string): JobRow | null {
+  const timestamp = now();
+  const result = db
+    .prepare(
+      `UPDATE jobs SET status = ?, stage = NULL, progress = 0, error = NULL,
+        claimed_at = NULL, last_heartbeat_at = NULL, updated_at = ?
+       WHERE id = ? AND status = ?`,
+    )
+    .run(STATUS.QUEUED, timestamp, id, STATUS.FAILED);
+  return Number(result.changes) === 1 ? getJob(db, id) : null;
+}
+
 export function closeDatabase(db: DatabaseSync): void {
   db.close();
 }

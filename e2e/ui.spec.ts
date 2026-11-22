@@ -212,6 +212,55 @@ test('surfaces a failed job and offers a reset', async ({ page }) => {
   await expect(page.locator('#footer-state')).toHaveText('IDLE');
 });
 
+test('retries a failed job from the error panel and resumes polling', async ({ page }) => {
+  await gotoWithClock(page);
+  let retryPosts = 0;
+  const states = [
+    { status: 'failed', error: 'The summarizer could not resolve the OpenRouter credential.' },
+    { status: 'queued' },
+    { status: 'running', stage: 'summarizing', progress: 100 },
+    { status: 'done' },
+  ];
+  let pollIndex = 0;
+  page.route('**/api/summarize', (route) =>
+    route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ jobId: JOB_ID }) }),
+  );
+  page.route(`**/api/jobs/${JOB_ID}/retry`, (route) => {
+    retryPosts += 1;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ jobId: JOB_ID, status: 'queued', stage: null, progress: 0, error: null }),
+    });
+  });
+  page.route(`**/api/jobs/${JOB_ID}`, (route) => {
+    const state = states[Math.min(pollIndex, states.length - 1)] ?? {};
+    pollIndex += 1;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state) });
+  });
+  page.route(`**/api/jobs/${JOB_ID}/result`, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(RESULT) }),
+  );
+
+  await page.fill('#video-url', VALID_URL);
+  await page.click('#submit-button');
+  await expect(page.locator('#output-error')).toBeVisible();
+  await expect(page.locator('#retry-button')).toBeVisible();
+  await expect(page.locator('#video-url')).toBeEnabled();
+
+  await page.click('#retry-button');
+  expect(retryPosts, 'clicking RETRY must POST the retry endpoint exactly once').toBe(1);
+  await expect(page.locator('#output-error')).toBeHidden();
+  await expect(page.locator('#output-loading')).toBeVisible();
+  await expect(page.locator('#queue-state')).toHaveText('1 QUEUED');
+
+  await page.clock.fastForward(2000);
+  await expect(page.locator('#status-message')).toHaveText(/SUMMARIZING/);
+  await page.clock.fastForward(2000);
+  await expect(page.locator('#note-content')).toBeVisible();
+  await expect(page.locator('#footer-state')).toHaveText('DONE');
+});
+
 test('shows the server error when job creation is rejected', async ({ page }) => {
   await gotoWithClock(page);
   installJobMock(page, {

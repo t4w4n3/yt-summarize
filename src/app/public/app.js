@@ -18,6 +18,7 @@
   const noteTitle = document.querySelector('#note-title');
   const outputSubtitle = document.querySelector('#output-subtitle');
   const downloadButton = document.querySelector('#download-button');
+  const retryButton = document.querySelector('#retry-button');
   const sampleButton = document.querySelector('#sample-button');
   const toast = document.querySelector('#toast');
   const steps = [...document.querySelectorAll('.pipeline-step')];
@@ -388,7 +389,7 @@ A good study note keeps the shape of an idea visible after the video is gone. It
       window.clearInterval(pollTimer);
       pollTimer = null;
       if (job.status === 'done') return finish(job);
-      showError(job.error || 'The worker stopped before the note was ready.');
+      showError(job.error || 'The worker stopped before the note was ready.', true);
     } catch (error) {
       if (errorStatus(error) === 404) {
         window.clearInterval(pollTimer);
@@ -445,17 +446,43 @@ A good study note keeps the shape of an idea visible after the video is gone. It
     }
   }
 
-  function showError(message) {
+  function showError(message, retryable = false) {
     setBusy(false);
     loading.hidden = true;
     emptyNote.hidden = true;
     noteContent.hidden = true;
     errorPanel.hidden = false;
+    if (retryButton) retryButton.hidden = !retryable || !currentJobId;
     errorCopy.textContent = message;
     queueState.textContent = 'FAILED';
     footerState.textContent = 'ERROR';
     statusMessage.textContent = 'ERROR — try another source';
     showToast('The note could not be completed.');
+  }
+
+  async function retryJob() {
+    if (!currentJobId) return;
+    errorPanel.hidden = true;
+    emptyNote.hidden = true;
+    noteContent.hidden = true;
+    loading.hidden = false;
+    hideResumeBar();
+    setBusy(true);
+    consecutivePollFailures = 0;
+    statusMessage.textContent = 'QUEUED — retry, resuming from saved steps';
+    queueState.textContent = '1 QUEUED';
+    footerState.textContent = 'QUEUED';
+    loadingCopy.textContent = 'QUEUED — reprise depuis les étapes déjà faites…';
+    try {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(currentJobId)}/retry`, { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not retry this job.');
+      if (pollTimer) window.clearInterval(pollTimer);
+      pollTimer = window.setInterval(pollStatus, POLL_INTERVAL_MS);
+      await pollStatus();
+    } catch (error) {
+      showError(errorMessage(error));
+    }
   }
 
   function download() {
@@ -546,7 +573,7 @@ A good study note keeps the shape of an idea visible after the video is gone. It
       // failed
       window.clearInterval(pollTimer);
       pollTimer = null;
-      showError(job.error || 'Le run précédent a échoué.');
+      showError(job.error || 'Le run précédent a échoué.', true);
       showResumeBar(stored, 'Run précédent en erreur —');
       setBusy(false);
     } catch (error) {
@@ -568,6 +595,7 @@ A good study note keeps the shape of an idea visible after the video is gone. It
 
   form.addEventListener('submit', submit);
   downloadButton.addEventListener('click', download);
+  if (retryButton) retryButton.addEventListener('click', retryJob);
   sampleButton.addEventListener('click', showSample);
   if (resumeForget) resumeForget.addEventListener('click', forgetResume);
   if (jobRef) {

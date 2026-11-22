@@ -26,6 +26,7 @@ import {
   markDone,
   markFailed,
   reclaimStaleJobs,
+  retryFailedJob,
   updateStage,
 } from '../../src/shared/db.ts';
 
@@ -228,6 +229,36 @@ describe('shared db — job lifecycle state machine', () => {
     createJob(other, 'r2', 'https://youtu.be/R2R2R2R2R2R', 'vidr', 'en');
     claimNextJob(other);
     assert.equal(findExistingJobByVideoId(other, 'vidr', 'en')?.id, 'r1');
+  });
+
+  it('retryFailedJob re-queues a failed job and clears its error/stage/progress/lease', () => {
+    const d = freshDb();
+    createJob(d, 'rt', 'https://youtu.be/RTRTRTRTRTR');
+    claimNextJob(d);
+    updateStage(d, 'rt', 'summarizing', 70);
+    markFailed(d, 'rt', 'boom', 'summarizing');
+    const retried = retryFailedJob(d, 'rt');
+    assert.ok(retried, 'failed job rt must be retryable');
+    assert.equal(retried.status, 'queued', `rt status ${retried.status} must be queued after retry`);
+    assert.equal(retried.error, null, `rt error ${retried.error} must be cleared after retry`);
+    assert.equal(retried.stage, null, `rt stage ${retried.stage} must be cleared after retry`);
+    assert.equal(retried.progress, 0, `rt progress ${retried.progress} must reset to 0 after retry`);
+    assert.equal(retried.claimed_at, null, 'rt claimed_at must be cleared after retry');
+    assert.equal(retried.last_heartbeat_at, null, 'rt last_heartbeat_at must be cleared after retry');
+    assert.equal(getJob(d, 'rt')?.status, 'queued');
+  });
+
+  it('retryFailedJob returns null and leaves non-failed jobs untouched', () => {
+    const d = freshDb();
+    createJob(d, 'q1', 'https://youtu.be/Q1Q1Q1Q1Q1Q');
+    assert.equal(retryFailedJob(d, 'q1'), null, 'queued job q1 must not be retryable');
+    assert.equal(getJob(d, 'q1')?.status, 'queued');
+    claimNextJob(d);
+    assert.equal(retryFailedJob(d, 'q1'), null, 'running job q1 must not be retryable');
+    markDone(d, 'q1', 't', 'md');
+    assert.equal(retryFailedJob(d, 'q1'), null, 'done job q1 must not be retryable');
+    assert.equal(getJob(d, 'q1')?.status, 'done');
+    assert.equal(retryFailedJob(d, 'missing'), null, 'unknown job must not be retryable');
   });
 
   it('closeDatabase closes without throwing', () => {

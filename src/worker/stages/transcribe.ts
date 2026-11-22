@@ -410,6 +410,36 @@ export async function splitWavManual(wavPath: string, chunkDir: string, chunkDur
   }
 }
 
+/** Sidecar holding one chunk's paid transcript (`chunk_000.wav` → `chunk_000.txt`). */
+function chunkTranscriptPath(chunkPath: string): string {
+  return chunkPath.endsWith('.wav') ? `${chunkPath.slice(0, -4)}.txt` : `${chunkPath}.txt`;
+}
+
+/** Non-blank cached transcript for a chunk, or undefined when it still needs paying for. */
+function readCachedChunkTranscript(chunkPath: string): string | undefined {
+  try {
+    const text = fs.readFileSync(chunkTranscriptPath(chunkPath), 'utf8').trim();
+    return text ? text : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** True when a previous attempt already paid for at least one chunk of this job. */
+function hasCachedChunkTranscripts(jobDir: string): boolean {
+  try {
+    return fs
+      .readdirSync(path.join(jobDir, 'chunks'))
+      .some(
+        (name) =>
+          name.endsWith('.txt') &&
+          readCachedChunkTranscript(path.join(jobDir, 'chunks', name.replace(/\.txt$/, '.wav'))) !== undefined,
+      );
+  } catch {
+    return false;
+  }
+}
+
 export async function transcribe(wavPath: string, context: TranscribeContext): Promise<string> {
   const resolveKey = context.resolveKey ?? openrouter.resolveOpenRouterKey;
   const apiKey = await resolveKey();
@@ -446,8 +476,14 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
     const initial = chooseInitialStrategy(statSize);
 
     let text: string | null = null;
+    // Retry resume: a previous attempt that reached chunking already proved
+    // the whole-file strategies do not fit this audio — do not pay for those
+    // doomed requests again; go straight back to the chunk loop, where the
+    // per-chunk sidecars below reuse what was already transcribed.
+    const resumeChunks = hasCachedChunkTranscripts(context.jobDir);
+    if (resumeChunks) appendLog(context.logPath, 'cached chunk transcripts found, resuming in chunk mode');
 
-    if (initial === 'multipart') {
+    if (!resumeChunks && initial === 'multipart') {
       const attempt = await retried(() => stt.attemptMultipart(wavPath, apiKey, signal));
       if (attempt.ok) {
         text = attempt.text;
@@ -465,7 +501,7 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
       }
     }
 
-    if (text === null) {
+    if (!resumeChunks && text === null) {
       // For large files or small files that got 413, try base64 JSON.
       const attempt = await retried(() => stt.attemptBase64(wavPath, apiKey, signal));
       if (attempt.ok) {
@@ -494,6 +530,12 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
       appendLog(context.logPath, `split into ${chunkPaths.length} chunk(s), transcribing sequentially`);
       const parts: string[] = [];
       for (const chunkPath of chunkPaths) {
+        const cached = readCachedChunkTranscript(chunkPath);
+        if (cached !== undefined) {
+          appendLog(context.logPath, `reusing cached transcript for chunk ${path.basename(chunkPath)}`);
+          parts.push(cached);
+          continue;
+        }
         appendLog(context.logPath, `transcribing chunk ${path.basename(chunkPath)}`);
         const chunkAttempt = await retried(() => stt.attemptMultipart(chunkPath, apiKey, signal));
         if (!chunkAttempt.ok || !chunkAttempt.text) {
@@ -503,6 +545,11 @@ export async function transcribe(wavPath: string, context: TranscribeContext): P
             chunkAttempt.errorDetails || `empty chunk ${path.basename(chunkPath)}`,
           );
         }
+        // Persist each chunk's transcript immediately: if a later chunk
+        // fails, a retry reuses this one instead of paying for it again.
+        try {
+          fs.writeFileSync(chunkTranscriptPath(chunkPath), `${chunkAttempt.text}\n`, 'utf8');
+        } catch {}
         parts.push(chunkAttempt.text);
       }
       text = joinTranscriptParts(parts);

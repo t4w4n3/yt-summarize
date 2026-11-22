@@ -160,6 +160,7 @@ Runtime settings live in `.env` (created by `mise run setup`; see `.env.example`
 
 - `POST /api/summarize` with `{ "url": "https://youtu.be/...", "lang": "fr" }` — `lang` is an optional two-letter ISO 639-1 code for the note's language (default `en`; the UI pre-selects the browser locale). Responses: `201 { jobId }` for a new job, `200 { jobId, deduped: true }` when the same video + language already has a job, `400 { error }` for an invalid URL or language.
 - `GET /api/jobs/:id` — `200 { jobId, status, stage, progress, title, error, createdAt, updatedAt }`, `404 { error }` when unknown. `status` is `queued`, `running`, `done`, or `failed`; `stage` is one of `downloading`, `converting`, `transcribing`, `summarizing`.
+- `POST /api/jobs/:id/retry` — re-queue a failed job (`200` with the job in `queued` status, error/stage/progress cleared), `404 { error }` when unknown, `409 { error }` when the job is not failed. The worker resumes from the artifacts already on disk (downloaded audio, `audio.wav`, per-chunk transcripts, `transcript.txt`), so completed stages are not paid for again.
 - `GET /api/jobs/:id/result` — `200 { title, markdown, wordCount }` when done, `404 { error }` when unknown, `409 { error }` while the note is not ready yet.
 - `GET /api/jobs/:id/result.md` — the note as a Markdown file attachment (filename derived from the title), `404` when unknown, `409` while not ready yet.
 
@@ -170,7 +171,7 @@ Runtime settings live in `.env` (created by `mise run setup`; see `.env.example`
 One container image runs as three compose services sharing two named volumes:
 
 - **app** — Express server on `:8080` (loopback-only): REST API + static single-page UI. Never executes pipeline tools, never calls OpenRouter.
-- **worker** — poll loop (`WORKER_POLL_MS`): claims the next queued job, sends heartbeats, runs the four stages one job at a time with per-stage timeouts (downloading 10 min, converting 15 min, transcribing 25 min, summarizing 10 min), then marks the job done or failed with a per-stage error. Temporary files are cleaned after each job; the transcript and the summary are kept.
+- **worker** — poll loop (`WORKER_POLL_MS`): claims the next queued job, sends heartbeats, runs the four stages one job at a time with per-stage timeouts (downloading 10 min, converting 15 min, transcribing 25 min, summarizing 10 min), then marks the job done or failed with a per-stage error. Temporary files are cleaned after a successful job; after a failure the completed-stage artifacts are kept so the job can be retried without paying for them again (see Retry below), and the transcript and the summary are always kept.
 - **vpn** — WireGuard tunnel in its own network namespace plus a loopback-only SOCKS5 proxy (`127.0.0.1:1080`). Only yt-dlp's traffic exits through it; DNS is resolved inside the tunnel.
 
 Pipeline per job:
@@ -178,6 +179,8 @@ Pipeline per job:
 `yt-dlp (bestaudio, --no-playlist) → ffmpeg (16 kHz mono PCM WAV) → OpenRouter STT API → OpenRouter chat API (study-note prompt) → rendered Markdown`
 
 The app and worker share only the SQLite job database and the artifacts volume. Stale running jobs (no heartbeat for `STALE_AFTER_MS`, e.g. after a worker restart) return to the queue; jobs exceeding `JOB_TIMEOUT_MS` fail.
+
+**Retry without paying twice.** When a job fails, only the failed stage's partial output is dropped; completed-stage artifacts stay in the job directory (downloaded audio, `audio.wav`, `chunks/` with one transcript sidecar per transcribed chunk, `transcript.txt`). `POST /api/jobs/:id/retry` (or the RETRY button in the UI error panel) re-queues the failed job, and the pipeline probes those artifacts at startup: a valid `transcript.txt` resumes at summarizing, a valid `audio.wav` at transcribing (already-transcribed chunks are reused, including skipping the whole-file STT attempts that previously proved too large), and downloaded audio at converting. On success the bulky intermediates are cleaned up as before; on failure they are kept for the next retry.
 
 ### Study note structure
 

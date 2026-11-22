@@ -116,7 +116,7 @@ describe('pipeline — orchestration (injected fakes)', () => {
     db = freshDb();
     const job = makeJob(db, 'happy', null);
     const fakes = makeFakes();
-    const audio = fakes.files[0] as string;
+    const audio = path.join(jobDir('happy'), 'audio.m4a');
 
     await pipelineMod.runPipeline(db, job, new AbortController().signal, fakes);
 
@@ -190,16 +190,135 @@ describe('pipeline — orchestration (injected fakes)', () => {
     });
   });
 
-  it('cleans up partial files in finally when a later stage fails', async () => {
+  it('keeps the downloaded audio in finally when convert fails (retry resumes from it)', async () => {
     db = freshDb();
     const job = makeJob(db, 'clean', null);
     const fakes = makeFakes();
-    const producedAudio = fakes.files[0] as string;
+    const producedAudio = path.join(jobDir('clean'), 'audio.m4a');
     fakes.convert = async () => {
       throw new Error('explode');
     };
     await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes));
-    assert.ok(!fs.existsSync(producedAudio));
+    // Intentional change for retry: completed-stage artifacts survive a
+    // failure so a retry does not pay for them again; only the failed
+    // stage's partial output is dropped (see 'keep-audio' case above).
+    assert.ok(fs.existsSync(producedAudio), 'downloaded audio must survive a convert failure for retry resume');
+  });
+
+  it('resume: existing transcript.txt skips download/convert/transcribe and reuses the .title', async () => {
+    db = freshDb();
+    const job = makeJob(db, 'resume-t', null);
+    fs.mkdirSync(jobDir('resume-t'), { recursive: true });
+    fs.writeFileSync(path.join(jobDir('resume-t'), 'transcript.txt'), 'already transcribed text');
+    fs.writeFileSync(path.join(jobDir('resume-t'), '.title'), 'Cached title');
+    const fakes = makeFakes();
+    await pipelineMod.runPipeline(db, job, new AbortController().signal, fakes);
+    assert.deepEqual(fakes.calls, ['summarize'], `calls ${fakes.calls} must skip paid stages when transcript exists`);
+    const row = dbMod.getJob(db, 'resume-t');
+    assert.equal(row?.status, 'done');
+    assert.equal(row?.title, 'Cached title', `title ${row?.title} must come from the cached .title file`);
+  });
+
+  it('resume: existing valid audio.wav skips download/convert only', async () => {
+    db = freshDb();
+    const job = makeJob(db, 'resume-w', null);
+    fs.mkdirSync(jobDir('resume-w'), { recursive: true });
+    const wav = Buffer.alloc(100);
+    wav.write('RIFF', 0);
+    wav.write('WAVE', 8);
+    fs.writeFileSync(path.join(jobDir('resume-w'), 'audio.wav'), wav);
+    fs.writeFileSync(path.join(jobDir('resume-w'), '.title'), 'Wav title');
+    const fakes = makeFakes();
+    await pipelineMod.runPipeline(db, job, new AbortController().signal, fakes);
+    assert.deepEqual(fakes.calls, ['transcribe', 'summarize'], `calls ${fakes.calls} must resume from audio.wav`);
+    assert.equal(dbMod.getJob(db, 'resume-w')?.title, 'Wav title');
+  });
+
+  it('resume: existing downloaded audio skips download only', async () => {
+    db = freshDb();
+    const job = makeJob(db, 'resume-a', null);
+    fs.mkdirSync(jobDir('resume-a'), { recursive: true });
+    fs.writeFileSync(path.join(jobDir('resume-a'), 'audio.m4a'), 'audio');
+    fs.writeFileSync(path.join(jobDir('resume-a'), '.title'), 'Audio title');
+    const fakes = makeFakes();
+    await pipelineMod.runPipeline(db, job, new AbortController().signal, fakes);
+    assert.deepEqual(
+      fakes.calls,
+      ['convert', 'transcribe', 'summarize'],
+      `calls ${fakes.calls} must resume from audio.m4a`,
+    );
+    assert.equal(dbMod.getJob(db, 'resume-a')?.title, 'Audio title');
+  });
+
+  it('resume: empty/invalid artifacts are not reused — all stages run', async () => {
+    db = freshDb();
+    const job = makeJob(db, 'resume-x', null);
+    fs.mkdirSync(jobDir('resume-x'), { recursive: true });
+    fs.writeFileSync(path.join(jobDir('resume-x'), 'transcript.txt'), '   \n');
+    fs.writeFileSync(path.join(jobDir('resume-x'), 'audio.wav'), 'RIFF');
+    fs.writeFileSync(path.join(jobDir('resume-x'), 'audio.m4a'), '');
+    const fakes = makeFakes();
+    await pipelineMod.runPipeline(db, job, new AbortController().signal, fakes);
+    assert.deepEqual(
+      fakes.calls,
+      ['download', 'convert', 'transcribe', 'summarize'],
+      `calls ${fakes.calls} must not reuse empty/invalid artifacts`,
+    );
+  });
+
+  it('failure: convert failure keeps downloaded audio but removes the partial wav for retry', async () => {
+    db = freshDb();
+    const job = makeJob(db, 'keep-audio', null);
+    const fakes = makeFakes();
+    fakes.convert = async (audioPath: string) => {
+      fs.writeFileSync(path.join(jobDir('keep-audio'), 'audio.wav'), 'partial');
+      void audioPath;
+      throw new Error('ffmpeg broke');
+    };
+    await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes));
+    assert.ok(
+      fs.existsSync(path.join(jobDir('keep-audio'), 'audio.m4a')),
+      'downloaded audio.m4a must survive a convert failure so retry skips re-download',
+    );
+    assert.ok(
+      !fs.existsSync(path.join(jobDir('keep-audio'), 'audio.wav')),
+      'partial audio.wav must be removed after a convert failure',
+    );
+  });
+
+  it('failure: download failure removes the partial audio so retry re-downloads', async () => {
+    db = freshDb();
+    const job = makeJob(db, 'drop-partial', null);
+    const fakes = makeFakes();
+    fakes.download = async () => {
+      fs.writeFileSync(path.join(jobDir('drop-partial'), 'audio.m4a'), 'partial');
+      throw new StageError('yt-dlp failed', 'downloading');
+    };
+    await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes));
+    assert.ok(
+      !fs.existsSync(path.join(jobDir('drop-partial'), 'audio.m4a')),
+      'partial audio.m4a must be removed after a download failure',
+    );
+  });
+
+  it('failure: summarize failure keeps transcript.txt for retry', async () => {
+    db = freshDb();
+    const job = makeJob(db, 'keep-t', null);
+    const fakes = makeFakes();
+    fakes.transcribe = async (_wavPath: string) => {
+      const p = path.join(jobDir('keep-t'), 'transcript.txt');
+      fs.writeFileSync(p, 'transcribed');
+      return p;
+    };
+    fakes.summarize = async () => {
+      throw new StageError('llm down', 'summarizing');
+    };
+    await assert.rejects(pipelineMod.runPipeline(db, job, new AbortController().signal, fakes));
+    assert.ok(
+      fs.existsSync(path.join(jobDir('keep-t'), 'transcript.txt')),
+      'transcript.txt must survive a summarize failure so retry skips STT',
+    );
+    assert.ok(!fs.existsSync(path.join(jobDir('keep-t'), 'audio.wav')), 'audio.wav must be cleaned after transcribe');
   });
 
   it('passes job.lang through to summarize (and defaults NULL to en)', async () => {

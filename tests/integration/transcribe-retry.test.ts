@@ -473,4 +473,57 @@ describe('transcribe — transient failures (429 / 5xx)', () => {
     assert.equal(calls, 1, 'no further attempt after the abort');
     assert.ok(elapsed < 400, `cancelled after ${elapsed}ms — the first backoff alone is ≥ 500ms`);
   });
+
+  it('retry resume: cached chunk transcripts are reused, only missing chunks are paid for', async () => {
+    const dir = tmpDir();
+    const wav = path.join(dir, 'audio.wav');
+    writeSyntheticWav(wav);
+    const chunkDir = path.join(dir, 'chunks');
+    fs.mkdirSync(chunkDir, { recursive: true });
+    const chunk0 = path.join(chunkDir, 'chunk_000.wav');
+    const chunk1 = path.join(chunkDir, 'chunk_001.wav');
+    writeSyntheticWav(chunk0, 512);
+    writeSyntheticWav(chunk1, 512);
+    // Partial transcript from the failed attempt: chunk 0 already paid for.
+    fs.writeFileSync(path.join(chunkDir, 'chunk_000.txt'), 'cached chunk text');
+    const fakeSplitter: AudioSplitterPort = {
+      async splitIntoChunks() {
+        return [chunk0, chunk1];
+      },
+    };
+    const calls: string[] = [];
+    const fakeStt: SpeechToTextPort = {
+      async attemptMultipart(file) {
+        calls.push(path.basename(file));
+        return okAttempt('second chunk text');
+      },
+      async attemptBase64() {
+        calls.push('base64');
+        return okAttempt('whole-file text');
+      },
+    };
+    const sleeps: number[] = [];
+    let outcome: { out?: string; error?: unknown } = {};
+    try {
+      outcome = { out: await transcribe(wav, makeContext(dir, fakeStt, sleeps, fakeSplitter)) };
+    } catch (error) {
+      outcome = { error };
+    }
+    try {
+      assert.equal(outcome.error, undefined, `resume must succeed, got ${String(outcome.error)}`);
+      assert.deepEqual(
+        calls,
+        ['chunk_001.wav'],
+        `calls ${calls} must pay only for the missing chunk — no whole-file retry, no chunk_000`,
+      );
+      const text = fs.readFileSync(String(outcome.out), 'utf8').trim();
+      assert.equal(
+        text,
+        'cached chunk text\n\nsecond chunk text',
+        `transcript ${JSON.stringify(text)} must join cached + new parts`,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

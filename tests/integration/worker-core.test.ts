@@ -1,5 +1,5 @@
 /**
- * Integration tests for the worker polling loop (src/worker/worker-core.ts).
+ * Integration tests for the worker polling loop (src/infrastructure/inbound/worker-core.ts).
  *
  * Drives createWorker() — the claim/reclaim/run/markDone/markFailed loop that
  * `worker.ts` bootstraps — against a real temporary SQLite DB with a fake
@@ -17,9 +17,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, it } from 'node:test';
+import { createWorker, runWithTimeout } from '../../src/infrastructure/inbound/worker-core.ts';
 import { claimNextJob, createJob } from '../../src/infrastructure/outbound/sqlite/job-store.ts';
 import { StageError } from '../../src/infrastructure/outbound/stages/process.ts';
-import { createWorker, runWithTimeout } from '../../src/worker/worker-core.ts';
 
 const SCHEMA = `
   CREATE TABLE jobs (

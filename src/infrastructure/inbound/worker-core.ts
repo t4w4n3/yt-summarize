@@ -1,15 +1,15 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { RuntimeConfig } from '../application/config.ts';
-import { friendlyError, stageOf } from '../application/friendly-error.ts';
-import type { PipelineDependencies, PipelineStages } from '../application/pipeline-runner.ts';
-import { runPipeline } from '../application/pipeline-runner.ts';
-import type { ArtifactStore } from '../application/ports/artifact-store.ts';
-import type { JobStore } from '../application/ports/job-store.ts';
-import type { Job } from '../domain/job/entity.ts';
-import { createFilesystemArtifactStore } from '../infrastructure/outbound/filesystem/artifact-store.ts';
-import { createSqliteJobStore, getJob } from '../infrastructure/outbound/sqlite/job-store.ts';
-import { createPipelineStagePorts } from '../infrastructure/outbound/stages/stage-ports.ts';
-import { loadConfig } from '../shared/config.ts';
+import type { RuntimeConfig } from '../../application/config.ts';
+import { friendlyError, stageOf } from '../../application/friendly-error.ts';
+import type { PipelineDependencies, PipelineStages } from '../../application/pipeline-runner.ts';
+import { runPipeline } from '../../application/pipeline-runner.ts';
+import type { ArtifactStore } from '../../application/ports/artifact-store.ts';
+import type { JobStore } from '../../application/ports/job-store.ts';
+import type { Job } from '../../domain/job/entity.ts';
+import { loadConfig } from '../../shared/config.ts';
+import { createFilesystemArtifactStore } from '../outbound/filesystem/artifact-store.ts';
+import { createSqliteJobStore, getJob } from '../outbound/sqlite/job-store.ts';
+import { createPipelineStagePorts } from '../outbound/stages/stage-ports.ts';
 
 export type SleepFn = (ms: number) => Promise<void>;
 

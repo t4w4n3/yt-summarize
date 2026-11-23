@@ -29,16 +29,12 @@ describe('P3 — focused constants modules', () => {
     assert.equal(t.stageTimeoutMs('summarizing'), 10 * 60 * 1000);
   });
 
-  it('constants.ts remains a re-export facade for backward compat', () => {
-    const src = fs.readFileSync('src/shared/constants.ts', 'utf8');
-    // Facade must re-export from the focused modules (not duplicate definitions)
-    assert.match(src, /from\s+['"]\.\/config\.ts['"]/);
-    assert.match(src, /from\s+['"]\.\.\/domain\/job\/entity\.ts['"]/);
-    assert.match(src, /from\s+['"]\.\.\/application\/stage-timeouts\.ts['"]/);
-    // Must not still define STAGES/STAGE_TIMEOUTS inline (duplicated knowledge)
-    // Allow at most re-export lines; original definitions should be gone.
-    assert.doesNotMatch(src, /export const STAGES =/);
-    assert.doesNotMatch(src, /const STAGE_TIMEOUTS/);
+  it('the legacy constants facade is gone (focused modules are the only home)', () => {
+    assert.equal(
+      fs.existsSync('src/shared/constants.ts'),
+      false,
+      'src/shared/constants.ts must not exist after the closure',
+    );
   });
 
   it('domain job entity has no config/timeout knowledge (single volatility)', () => {

@@ -14,4 +14,4 @@ if [ -f /run/secrets/openrouter_key ]; then
   # podman secret is tmpfs 0440; ensure the worker can read it (already world-readable)
   :
 fi
-exec node /app/src/worker/worker.ts
+exec node /app/src/infrastructure/inbound/worker.ts

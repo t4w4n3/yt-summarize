@@ -7,9 +7,8 @@
  * per layer:
  *
  *   domain  — pure logic, no I/O (src/domain/**)
- *   worker  — outbound adapter bootstrap / orchestration (src/worker/**: pipeline,
- *             worker bootstrap)
- *   infrastructure — inbound + outbound adapters (src/infrastructure/**)
+ *   infrastructure — inbound + outbound adapters (src/infrastructure/**: HTTP/worker bootstraps,
+ *             stage adapters, SQLite, secrets, artifact store)
  *   shared  — shared supporting modules (src/shared/**)
  *   vpn     — Mullvad SOCKS sidecar client (src/vpn/**)
  *

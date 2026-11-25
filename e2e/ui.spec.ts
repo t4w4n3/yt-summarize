@@ -33,9 +33,13 @@ interface JobMockOptions {
   jobStates?: Array<Record<string, unknown>>;
   statusResponses?: Array<{ status: number; body: Record<string, unknown> }>;
   createError?: { status: number; error: string };
+  historyJobs?: Array<Record<string, unknown>>;
 }
 
-function installJobMock(page: Page, { jobStates = [], statusResponses = [], createError }: JobMockOptions) {
+function installJobMock(
+  page: Page,
+  { jobStates = [], statusResponses = [], createError, historyJobs = [] }: JobMockOptions,
+) {
   let pollIndex = 0;
   let posts = 0;
   const bodies: Array<Record<string, unknown>> = [];
@@ -71,6 +75,18 @@ function installJobMock(page: Page, { jobStates = [], statusResponses = [], crea
   page.route(`**/api/jobs/${JOB_ID}/result`, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(RESULT) }),
   );
+  page.route(/\/api\/jobs(\?|$)/, (route) => {
+    const url = new URL(route.request().url());
+    const q = (url.searchParams.get('q') ?? '').toLowerCase();
+    const jobs = q
+      ? historyJobs.filter((j) =>
+          String(j.title ?? '')
+            .toLowerCase()
+            .includes(q),
+        )
+      : historyJobs;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jobs }) });
+  });
   return { posts: () => posts, bodies: () => bodies };
 }
 
@@ -90,8 +106,12 @@ test('shell renders the workstation surface', async ({ page, request }) => {
   await expect(page.locator('#submit-button')).toHaveText(/SUMMARIZE/);
   await expect(page.locator('.pipeline-step')).toHaveCount(4);
   await expect(page.locator('#note-empty')).toBeVisible();
-  await expect(page.locator('#footer-state')).toHaveText('IDLE');
+  await expect(page.locator('#status-message')).toHaveText(/READY/);
   await expect(page.locator('#word-count')).toHaveText('NO WORDS');
+  await expect(page.locator('.menu-item')).toHaveCount(0);
+  await expect(page.locator('#sample-button')).toHaveCount(0);
+  await expect(page.locator('.desktop-note')).toHaveCount(0);
+  await expect(page.locator('#history-search')).toBeVisible();
   await expect(page.locator('#status-message')).toHaveAttribute('aria-live', 'polite');
   await expect(page.locator('#url-error')).toBeHidden();
 });
@@ -130,8 +150,7 @@ test('walks a job through all four stages to a rendered note', async ({ page }) 
   await page.fill('#video-url', VALID_URL);
   await page.click('#submit-button');
 
-  await expect(page.locator('#queue-state')).toHaveText('1 QUEUED');
-  await expect(page.locator('#footer-state')).toHaveText('QUEUED');
+  await expect(page.locator('#status-message')).toHaveText(/QUEUED/);
   await expect(page.locator('#output-loading')).toBeVisible();
 
   for (const [index, stage] of STAGE_STEPS.entries()) {
@@ -148,8 +167,7 @@ test('walks a job through all four stages to a rendered note', async ({ page }) 
   await expect(page.locator('#note-content')).toBeVisible();
   await expect(page.locator('#note-title')).toHaveText(RESULT.title);
   await expect(page.locator('#output-subtitle')).toHaveText('READY · rendered Markdown');
-  await expect(page.locator('#footer-state')).toHaveText('DONE');
-  await expect(page.locator('#queue-state')).toHaveText('COMPLETE');
+  await expect(page.locator('#status-message')).toHaveText(/DONE/);
   await expect(page.locator('#word-count')).toHaveText(`${RESULT.wordCount} WORDS`);
   await expect(page.locator('#markdown-output h2').first()).toHaveText('Overview');
   await expect(page.locator('#markdown-output h3').first()).toHaveText('A nested detail');
@@ -171,10 +189,10 @@ test('retries transient status failures without abandoning the job', async ({ pa
   await expect(page.locator('#output-error')).toBeHidden();
   await expect(page.locator('#output-loading')).toBeVisible();
   await page.clock.fastForward(2000);
-  await expect(page.locator('#queue-state')).toHaveText('1 QUEUED');
+  await expect(page.locator('#status-message')).toHaveText(/QUEUED/);
   await page.clock.fastForward(2000);
   await expect(page.locator('#note-content')).toBeVisible();
-  await expect(page.locator('#footer-state')).toHaveText('DONE');
+  await expect(page.locator('#status-message')).toHaveText(/DONE/);
 });
 
 test('keeps a resume pointer after a transient status failure', async ({ page }) => {
@@ -200,8 +218,7 @@ test('surfaces a failed job and offers a reset', async ({ page }) => {
   await page.click('#submit-button');
   await expect(page.locator('#output-error')).toBeVisible();
   await expect(page.locator('#output-error-copy')).toContainText('Sign in to confirm');
-  await expect(page.locator('#footer-state')).toHaveText('ERROR');
-  await expect(page.locator('#queue-state')).toHaveText('FAILED');
+  await expect(page.locator('#status-message')).toHaveText(/ERROR/);
   // Failed jobs release the form so the user can retry immediately.
   await expect(page.locator('#video-url')).toBeEnabled();
 
@@ -209,7 +226,7 @@ test('surfaces a failed job and offers a reset', async ({ page }) => {
   await expect(page.locator('#note-empty')).toBeVisible();
   await expect(page.locator('#video-url')).toHaveValue('');
   await expect(page.locator('#video-url')).toBeEnabled();
-  await expect(page.locator('#footer-state')).toHaveText('IDLE');
+  await expect(page.locator('#status-message')).toHaveText(/READY/);
 });
 
 test('retries a failed job from the error panel and resumes polling', async ({ page }) => {
@@ -252,13 +269,13 @@ test('retries a failed job from the error panel and resumes polling', async ({ p
   expect(retryPosts, 'clicking RETRY must POST the retry endpoint exactly once').toBe(1);
   await expect(page.locator('#output-error')).toBeHidden();
   await expect(page.locator('#output-loading')).toBeVisible();
-  await expect(page.locator('#queue-state')).toHaveText('1 QUEUED');
+  await expect(page.locator('#status-message')).toHaveText(/QUEUED/);
 
   await page.clock.fastForward(2000);
   await expect(page.locator('#status-message')).toHaveText(/SUMMARIZING/);
   await page.clock.fastForward(2000);
   await expect(page.locator('#note-content')).toBeVisible();
-  await expect(page.locator('#footer-state')).toHaveText('DONE');
+  await expect(page.locator('#status-message')).toHaveText(/DONE/);
 });
 
 test('shows the server error when job creation is rejected', async ({ page }) => {
@@ -273,24 +290,26 @@ test('shows the server error when job creation is rejected', async ({ page }) =>
   await expect(page.locator('#output-error-copy')).toHaveText(
     'Only youtube.com and youtu.be video URLs are supported.',
   );
-  await expect(page.locator('#footer-state')).toHaveText('ERROR');
+  await expect(page.locator('#status-message')).toHaveText(/ERROR/);
 });
 
-test('sample note opens, downloads, and resets via Escape', async ({ page }) => {
-  await page.goto('/');
-  await page.click('#sample-button');
+test('rendered note downloads, and resets via Escape', async ({ page }) => {
+  await gotoWithClock(page);
+  installJobMock(page, { jobStates: [{ status: 'done' }] });
+  await page.fill('#video-url', VALID_URL);
+  await page.click('#submit-button');
   await expect(page.locator('#note-content')).toBeVisible();
-  await expect(page.locator('#note-title')).toHaveText('How to make a note worth keeping');
-  await expect(page.locator('#footer-state')).toHaveText('SAMPLE');
+  await expect(page.locator('#note-title')).toHaveText(RESULT.title);
+  await expect(page.locator('#status-message')).toHaveText(/DONE/);
   await expect(page.locator('#word-count')).toHaveText(/\d+ WORDS/);
-  await expect(page.locator('#markdown-output h2').first()).toHaveText('TL;DR');
+  await expect(page.locator('#markdown-output h2').first()).toHaveText('Overview');
   await expect(page.locator('#toast')).toBeVisible();
 
   const downloadPromise = page.waitForEvent('download');
   await page.click('#download-button');
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.md$/);
-  expect(fs.readFileSync(await download.path(), 'utf8')).toContain('## TL;DR');
+  expect(fs.readFileSync(await download.path(), 'utf8')).toContain('## Overview');
 
   const shortcutDownload = page.waitForEvent('download');
   await page.keyboard.press('Control+d');
@@ -298,7 +317,7 @@ test('sample note opens, downloads, and resets via Escape', async ({ page }) => 
 
   await page.keyboard.press('Escape');
   await expect(page.locator('#note-empty')).toBeVisible();
-  await expect(page.locator('#footer-state')).toHaveText('IDLE');
+  await expect(page.locator('#status-message')).toHaveText(/READY/);
 });
 
 test('Escape cancels an in-flight job and restores the empty state', async ({ page }) => {
@@ -313,7 +332,85 @@ test('Escape cancels an in-flight job and restores the empty state', async ({ pa
   await expect(page.locator('#note-empty')).toBeVisible();
   await expect(page.locator('#video-url')).toHaveValue('');
   await expect(page.locator('#video-url')).toBeEnabled();
-  await expect(page.locator('#footer-state')).toHaveText('IDLE');
+  await expect(page.locator('#status-message')).toHaveText(/READY/);
+});
+
+const HISTORY_ID_ALPHA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const HISTORY_ID_BETA = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const HISTORY_JOBS = [
+  {
+    jobId: HISTORY_ID_ALPHA,
+    status: 'done',
+    title: 'Alpha zoo',
+    lang: 'en',
+    createdAt: '2026-02-01T00:00:00.000Z',
+    updatedAt: '2026-02-01T00:00:00.000Z',
+  },
+  {
+    jobId: HISTORY_ID_BETA,
+    status: 'done',
+    title: 'Beta cooking',
+    lang: 'fr',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  },
+];
+
+test('history lists finished notes and opens one on click', async ({ page }) => {
+  installJobMock(page, { jobStates: [], historyJobs: HISTORY_JOBS });
+  page.route(`**/api/jobs/${HISTORY_ID_ALPHA}/result`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...RESULT, title: 'Alpha zoo' }),
+    }),
+  );
+  await page.goto('/');
+  const items = page.locator('#history-list li');
+  await expect(items).toHaveCount(2);
+  await expect(items.first()).toContainText('Alpha zoo');
+  await expect(items.nth(1)).toContainText('Beta cooking');
+  await page.click(`#history-list li[data-job-id="${HISTORY_ID_ALPHA}"] button`);
+  await expect(page.locator('#note-content')).toBeVisible();
+  await expect(page.locator('#note-title')).toHaveText('Alpha zoo');
+  await expect(page.locator('#markdown-output h2').first()).toHaveText('Overview');
+});
+
+test('history renders titles as text, never as HTML', async ({ page }) => {
+  installJobMock(page, {
+    jobStates: [],
+    historyJobs: [
+      {
+        jobId: HISTORY_ID_ALPHA,
+        status: 'done',
+        title: 'Alpha <b>zoo</b>',
+        lang: 'en',
+        createdAt: '2026-02-01T00:00:00.000Z',
+        updatedAt: '2026-02-01T00:00:00.000Z',
+      },
+    ],
+  });
+  await page.goto('/');
+  const item = page.locator('#history-list li').first();
+  await expect(item).toContainText('Alpha <b>zoo</b>');
+  await expect(item.locator('b')).toHaveCount(0);
+});
+
+test('history search filters the list by title', async ({ page }) => {
+  installJobMock(page, { jobStates: [], historyJobs: HISTORY_JOBS });
+  await page.goto('/');
+  await expect(page.locator('#history-list li')).toHaveCount(2);
+  await page.fill('#history-search', 'bet');
+  await expect(page.locator('#history-list li')).toHaveCount(1);
+  await expect(page.locator('#history-list li')).toContainText('Beta cooking');
+});
+
+test('history shows an empty state when there are no finished notes', async ({ page }) => {
+  installJobMock(page, { jobStates: [], historyJobs: [] });
+  await page.goto('/');
+  await expect(page.locator('#history-empty')).toBeVisible();
+  await expect(page.locator('#history-empty')).toContainText('NO NOTES YET');
+  await expect(page.locator('#history-list li')).toHaveCount(0);
 });
 
 test('mobile layout keeps the form usable with no horizontal overflow', async ({ page }) => {

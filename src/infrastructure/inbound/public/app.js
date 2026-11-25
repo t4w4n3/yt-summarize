@@ -4,10 +4,7 @@
   const submitButton = document.querySelector('#submit-button');
   const urlError = document.querySelector('#url-error');
   const statusMessage = document.querySelector('#status-message');
-  const queueState = document.querySelector('#queue-state');
-  const footerState = document.querySelector('#footer-state');
   const wordCount = document.querySelector('#word-count');
-  const jobRef = document.querySelector('#job-ref');
   const emptyNote = document.querySelector('#note-empty');
   const noteContent = document.querySelector('#note-content');
   const loading = document.querySelector('#output-loading');
@@ -19,54 +16,29 @@
   const outputSubtitle = document.querySelector('#output-subtitle');
   const downloadButton = document.querySelector('#download-button');
   const retryButton = document.querySelector('#retry-button');
-  const sampleButton = document.querySelector('#sample-button');
   const toast = document.querySelector('#toast');
   const steps = [...document.querySelectorAll('.pipeline-step')];
-  const clock = document.querySelector('#clock');
   const resumeBar = document.querySelector('#resume-bar');
   const resumeCopy = document.querySelector('#resume-copy');
   const resumeId = document.querySelector('#resume-id');
   const resumeForget = document.querySelector('#resume-forget');
   const langRow = document.querySelector('#output-lang-row');
   const langSelect = document.querySelector('#output-lang');
+  const historyList = document.querySelector('#history-list');
+  const historyEmpty = document.querySelector('#history-empty');
+  const historySearch = document.querySelector('#history-search');
   let currentJobId = null;
   let pollTimer = null;
   let currentMarkdown = '';
   let lastDeduped = false;
   let consecutivePollFailures = 0;
+  let historyTimer = null;
 
   const STORAGE_KEY = 'summarize-yt:lastJobId';
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const POLL_INTERVAL_MS = 2000;
   const MAX_POLL_FAILURES = 3;
-
-  const demoMarkdown = `## TL;DR
-
-A good study note keeps the shape of an idea visible after the video is gone. It opens with the verdict, backs each claim with the evidence the speaker gave, and keeps everything below the opening additive: no section restates another.
-
-## Key learnings
-
-- **Capture the central claim before the supporting detail.** A note that starts with evidence buries the point; state the claim first, then the proof that made it land.
-- **Define a term the moment it becomes load-bearing.** A one-line definition placed where the reader needs it beats a paragraph of context.
-- **Preserve examples, numbers and the speaker's own vocabulary.** Abstract paraphrase loses the thing that makes an idea stick.
-
-## Concepts & terms
-
-**Retrieval practice** — recalling an idea without looking at the source, which exposes gaps more reliably than rereading.
-
-**Progressive compression** — reducing an explanation into layers: full note, short outline, one-sentence recall cue.
-
-## If you want to act
-
-- Revisit this note tomorrow without replaying the video.
-- Add a concrete example wherever a concept still feels abstract.`;
-
-  function tickClock() {
-    const now = new Date();
-    clock.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-  tickClock();
-  setInterval(tickClock, 30_000);
+  const HISTORY_LIMIT = 50;
 
   // Note language: default to the browser locale; English browsers get no
   // picker at all since both options would be English.
@@ -140,18 +112,6 @@ A good study note keeps the shape of an idea visible after the video is gone. It
       : 'SUMMARIZE<span class="button-corner" aria-hidden="true">↵</span>';
   }
 
-  function setJobRef(id) {
-    if (!jobRef) return;
-    if (!id) {
-      jobRef.hidden = true;
-      jobRef.textContent = '';
-      return;
-    }
-    jobRef.hidden = false;
-    jobRef.textContent = `JOB ${id.slice(0, 8)}`;
-    jobRef.title = id;
-  }
-
   function saveJobId(id) {
     try {
       localStorage.setItem(STORAGE_KEY, id);
@@ -159,7 +119,6 @@ A good study note keeps the shape of an idea visible after the video is gone. It
     try {
       history.replaceState(null, '', `#${id}`);
     } catch {}
-    setJobRef(id);
   }
 
   function clearStoredJobId() {
@@ -169,7 +128,6 @@ A good study note keeps the shape of an idea visible after the video is gone. It
     try {
       if (location.hash) history.replaceState(null, '', location.pathname + location.search);
     } catch {}
-    setJobRef(null);
     if (resumeBar) resumeBar.hidden = true;
   }
 
@@ -212,8 +170,6 @@ A good study note keeps the shape of an idea visible after the video is gone. It
     steps.forEach((step) => {
       step.classList.remove('is-active', 'is-done');
     });
-    queueState.textContent = 'EMPTY';
-    footerState.textContent = 'IDLE';
     wordCount.textContent = 'NO WORDS';
     outputSubtitle.textContent = 'Your rendered Markdown will open here.';
     statusMessage.textContent = 'READY — waiting for a source';
@@ -246,25 +202,7 @@ A good study note keeps the shape of an idea visible after the video is gone. It
     });
     const label = stage ? stage.toUpperCase() : 'WORKING';
     statusMessage.textContent = `${label} — the worker is on it`;
-    footerState.textContent = label;
-    queueState.textContent = '1 ACTIVE';
     loadingCopy.textContent = `${label} — building your study note…`;
-  }
-
-  function showSample() {
-    currentMarkdown = demoMarkdown;
-    emptyNote.hidden = true;
-    loading.hidden = true;
-    errorPanel.hidden = true;
-    noteContent.hidden = false;
-    noteTitle.textContent = 'How to make a note worth keeping';
-    outputSubtitle.textContent = 'SAMPLE NOTE · rendered from Markdown';
-    markdownOutput.innerHTML = markdownToHtml(demoMarkdown);
-    wordCount.textContent = `${demoMarkdown.split(/\s+/).length} WORDS`;
-    footerState.textContent = 'SAMPLE';
-    queueState.textContent = 'DEMO';
-    statusMessage.textContent = 'SAMPLE — this is the shape of a finished note';
-    showToast('Sample note opened. Paste a URL to run the real pipeline.');
   }
 
   function markdownToHtml(markdown) {
@@ -318,6 +256,25 @@ A good study note keeps the shape of an idea visible after the video is gone. It
     return text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`(.+?)`/g, '<code>$1</code>');
   }
 
+  function displayNote(result) {
+    currentMarkdown = result.markdown;
+    noteTitle.textContent = result.title || 'Untitled study note';
+    outputSubtitle.textContent = 'READY · rendered Markdown';
+    markdownOutput.innerHTML = markdownToHtml(result.markdown);
+    emptyNote.hidden = true;
+    loading.hidden = true;
+    errorPanel.hidden = true;
+    noteContent.hidden = false;
+    hideResumeBar();
+    setBusy(false);
+    steps.forEach((step) => {
+      step.classList.remove('is-active');
+      step.classList.add('is-done');
+    });
+    wordCount.textContent = `${result.wordCount || result.markdown.split(/\s+/).length} WORDS`;
+    statusMessage.textContent = 'DONE — note is ready to study';
+  }
+
   async function submit(event) {
     event.preventDefault();
     const url = input.value.trim();
@@ -337,8 +294,6 @@ A good study note keeps the shape of an idea visible after the video is gone. It
     setBusy(true);
     consecutivePollFailures = 0;
     statusMessage.textContent = 'QUEUED — waiting for the worker';
-    queueState.textContent = '1 QUEUED';
-    footerState.textContent = 'QUEUED';
     try {
       const response = await fetch('/api/summarize', {
         method: 'POST',
@@ -355,9 +310,9 @@ A good study note keeps the shape of an idea visible after the video is gone. It
       if (pollTimer) window.clearInterval(pollTimer);
       pollTimer = window.setInterval(pollStatus, POLL_INTERVAL_MS);
       if (data.deduped) {
-        statusMessage.textContent = 'TROUVÉ — résumé déjà disponible';
-        loadingCopy.textContent = 'TROUVÉ — ouverture instantanée…';
-        showToast('Déjà résumé — affichage instantané.');
+        statusMessage.textContent = 'FOUND — note already available';
+        loadingCopy.textContent = 'FOUND — opening instantly…';
+        showToast('Already summarized — shown instantly.');
       }
       await pollStatus();
     } catch (error) {
@@ -377,8 +332,6 @@ A good study note keeps the shape of an idea visible after the video is gone. It
       }
       consecutivePollFailures = 0;
       if (job.status === 'queued') {
-        queueState.textContent = '1 QUEUED';
-        footerState.textContent = 'QUEUED';
         statusMessage.textContent = 'QUEUED — waiting for the worker';
         return;
       }
@@ -402,7 +355,6 @@ A good study note keeps the shape of an idea visible after the video is gone. It
       if (consecutivePollFailures < MAX_POLL_FAILURES) {
         const retryCopy = `RECONNECTING — retry ${consecutivePollFailures}/${MAX_POLL_FAILURES}…`;
         statusMessage.textContent = retryCopy;
-        footerState.textContent = 'RETRYING';
         loadingCopy.textContent = retryCopy;
         return;
       }
@@ -417,26 +369,10 @@ A good study note keeps the shape of an idea visible after the video is gone. It
       const response = await fetch(`/api/jobs/${encodeURIComponent(currentJobId)}/result`);
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'The note was marked done but could not be opened.');
-      currentMarkdown = result.markdown;
-      noteTitle.textContent = result.title || 'Untitled study note';
-      outputSubtitle.textContent = 'READY · rendered Markdown';
-      markdownOutput.innerHTML = markdownToHtml(result.markdown);
-      emptyNote.hidden = true;
-      loading.hidden = true;
-      errorPanel.hidden = true;
-      noteContent.hidden = false;
-      hideResumeBar();
-      setBusy(false);
-      steps.forEach((step) => {
-        step.classList.remove('is-active');
-        step.classList.add('is-done');
-      });
-      queueState.textContent = 'COMPLETE';
-      footerState.textContent = 'DONE';
-      wordCount.textContent = `${result.wordCount || result.markdown.split(/\s+/).length} WORDS`;
-      statusMessage.textContent = 'DONE — note is ready to study';
+      displayNote(result);
+      loadHistory(historySearch?.value ?? '');
       if (lastDeduped) {
-        showToast('Déjà résumé — affichage instantané.');
+        showToast('Already summarized — shown instantly.');
         lastDeduped = false;
       } else {
         showToast('Study note ready.');
@@ -454,8 +390,6 @@ A good study note keeps the shape of an idea visible after the video is gone. It
     errorPanel.hidden = false;
     if (retryButton) retryButton.hidden = !retryable || !currentJobId;
     errorCopy.textContent = message;
-    queueState.textContent = 'FAILED';
-    footerState.textContent = 'ERROR';
     statusMessage.textContent = 'ERROR — try another source';
     showToast('The note could not be completed.');
   }
@@ -470,9 +404,7 @@ A good study note keeps the shape of an idea visible after the video is gone. It
     setBusy(true);
     consecutivePollFailures = 0;
     statusMessage.textContent = 'QUEUED — retry, resuming from saved steps';
-    queueState.textContent = '1 QUEUED';
-    footerState.textContent = 'QUEUED';
-    loadingCopy.textContent = 'QUEUED — reprise depuis les étapes déjà faites…';
+    loadingCopy.textContent = 'QUEUED — resuming from saved steps…';
     try {
       const response = await fetch(`/api/jobs/${encodeURIComponent(currentJobId)}/retry`, { method: 'POST' });
       const data = await response.json();
@@ -517,7 +449,7 @@ A good study note keeps the shape of an idea visible after the video is gone. It
     setBusy(false);
     resetPanels();
     hideResumeBar();
-    showToast('Run précédent oublié.');
+    showToast('Previous run forgotten.');
     input.focus();
   }
 
@@ -525,18 +457,15 @@ A good study note keeps the shape of an idea visible after the video is gone. It
     const stored = getStoredJobId();
     if (!stored) return;
     currentJobId = stored;
-    setJobRef(stored);
-    showResumeBar(stored, 'Reconnexion au run précédent…');
+    showResumeBar(stored, 'Reconnecting to the previous run…');
     emptyNote.hidden = true;
     noteContent.hidden = true;
     errorPanel.hidden = true;
     loading.hidden = false;
     setBusy(true);
     consecutivePollFailures = 0;
-    queueState.textContent = 'RESTORING';
-    footerState.textContent = 'RESTORING';
-    statusMessage.textContent = 'REPRISE — reconnexion au worker…';
-    loadingCopy.textContent = 'RESTORING — reconnexion au worker…';
+    statusMessage.textContent = 'RESUMING — reconnecting to the worker…';
+    loadingCopy.textContent = 'RESUMING — reconnecting to the worker…';
     try {
       const response = await fetch(`/api/jobs/${encodeURIComponent(stored)}`);
       const job = await response.json();
@@ -547,14 +476,12 @@ A good study note keeps the shape of an idea visible after the video is gone. It
       }
       consecutivePollFailures = 0;
       if (job.status === 'queued') {
-        queueState.textContent = '1 QUEUED';
-        footerState.textContent = 'QUEUED';
-        statusMessage.textContent = 'QUEUED — reprise du suivi';
-        loadingCopy.textContent = 'QUEUED — reprise du suivi…';
+        statusMessage.textContent = 'QUEUED — resuming follow-up';
+        loadingCopy.textContent = 'QUEUED — resuming follow-up…';
         if (pollTimer) window.clearInterval(pollTimer);
         pollTimer = window.setInterval(pollStatus, POLL_INTERVAL_MS);
         hideResumeBar();
-        showToast('Run retrouvé — reprise du suivi.');
+        showToast('Previous run found — following it again.');
         return;
       }
       if (job.status === 'running') {
@@ -562,19 +489,19 @@ A good study note keeps the shape of an idea visible after the video is gone. It
         if (pollTimer) window.clearInterval(pollTimer);
         pollTimer = window.setInterval(pollStatus, POLL_INTERVAL_MS);
         hideResumeBar();
-        showToast('Run retrouvé — reprise du suivi.');
+        showToast('Previous run found — following it again.');
         return;
       }
       if (job.status === 'done') {
         await finish(job);
-        showToast('Résumé retrouvé après rechargement.');
+        showToast('Note found after reload.');
         return;
       }
       // failed
       window.clearInterval(pollTimer);
       pollTimer = null;
-      showError(job.error || 'Le run précédent a échoué.', true);
-      showResumeBar(stored, 'Run précédent en erreur —');
+      showError(job.error || 'The previous run failed.', true);
+      showResumeBar(stored, 'Previous run failed —');
       setBusy(false);
     } catch (error) {
       if (errorStatus(error) === 404) {
@@ -588,32 +515,94 @@ A good study note keeps the shape of an idea visible after the video is gone. It
       window.clearInterval(pollTimer);
       pollTimer = null;
       showError(errorMessage(error));
-      showResumeBar(stored, 'Run précédent indisponible — rechargez pour réessayer.');
+      showResumeBar(stored, 'Previous run unavailable — reload to retry.');
       setBusy(false);
+    }
+  }
+
+  function formatHistoryDate(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value ?? '');
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  function renderHistory(jobs) {
+    historyList.replaceChildren();
+    for (const job of jobs) {
+      const item = document.createElement('li');
+      item.dataset.jobId = job.jobId;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'history-item';
+      const title = document.createElement('span');
+      title.className = 'history-title';
+      title.textContent = job.title || 'Untitled study note';
+      const meta = document.createElement('span');
+      meta.className = 'history-meta';
+      const lang = job.lang && job.lang !== 'en' ? ` · ${job.lang.toUpperCase()}` : '';
+      meta.textContent = `${formatHistoryDate(job.createdAt)}${lang}`;
+      button.append(title, meta);
+      button.addEventListener('click', () => openHistoryJob(job.jobId));
+      item.append(button);
+      historyList.append(item);
+    }
+    historyEmpty.textContent = 'NO NOTES YET';
+    historyEmpty.hidden = jobs.length > 0;
+  }
+
+  async function loadHistory(query = '') {
+    try {
+      const params = new URLSearchParams({ limit: String(HISTORY_LIMIT) });
+      const q = query.trim();
+      if (q) params.set('q', q);
+      const response = await fetch(`/api/jobs?${params.toString()}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not load history.');
+      renderHistory(Array.isArray(data.jobs) ? data.jobs : []);
+    } catch {
+      renderHistory([]);
+      historyEmpty.hidden = false;
+      historyEmpty.textContent = 'HISTORY UNAVAILABLE';
+    }
+  }
+
+  async function openHistoryJob(jobId) {
+    if (pollTimer) window.clearInterval(pollTimer);
+    pollTimer = null;
+    currentJobId = jobId;
+    saveJobId(jobId);
+    hideResumeBar();
+    setBusy(true);
+    emptyNote.hidden = true;
+    noteContent.hidden = true;
+    errorPanel.hidden = true;
+    loading.hidden = false;
+    statusMessage.textContent = 'OPENING — loading the note…';
+    loadingCopy.textContent = 'OPENING — loading the note…';
+    try {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/result`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'This note could not be opened.');
+      displayNote(result);
+      showToast('Note opened from history.');
+    } catch (error) {
+      showError(errorMessage(error));
     }
   }
 
   form.addEventListener('submit', submit);
   downloadButton.addEventListener('click', download);
   if (retryButton) retryButton.addEventListener('click', retryJob);
-  sampleButton.addEventListener('click', showSample);
   if (resumeForget) resumeForget.addEventListener('click', forgetResume);
-  if (jobRef) {
-    jobRef.style.cursor = 'pointer';
-    jobRef.addEventListener('click', async () => {
-      if (!currentJobId) return;
-      try {
-        await navigator.clipboard.writeText(currentJobId);
-        showToast('Job ID copié.');
-      } catch {
-        showToast(currentJobId);
-      }
+  if (historySearch) {
+    historySearch.addEventListener('input', () => {
+      window.clearTimeout(historyTimer);
+      historyTimer = window.setTimeout(() => loadHistory(historySearch.value), 200);
     });
   }
   document.addEventListener('click', (event) => {
     const action = event.target.closest('[data-action]')?.dataset.action;
     if (action === 'reset') reset();
-    if (action === 'about') showToast('Summarize YT turns one video into one durable Markdown study note.');
   });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') reset();
@@ -623,5 +612,6 @@ A good study note keeps the shape of an idea visible after the video is gone. It
     }
   });
 
+  loadHistory();
   resumeStoredJob();
 })();

@@ -29,6 +29,10 @@ _Avoid_: Output, file, temp file
 The furthest valid artifact a re-queued job restarts from: valid `transcript.txt` skips to summarizing, valid `audio.wav` to transcribing, usable downloaded audio to converting.
 _Avoid_: Checkpoint, restart point, retry offset
 
+**History**:
+The list of a job's finished study notes, newest first, searchable by title. Only `done` jobs appear; a history entry opens the stored study note without re-running the pipeline.
+_Avoid_: Archive, log
+
 **Study note**:
 The Markdown deliverable a done job produces: TL;DR, learnings, concepts, details, and at most three actions — always shorter than the transcript.
 _Avoid_: Summary, note, output

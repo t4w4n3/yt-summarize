@@ -237,6 +237,23 @@ export function retryFailedJob(db: DatabaseSync, id: string): Job | null {
   return Number(result.changes) === 1 ? getJob(db, id) : null;
 }
 
+export function listDoneJobs(db: DatabaseSync, limit: number, search?: string): Job[] {
+  const term = search?.trim();
+  if (term) {
+    const escaped = term.replace(/[\\%_]/g, (c) => `\\${c}`);
+    const rows = db
+      .prepare(
+        `SELECT * FROM jobs WHERE status = ? AND title LIKE '%' || ? || '%' ESCAPE '\\' ORDER BY created_at DESC, updated_at DESC LIMIT ?`,
+      )
+      .all(STATUS.DONE, escaped, limit);
+    return rows.map((row) => jobDbRowToJob(asJobDbRow(row)));
+  }
+  const rows = db
+    .prepare(`SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC, updated_at DESC LIMIT ?`)
+    .all(STATUS.DONE, limit);
+  return rows.map((row) => jobDbRowToJob(asJobDbRow(row)));
+}
+
 export function closeDatabase(db: DatabaseSync): void {
   db.close();
 }
@@ -333,6 +350,9 @@ export function createSqliteJobStore(db: DatabaseSync): JobStore {
       retryJob(row, now());
       const retried = retryFailedJob(db, id);
       return retried ? retried : null;
+    },
+    listDone(limit, search) {
+      return listDoneJobs(db, limit, search);
     },
   };
 }

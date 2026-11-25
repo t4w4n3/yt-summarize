@@ -126,6 +126,59 @@ describe('JobStore (SQLite adapter)', () => {
     assert.equal(retried.progress, 0);
   });
 
+  it('listDone returns only done jobs, newest first, bounded by limit', () => {
+    const store = freshStore();
+    for (const id of ['old', 'mid', 'new']) {
+      const job = must(store.create({ id, url: 'https://youtu.be/AAAAAAAAAAA', videoId: id, lang: 'en' }));
+      must(store.claimNext());
+      must(store.markDone(job.id, `Title ${id}`, '# note'));
+    }
+    const pending = must(store.create({ id: 'pending', url: 'https://youtu.be/BBBBBBBBBBB', videoId: 'pending' }));
+    assert.equal(pending.status, 'queued');
+    assert.ok(db);
+    db.prepare('UPDATE jobs SET created_at = ? WHERE id = ?').run('2026-01-01T00:00:00.000Z', 'old');
+    db.prepare('UPDATE jobs SET created_at = ? WHERE id = ?').run('2026-02-01T00:00:00.000Z', 'mid');
+    db.prepare('UPDATE jobs SET created_at = ? WHERE id = ?').run('2026-03-01T00:00:00.000Z', 'new');
+    assert.deepEqual(
+      store.listDone(10).map((j) => j.id),
+      ['new', 'mid', 'old'],
+      'listDone(10) must return done jobs newest-first and skip the queued one',
+    );
+    assert.deepEqual(
+      store.listDone(2).map((j) => j.id),
+      ['new', 'mid'],
+      'listDone(2) must return at most 2 jobs',
+    );
+  });
+
+  it('listDone search filters titles case-insensitively and literally', () => {
+    const store = freshStore();
+    const a = must(store.create({ id: 'alpha', url: 'https://youtu.be/CCCCCCCCCCC', videoId: 'alpha' }));
+    must(store.claimNext());
+    must(store.markDone(a.id, 'Alpha 100%_Guide', '# note'));
+    const b = must(store.create({ id: 'beta', url: 'https://youtu.be/DDDDDDDDDDD', videoId: 'beta' }));
+    must(store.claimNext());
+    must(store.markDone(b.id, 'Beta notes', '# note'));
+    const c = must(store.create({ id: 'gamma', url: 'https://youtu.be/EEEEEEEEEEE', videoId: 'gamma' }));
+    must(store.claimNext());
+    must(store.markDone(c.id, 'Gamma 100XGuide', '# note'));
+    assert.deepEqual(
+      store.listDone(10, 'alpha').map((j) => j.id),
+      ['alpha'],
+      'search alpha must match Alpha 100%_Guide case-insensitively',
+    );
+    assert.deepEqual(
+      store.listDone(10, '100%_').map((j) => j.id),
+      ['alpha'],
+      'search 100%_ must match literally, not as LIKE wildcards',
+    );
+    assert.deepEqual(
+      store.listDone(10, 'delta').map((j) => j.id),
+      [],
+      'search delta must match nothing',
+    );
+  });
+
   it('reclaimStaleJobs re-queues only stale running jobs', () => {
     const store = freshStore();
     const stale = must(store.create({ id: 'stale', url: 'https://youtu.be/STALESTALEST', videoId: 'STALESTALEST' }));

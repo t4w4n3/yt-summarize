@@ -160,7 +160,8 @@ Runtime settings live in `.env` (created by `mise run setup`; see `.env.example`
 ### API
 
 - `POST /api/summarize` with `{ "url": "https://youtu.be/...", "lang": "fr" }` — `lang` is an optional two-letter ISO 639-1 code for the note's language (default `en`; the UI pre-selects the browser locale). Responses: `201 { jobId }` for a new job, `200 { jobId, deduped: true }` when the same video + language already has a job, `400 { error }` for an invalid URL or language.
-- `GET /api/jobs/:id` — `200 { jobId, status, stage, progress, title, error, createdAt, updatedAt }`, `404 { error }` when unknown. `status` is `queued`, `running`, `done`, or `failed`; `stage` is one of `downloading`, `converting`, `transcribing`, `summarizing`.
+- `GET /api/jobs/:id` — `200 { jobId, status, stage, progress, title, error, lang, createdAt, updatedAt }`, `404 { error }` when unknown. `status` is `queued`, `running`, `done`, or `failed`; `stage` is one of `downloading`, `converting`, `transcribing`, `summarizing`.
+- `GET /api/jobs` — history: `200 { jobs: [...] }` with done jobs only, newest first, metadata only (no Markdown body). Query parameters: `limit` (default 20, integer between 1 and 50, otherwise `400`) and `q` (case-insensitive title search, at most 100 characters, otherwise `400`). The UI's HISTORY list under the source column browses this endpoint and opens a note via `GET /api/jobs/:id/result`.
 - `POST /api/jobs/:id/retry` — re-queue a failed job (`200` with the job in `queued` status, error/stage/progress cleared), `404 { error }` when unknown, `409 { error }` when the job is not failed. The worker resumes from the artifacts already on disk (downloaded audio, `audio.wav`, per-chunk transcripts, `transcript.txt`), so completed stages are not paid for again.
 - `GET /api/jobs/:id/result` — `200 { title, markdown, wordCount }` when done, `404 { error }` when unknown, `409 { error }` while the note is not ready yet.
 - `GET /api/jobs/:id/result.md` — the note as a Markdown file attachment (filename derived from the title), `404` when unknown, `409` while not ready yet.
@@ -185,7 +186,7 @@ The app and worker share only the SQLite job database and the artifacts volume. 
 
 ### Study note structure
 
-The summarization prompt produces a study artifact proportional to the video length: a self-contained TL;DR, key learnings (each claim with the evidence behind it, tagged `[opinion]` when it is the speaker's judgement), concepts & terms (definitions only, no claims), details (only material the learnings cannot hold), and at most three actions. Each fact appears once; a section that would only restate an earlier point is omitted, and the note stays shorter than the transcript. Obvious transcription mis-hearings are silently corrected; the speaker's terminology and numbers are preserved. Out of scope for v1: playlists/channels, queue/history UI, accounts, rate limiting, cost tracking, offline transcription.
+The summarization prompt produces a study artifact proportional to the video length: a self-contained TL;DR, key learnings (each claim with the evidence behind it, tagged `[opinion]` when it is the speaker's judgement), concepts & terms (definitions only, no claims), details (only material the learnings cannot hold), and at most three actions. Each fact appears once; a section that would only restate an earlier point is omitted, and the note stays shorter than the transcript. Obvious transcription mis-hearings are silently corrected; the speaker's terminology and numbers are preserved. Out of scope for v1: playlists/channels, queue UI, accounts, rate limiting, cost tracking, offline transcription. (History of finished notes is in scope: `GET /api/jobs`.)
 
 ### Secrets and trust boundaries
 

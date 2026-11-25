@@ -60,18 +60,19 @@ The palette is restrained and binary first; lime is the single signal color and 
 
 ## Layout
 
-The desktop is a full-bleed dithered work surface beneath a sticky menu bar. The primary window is centered with generous breathing room and a slight shadow offset. Supporting note windows overlap the canvas at wide sizes but disappear below 1050px so they never compete with the task.
+The desktop is a full-bleed dithered work surface beneath a sticky menu bar. The primary window is centered with generous breathing room and a slight shadow offset. There is a single window: decorative notes, fake menus, and demo content were removed because they added surface without a job behind them.
 
-The primary app window uses a two-column split: source and four-stage pipeline on the left, rendered note on the right. A shared title bar and bottom status bar frame both surfaces. The desktop form uses 30px internal padding; mobile reduces this to 18px and stacks source over output. At 500px and below, the URL field and action stack, pipeline detail labels simplify, and output content remains naturally scrollable.
+The primary app window uses a two-column split: source, four-stage pipeline, single status line, and history on the left, rendered note on the right. A title bar frames the window; there is no status bar — the status line under the pipeline is the only textual job state. The desktop form uses 30px internal padding; mobile reduces this to 18px and stacks source over output. At 500px and below, the URL field and action stack, and output content remains naturally scrollable.
+
+The history is a plain list under the source column: finished notes only, newest first, with a title search. Selecting an entry opens that note in the output column; job identifiers are never shown.
 
 ## Elevation & Depth
 
-Depth is structural and pixel-native, not glossy. Surfaces are flat at rest and gain a soft offset shadow to separate the central window from the stippled desktop. Title-bar hatching, borders, and overlapping rectangles carry most of the hierarchy.
+Depth is structural and pixel-native, not glossy. Surfaces are flat at rest and gain a soft offset shadow to separate the central window from the stippled desktop. Title-bar hatching and borders carry most of the hierarchy.
 
 ### Shadow Vocabulary
 
 - **Primary window lift** (`7px 7px 0 rgba(17, 17, 15, .18)`): Separates the app window from the desktop.
-- **Utility window lift** (`5px 5px 0 rgba(17, 17, 15, .13)`): Separates small background and shortcut windows.
 - **Action hover lift** (`3px 3px 0 #11110f`): A short state response on interactive buttons only.
 
 ### Named Rules
@@ -80,7 +81,7 @@ Depth is structural and pixel-native, not glossy. Surfaces are flat at rest and 
 
 ## Shapes
 
-All controls and windows use square corners (`0`). Borders are black and generally 1–2px. Window title bars have a close square at left, centered title, and a small grip at right. Inputs are large enough to read and operate, with a 2px ink stroke and no browser-default rounding.
+All controls and windows use square corners (`0`). Borders are black and generally 1–2px. Window title bars have a decorative square at left, centered title, and a small grip at right — the square is not a button. Inputs are large enough to read and operate, with a 2px ink stroke and no browser-default rounding.
 
 ## Components
 
@@ -107,13 +108,18 @@ All controls and windows use square corners (`0`). Borders are black and general
 
 ### Navigation
 
-- **Style:** Sticky, 43px menu bar with a bottom ink rule, compact uppercase controls, and a workstation LED.
-- **State:** Menu actions are text-first and underline on hover; the status area remains quiet and informational.
-- **Mobile:** Secondary menu commands hide while the product name and local-workstation status stay visible.
+- **Style:** Sticky, 43px menu bar with a bottom ink rule, the product name, and a workstation LED. There are no menus: every control on the bar must do the thing it says.
+- **State:** The status area remains quiet and informational; the only job state text lives in the single status line under the pipeline.
+- **Mobile:** The product name and local-workstation status stay visible.
+
+### History List
+
+- **Style:** Square list items (1px ink border) with the note title and its date/language as muted metadata; hover paints the item lime.
+- **State:** An empty history says `NO NOTES YET`; titles are rendered as text, never as HTML. The search field filters by title through the `?q=` query parameter.
 
 ### Pipeline Track
 
-The four stages are a horizontal line of numbered square nodes: Download, Convert, Transcribe, Summarize. The current node becomes lime and underlines its label; completed nodes invert to black. On narrow screens, supporting descriptions disappear but the stage sequence remains.
+The four stages are a horizontal line of numbered square nodes: Download, Convert, Transcribe, Summarize. The current node becomes lime and underlines its label; completed nodes invert to black. Stage names only — no technical descriptions (`16 kHz mono`, …), which say nothing to the reader.
 
 ## Do's and Don'ts
 

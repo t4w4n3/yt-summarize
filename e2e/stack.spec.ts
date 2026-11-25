@@ -96,8 +96,8 @@ test('browser: full flow against the real stack', async ({ page }) => {
 
   // Real 2s polling + fake worker (~1s of stage delays): give it room.
   await expect(page.locator('#note-content')).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator('#footer-state')).toHaveText('DONE');
-  await expect(page.locator('#queue-state')).toHaveText('COMPLETE');
+  await expect(page.locator('#status-message')).toHaveText(/DONE/);
+  await expect(page.locator('#history-list li').first()).toContainText('Me at the zoo (e2e fixture)');
   await expect(page.locator('#note-title')).toHaveText('Me at the zoo (e2e fixture)');
   await expect(page.locator('#markdown-output h2').first()).toHaveText('Overview');
   await expect(page.locator('#word-count')).toHaveText(/\d+ WORDS/);

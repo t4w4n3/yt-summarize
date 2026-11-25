@@ -24,6 +24,7 @@ interface PublicJob {
   progress: number;
   title: string | null;
   error: string | null;
+  lang: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,6 +38,7 @@ function publicJob(job: Job | null): PublicJob | null {
     progress: job.progress,
     title: job.title,
     error: job.error,
+    lang: job.lang,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
   };
@@ -60,6 +62,33 @@ app.post('/api/summarize', (req: Request<object, unknown, CreateBody>, res: Resp
   }
   const job = store.create({ id: crypto.randomUUID(), url, videoId, lang });
   return res.status(201).json({ jobId: job?.id });
+});
+
+const HISTORY_DEFAULT_LIMIT = 20;
+const HISTORY_MAX_LIMIT = 50;
+const HISTORY_MAX_SEARCH_LENGTH = 100;
+
+app.get('/api/jobs', (req: Request, res: Response) => {
+  const rawLimit = req.query.limit;
+  let limit = HISTORY_DEFAULT_LIMIT;
+  if (rawLimit !== undefined) {
+    if (typeof rawLimit !== 'string' || !/^\d+$/.test(rawLimit)) {
+      return res.status(400).json({ error: 'The limit must be an integer between 1 and 50.' });
+    }
+    limit = Number(rawLimit);
+    if (limit < 1 || limit > HISTORY_MAX_LIMIT) {
+      return res.status(400).json({ error: 'The limit must be an integer between 1 and 50.' });
+    }
+  }
+  const rawSearch = req.query.q;
+  if (rawSearch !== undefined && typeof rawSearch !== 'string') {
+    return res.status(400).json({ error: 'The search query must be 100 characters or fewer.' });
+  }
+  const search = typeof rawSearch === 'string' ? rawSearch : undefined;
+  if (search !== undefined && search.length > HISTORY_MAX_SEARCH_LENGTH) {
+    return res.status(400).json({ error: 'The search query must be 100 characters or fewer.' });
+  }
+  return res.json({ jobs: store.listDone(limit, search).map(publicJob) });
 });
 
 app.get('/api/jobs/:id', (req: Request<{ id: string }>, res: Response) => {

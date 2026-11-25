@@ -66,6 +66,7 @@ app.post('/api/summarize', (req: Request<object, unknown, CreateBody>, res: Resp
 
 const HISTORY_DEFAULT_LIMIT = 20;
 const HISTORY_MAX_LIMIT = 50;
+const HISTORY_MAX_OFFSET = 10000;
 const HISTORY_MAX_SEARCH_LENGTH = 100;
 
 app.get('/api/jobs', (req: Request, res: Response) => {
@@ -88,7 +89,20 @@ app.get('/api/jobs', (req: Request, res: Response) => {
   if (search !== undefined && search.length > HISTORY_MAX_SEARCH_LENGTH) {
     return res.status(400).json({ error: 'The search query must be 100 characters or fewer.' });
   }
-  return res.json({ jobs: store.listDone(limit, search).map(publicJob) });
+  const rawOffset = req.query.offset;
+  let offset = 0;
+  if (rawOffset !== undefined) {
+    if (typeof rawOffset !== 'string' || !/^\d+$/.test(rawOffset)) {
+      return res.status(400).json({ error: 'The offset must be an integer between 0 and 10000.' });
+    }
+    offset = Number(rawOffset);
+    if (offset < 0 || offset > HISTORY_MAX_OFFSET) {
+      return res.status(400).json({ error: 'The offset must be an integer between 0 and 10000.' });
+    }
+  }
+  const jobs = store.listDone(limit, search, offset).map(publicJob);
+  const total = store.countDone(search);
+  return res.json({ jobs, total, limit, offset, hasMore: offset + jobs.length < total });
 });
 
 app.get('/api/jobs/:id', (req: Request<{ id: string }>, res: Response) => {

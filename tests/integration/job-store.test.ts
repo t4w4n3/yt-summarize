@@ -179,6 +179,90 @@ describe('JobStore (SQLite adapter)', () => {
     );
   });
 
+  it('listDone with offset returns the next page, newest first', () => {
+    const store = freshStore();
+    for (const id of ['old', 'mid', 'new']) {
+      const job = must(store.create({ id, url: 'https://youtu.be/AAAAAAAAAAA', videoId: id, lang: 'en' }));
+      must(store.claimNext());
+      must(store.markDone(job.id, `Title ${id}`, '# note'));
+    }
+    assert.ok(db);
+    db.prepare('UPDATE jobs SET created_at = ? WHERE id = ?').run('2026-01-01T00:00:00.000Z', 'old');
+    db.prepare('UPDATE jobs SET created_at = ? WHERE id = ?').run('2026-02-01T00:00:00.000Z', 'mid');
+    db.prepare('UPDATE jobs SET created_at = ? WHERE id = ?').run('2026-03-01T00:00:00.000Z', 'new');
+    assert.deepEqual(
+      store.listDone(2, undefined, 0).map((j) => j.id),
+      ['new', 'mid'],
+      'page 1 with limit=2 offset=0 must be [new, mid]',
+    );
+    assert.deepEqual(
+      store.listDone(2, undefined, 1).map((j) => j.id),
+      ['mid', 'old'],
+      'page with limit=2 offset=1 must be [mid, old]',
+    );
+    assert.deepEqual(
+      store.listDone(2, undefined, 2).map((j) => j.id),
+      ['old'],
+      'page with limit=2 offset=2 must be [old] (last partial page)',
+    );
+    assert.deepEqual(
+      store.listDone(2, undefined, 3).map((j) => j.id),
+      [],
+      'page with limit=2 offset=3 (== total) must be empty',
+    );
+    assert.deepEqual(
+      store.listDone(2, undefined, 99).map((j) => j.id),
+      [],
+      'page with limit=2 offset=99 (> total) must be empty',
+    );
+  });
+
+  it('listDone orders equal timestamps deterministically so pages do not duplicate', () => {
+    const store = freshStore();
+    for (const id of ['a', 'b']) {
+      const job = must(store.create({ id, url: 'https://youtu.be/AAAAAAAAAAA', videoId: id, lang: 'en' }));
+      must(store.claimNext());
+      must(store.markDone(job.id, `Title ${id}`, '# note'));
+    }
+    assert.ok(db);
+    for (const id of ['a', 'b']) {
+      db.prepare('UPDATE jobs SET created_at = ?, updated_at = ? WHERE id = ?').run(
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-01T00:00:00.000Z',
+        id,
+      );
+    }
+    assert.deepEqual(
+      store.listDone(1, undefined, 0).map((j) => j.id),
+      ['b'],
+      'equal timestamps: first page of size 1 must be [b] (id DESC tie-breaker)',
+    );
+    assert.deepEqual(
+      store.listDone(1, undefined, 1).map((j) => j.id),
+      ['a'],
+      'equal timestamps: second page of size 1 must be [a], not a repeat of the first page',
+    );
+  });
+
+  it('countDone counts done jobs and respects the title search', () => {
+    const store = freshStore();
+    const a = must(store.create({ id: 'alpha', url: 'https://youtu.be/CCCCCCCCCCC', videoId: 'alpha' }));
+    must(store.claimNext());
+    must(store.markDone(a.id, 'Alpha 100%_Guide', '# note'));
+    const b = must(store.create({ id: 'beta', url: 'https://youtu.be/DDDDDDDDDDD', videoId: 'beta' }));
+    must(store.claimNext());
+    must(store.markDone(b.id, 'Beta notes', '# note'));
+    must(store.create({ id: 'pending', url: 'https://youtu.be/EEEEEEEEEEE', videoId: 'pending' }));
+    assert.equal(store.countDone(), 2, 'countDone() must count done jobs only (2), not the queued one');
+    assert.equal(store.countDone('alpha'), 1, 'countDone("alpha") must be 1 (Alpha 100%_Guide)');
+    assert.equal(
+      store.countDone('100%_'),
+      1,
+      'countDone("100%_") must be 1 and match literally, not as LIKE wildcards',
+    );
+    assert.equal(store.countDone('delta'), 0, 'countDone("delta") must be 0');
+  });
+
   it('reclaimStaleJobs re-queues only stale running jobs', () => {
     const store = freshStore();
     const stale = must(store.create({ id: 'stale', url: 'https://youtu.be/STALESTALEST', videoId: 'STALESTALEST' }));

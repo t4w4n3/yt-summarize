@@ -116,6 +116,7 @@ All controls and windows use square corners (`0`). Borders are black and general
 
 - **Style:** Square list items (1px ink border) with the note title and its date/language as muted metadata; hover paints the item lime.
 - **State:** An empty history says `NO NOTES YET`; titles are rendered as text, never as HTML. The search field filters by title through the `?q=` query parameter.
+- **Pagination:** The list loads 10 notes at a time; a square `LOAD MORE` button under the list appends the next page and hides when the last page is reached, with a muted `N OF M` count next to it. Searching restarts at the first filtered page.
 
 ### Pipeline Track
 

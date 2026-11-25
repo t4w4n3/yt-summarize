@@ -78,14 +78,24 @@ function installJobMock(
   page.route(/\/api\/jobs(\?|$)/, (route) => {
     const url = new URL(route.request().url());
     const q = (url.searchParams.get('q') ?? '').toLowerCase();
-    const jobs = q
+    const filtered = q
       ? historyJobs.filter((j) =>
           String(j.title ?? '')
             .toLowerCase()
             .includes(q),
         )
       : historyJobs;
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jobs }) });
+    const parsedLimit = Number(url.searchParams.get('limit') ?? '20');
+    const limit = Number.isInteger(parsedLimit) && parsedLimit >= 1 && parsedLimit <= 50 ? parsedLimit : 20;
+    const parsedOffset = Number(url.searchParams.get('offset') ?? '0');
+    const offset = Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
+    const jobs = filtered.slice(offset, offset + limit);
+    const total = filtered.length;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ jobs, total, limit, offset, hasMore: offset + jobs.length < total }),
+    });
   });
   return { posts: () => posts, bodies: () => bodies };
 }
@@ -412,6 +422,42 @@ test('history shows an empty state when there are no finished notes', async ({ p
   await expect(page.locator('#history-empty')).toBeVisible();
   await expect(page.locator('#history-empty')).toContainText('NO NOTES YET');
   await expect(page.locator('#history-list li')).toHaveCount(0);
+});
+
+function makeHistoryJobs(count: number): Array<Record<string, unknown>> {
+  return Array.from({ length: count }, (_, i) => ({
+    jobId: `${String(i).padStart(8, 'a')}-aaaa-4aaa-8aaa-aaaaaaaaaaaa`,
+    status: 'done',
+    title: `Note ${String(count - i).padStart(2, '0')}`,
+    lang: 'en',
+    createdAt: '2026-02-01T00:00:00.000Z',
+    updatedAt: '2026-02-01T00:00:00.000Z',
+  }));
+}
+
+test('history loads 10 notes per page and appends more on LOAD MORE', async ({ page }) => {
+  installJobMock(page, { jobStates: [], historyJobs: makeHistoryJobs(12) });
+  await page.goto('/');
+  await expect(page.locator('#history-list li')).toHaveCount(10);
+  await expect(page.locator('#history-list li').first()).toContainText('Note 12');
+  await expect(page.locator('#history-count')).toContainText('10 OF 12');
+  await expect(page.locator('#history-load-more')).toBeVisible();
+  await page.click('#history-load-more');
+  await expect(page.locator('#history-list li')).toHaveCount(12);
+  await expect(page.locator('#history-list li').last()).toContainText('Note 01');
+  await expect(page.locator('#history-count')).toContainText('12 OF 12');
+  await expect(page.locator('#history-load-more')).toBeHidden();
+});
+
+test('history search resets pagination to the first filtered page', async ({ page }) => {
+  installJobMock(page, { jobStates: [], historyJobs: makeHistoryJobs(12) });
+  await page.goto('/');
+  await page.click('#history-load-more');
+  await expect(page.locator('#history-list li')).toHaveCount(12);
+  await page.fill('#history-search', 'Note 0');
+  await expect(page.locator('#history-list li')).toHaveCount(9);
+  await expect(page.locator('#history-count')).toContainText('9 OF 9');
+  await expect(page.locator('#history-load-more')).toBeHidden();
 });
 
 test('mobile layout keeps the form usable with no horizontal overflow', async ({ page }) => {

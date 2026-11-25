@@ -22,7 +22,8 @@ export interface JobStore {
   markDone(id: string, title: string | null, markdown: string): Job | null;
   markFailed(id: string, error: string, stage: string | null): Job | null;
   retryFailed(id: string): Job | null;
-  listDone(limit: number, search?: string): Job[];
+  listDone(limit: number, search?: string, offset?: number): Job[];
+  countDone(search?: string): number;
 }
 
 export type { JobStatus };

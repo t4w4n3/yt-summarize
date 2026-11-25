@@ -27,18 +27,24 @@
   const historyList = document.querySelector('#history-list');
   const historyEmpty = document.querySelector('#history-empty');
   const historySearch = document.querySelector('#history-search');
+  const historyLoadMore = document.querySelector('#history-load-more');
+  const historyCount = document.querySelector('#history-count');
   let currentJobId = null;
   let pollTimer = null;
   let currentMarkdown = '';
   let lastDeduped = false;
   let consecutivePollFailures = 0;
   let historyTimer = null;
+  let historyLoaded = 0;
+  let historyHasMore = false;
+  let historyTotal = null;
+  let historyLoading = false;
 
   const STORAGE_KEY = 'summarize-yt:lastJobId';
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const POLL_INTERVAL_MS = 2000;
   const MAX_POLL_FAILURES = 3;
-  const HISTORY_LIMIT = 50;
+  const HISTORY_PAGE_SIZE = 10;
 
   // Note language: default to the browser locale; English browsers get no
   // picker at all since both options would be English.
@@ -526,43 +532,83 @@
     return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
-  function renderHistory(jobs) {
-    historyList.replaceChildren();
-    for (const job of jobs) {
-      const item = document.createElement('li');
-      item.dataset.jobId = job.jobId;
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'history-item';
-      const title = document.createElement('span');
-      title.className = 'history-title';
-      title.textContent = job.title || 'Untitled study note';
-      const meta = document.createElement('span');
-      meta.className = 'history-meta';
-      const lang = job.lang && job.lang !== 'en' ? ` · ${job.lang.toUpperCase()}` : '';
-      meta.textContent = `${formatHistoryDate(job.createdAt)}${lang}`;
-      button.append(title, meta);
-      button.addEventListener('click', () => openHistoryJob(job.jobId));
-      item.append(button);
-      historyList.append(item);
+  function updateHistoryFooter() {
+    if (historyCount) {
+      historyCount.hidden = historyLoaded === 0;
+      if (historyLoaded > 0) {
+        historyCount.textContent =
+          historyTotal === null ? String(historyLoaded) : `${historyLoaded} OF ${historyTotal}`;
+      }
     }
-    historyEmpty.textContent = 'NO NOTES YET';
-    historyEmpty.hidden = jobs.length > 0;
+    if (historyLoadMore) {
+      historyLoadMore.hidden = !historyHasMore;
+      historyLoadMore.disabled = historyLoading;
+      historyLoadMore.textContent = historyLoading ? 'LOADING...' : 'LOAD MORE';
+    }
   }
 
-  async function loadHistory(query = '') {
+  function createHistoryItem(job) {
+    const item = document.createElement('li');
+    item.dataset.jobId = job.jobId;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'history-item';
+    const title = document.createElement('span');
+    title.className = 'history-title';
+    title.textContent = job.title || 'Untitled study note';
+    const meta = document.createElement('span');
+    meta.className = 'history-meta';
+    const lang = job.lang && job.lang !== 'en' ? ` · ${job.lang.toUpperCase()}` : '';
+    meta.textContent = `${formatHistoryDate(job.createdAt)}${lang}`;
+    button.append(title, meta);
+    button.addEventListener('click', () => openHistoryJob(job.jobId));
+    item.append(button);
+    return item;
+  }
+
+  function appendHistory(jobs) {
+    for (const job of jobs) historyList.append(createHistoryItem(job));
+    historyEmpty.textContent = 'NO NOTES YET';
+    historyEmpty.hidden = historyLoaded > 0;
+  }
+
+  function replaceHistory(jobs) {
+    historyList.replaceChildren();
+    appendHistory(jobs);
+  }
+
+  async function loadHistory(query = '', { append = false } = {}) {
+    if (historyLoading) return;
+    const offset = append ? historyLoaded : 0;
+    historyLoading = true;
+    updateHistoryFooter();
     try {
-      const params = new URLSearchParams({ limit: String(HISTORY_LIMIT) });
+      const params = new URLSearchParams({ limit: String(HISTORY_PAGE_SIZE), offset: String(offset) });
       const q = query.trim();
       if (q) params.set('q', q);
       const response = await fetch(`/api/jobs?${params.toString()}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Could not load history.');
-      renderHistory(Array.isArray(data.jobs) ? data.jobs : []);
+      const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+      historyLoaded = offset + jobs.length;
+      historyTotal = typeof data.total === 'number' ? data.total : null;
+      historyHasMore = typeof data.hasMore === 'boolean' ? data.hasMore : jobs.length >= HISTORY_PAGE_SIZE;
+      if (append) appendHistory(jobs);
+      else replaceHistory(jobs);
     } catch {
-      renderHistory([]);
-      historyEmpty.hidden = false;
-      historyEmpty.textContent = 'HISTORY UNAVAILABLE';
+      if (append) {
+        showToast('Could not load more history.');
+      } else {
+        historyLoaded = 0;
+        historyHasMore = false;
+        historyTotal = null;
+        historyList.replaceChildren();
+        historyEmpty.hidden = false;
+        historyEmpty.textContent = 'HISTORY UNAVAILABLE';
+      }
+    } finally {
+      historyLoading = false;
+      updateHistoryFooter();
     }
   }
 
@@ -594,6 +640,9 @@
   downloadButton.addEventListener('click', download);
   if (retryButton) retryButton.addEventListener('click', retryJob);
   if (resumeForget) resumeForget.addEventListener('click', forgetResume);
+  if (historyLoadMore) {
+    historyLoadMore.addEventListener('click', () => loadHistory(historySearch?.value ?? '', { append: true }));
+  }
   if (historySearch) {
     historySearch.addEventListener('input', () => {
       window.clearTimeout(historyTimer);

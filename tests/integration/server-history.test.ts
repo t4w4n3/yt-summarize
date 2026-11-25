@@ -159,4 +159,74 @@ describe('server — GET /api/jobs (history)', () => {
     const body = (await res.json()) as { error?: string };
     assert.equal(body.error, 'The search query must be 100 characters or fewer.');
   });
+
+  it('paginates with ?offset= and reports total/hasMore', async () => {
+    const page1 = await fetch(`${base}/api/jobs?limit=1&offset=0`);
+    assert.equal(page1.status, 200, 'GET /api/jobs?limit=1&offset=0 must be 200');
+    const page1Body = (await page1.json()) as {
+      jobs: Array<Record<string, unknown>>;
+      total: number;
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+    assert.deepEqual(
+      page1Body.jobs.map((j) => j.jobId),
+      [NEW_ID],
+      'limit=1 offset=0 must return [NEW_ID] (newest)',
+    );
+    assert.equal(page1Body.total, 2, 'limit=1 offset=0 total must be 2');
+    assert.equal(page1Body.limit, 1, 'limit=1 offset=0 echoed limit must be 1');
+    assert.equal(page1Body.offset, 0, 'limit=1 offset=0 echoed offset must be 0');
+    assert.equal(page1Body.hasMore, true, 'limit=1 offset=0 hasMore must be true (1 of 2 shown)');
+
+    const page2 = await fetch(`${base}/api/jobs?limit=1&offset=1`);
+    assert.equal(page2.status, 200);
+    const page2Body = (await page2.json()) as {
+      jobs: Array<Record<string, unknown>>;
+      total: number;
+      offset: number;
+      hasMore: boolean;
+    };
+    assert.deepEqual(
+      page2Body.jobs.map((j) => j.jobId),
+      [OLD_ID],
+      'limit=1 offset=1 must return [OLD_ID] (the older note)',
+    );
+    assert.equal(page2Body.total, 2, 'limit=1 offset=1 total must be 2');
+    assert.equal(page2Body.offset, 1, 'limit=1 offset=1 echoed offset must be 1');
+    assert.equal(page2Body.hasMore, false, 'limit=1 offset=1 hasMore must be false (2 of 2 shown)');
+
+    const pastEnd = await fetch(`${base}/api/jobs?limit=1&offset=2`);
+    assert.equal(pastEnd.status, 200);
+    const pastEndBody = (await pastEnd.json()) as { jobs: unknown[]; total: number; hasMore: boolean };
+    assert.deepEqual(pastEndBody.jobs, [], 'offset=2 at total=2 must return an empty page');
+    assert.equal(pastEndBody.total, 2, 'offset=2 total must still be 2');
+    assert.equal(pastEndBody.hasMore, false, 'offset=2 hasMore must be false');
+
+    const filtered = await fetch(`${base}/api/jobs?limit=1&offset=0&q=alpha`);
+    assert.equal(filtered.status, 200);
+    const filteredBody = (await filtered.json()) as { jobs: unknown[]; total: number; hasMore: boolean };
+    assert.equal(filteredBody.jobs.length, 1, 'q=alpha must return 1 job');
+    assert.equal(filteredBody.total, 1, 'q=alpha total must be 1 (search narrows the count)');
+    assert.equal(filteredBody.hasMore, false, 'q=alpha hasMore must be false');
+  });
+
+  it('rejects out-of-range offsets with 400', async () => {
+    for (const bad of ['-1', '1.5', 'abc', '10001', '']) {
+      const res = await fetch(`${base}/api/jobs?offset=${encodeURIComponent(bad)}`);
+      assert.equal(res.status, 400, `offset=${bad || '(empty)'} must be 400, got ${res.status}`);
+      const body = (await res.json()) as { error?: string };
+      assert.equal(
+        body.error,
+        'The offset must be an integer between 0 and 10000.',
+        `offset=${bad || '(empty)'} error text`,
+      );
+    }
+    const boundary = await fetch(`${base}/api/jobs?limit=1&offset=10000`);
+    assert.equal(boundary.status, 200, 'offset=10000 (the max) must be accepted');
+    const boundaryBody = (await boundary.json()) as { jobs: unknown[]; total: number; hasMore: boolean };
+    assert.deepEqual(boundaryBody.jobs, [], 'offset=10000 must return an empty page');
+    assert.equal(boundaryBody.hasMore, false, 'offset=10000 hasMore must be false');
+  });
 });

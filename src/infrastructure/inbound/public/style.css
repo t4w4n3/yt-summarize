@@ -698,6 +698,22 @@ input[type="url"][aria-invalid="true"] {
   font-size: 10px;
   white-space: nowrap;
 }
+.history-footer {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.history-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+#history-load-more {
+  margin-left: auto;
+}
 
 .is-busy .button--primary {
   background: var(--dither);

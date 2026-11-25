@@ -237,21 +237,34 @@ export function retryFailedJob(db: DatabaseSync, id: string): Job | null {
   return Number(result.changes) === 1 ? getJob(db, id) : null;
 }
 
-export function listDoneJobs(db: DatabaseSync, limit: number, search?: string): Job[] {
+export function listDoneJobs(db: DatabaseSync, limit: number, search?: string, offset = 0): Job[] {
   const term = search?.trim();
   if (term) {
     const escaped = term.replace(/[\\%_]/g, (c) => `\\${c}`);
     const rows = db
       .prepare(
-        `SELECT * FROM jobs WHERE status = ? AND title LIKE '%' || ? || '%' ESCAPE '\\' ORDER BY created_at DESC, updated_at DESC LIMIT ?`,
+        `SELECT * FROM jobs WHERE status = ? AND title LIKE '%' || ? || '%' ESCAPE '\\' ORDER BY created_at DESC, updated_at DESC, id DESC LIMIT ? OFFSET ?`,
       )
-      .all(STATUS.DONE, escaped, limit);
+      .all(STATUS.DONE, escaped, limit, offset);
     return rows.map((row) => jobDbRowToJob(asJobDbRow(row)));
   }
   const rows = db
-    .prepare(`SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC, updated_at DESC LIMIT ?`)
-    .all(STATUS.DONE, limit);
+    .prepare(`SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC, updated_at DESC, id DESC LIMIT ? OFFSET ?`)
+    .all(STATUS.DONE, limit, offset);
   return rows.map((row) => jobDbRowToJob(asJobDbRow(row)));
+}
+
+export function countDoneJobs(db: DatabaseSync, search?: string): number {
+  const term = search?.trim();
+  if (term) {
+    const escaped = term.replace(/[\\%_]/g, (c) => `\\${c}`);
+    const row = db
+      .prepare(`SELECT COUNT(*) AS c FROM jobs WHERE status = ? AND title LIKE '%' || ? || '%' ESCAPE '\\'`)
+      .get(STATUS.DONE, escaped) as { c: number };
+    return Number(row.c);
+  }
+  const row = db.prepare(`SELECT COUNT(*) AS c FROM jobs WHERE status = ?`).get(STATUS.DONE) as { c: number };
+  return Number(row.c);
 }
 
 export function closeDatabase(db: DatabaseSync): void {
@@ -351,8 +364,11 @@ export function createSqliteJobStore(db: DatabaseSync): JobStore {
       const retried = retryFailedJob(db, id);
       return retried ? retried : null;
     },
-    listDone(limit, search) {
-      return listDoneJobs(db, limit, search);
+    listDone(limit, search, offset) {
+      return listDoneJobs(db, limit, search, offset);
+    },
+    countDone(search) {
+      return countDoneJobs(db, search);
     },
   };
 }

@@ -2,4 +2,4 @@
 set -euo pipefail
 
 mkdir -p "${DATA_DIR:-/data}"
-exec node /app/src/app/server.ts
+exec node /app/src/infrastructure/inbound/http.ts

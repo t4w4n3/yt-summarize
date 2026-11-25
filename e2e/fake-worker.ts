@@ -6,6 +6,9 @@
 // Env:
 //   DATA_DIR          shared with the app server (same SQLite DB)
 //   FAKE_WORKER_PORT  health-check HTTP port (default 4175)
+//   FAKE_WORKER_HOST  health-check bind host (default 127.0.0.1 for the host
+//                     e2e run; compose sets 0.0.0.0 — a published port targets
+//                     the container IP, not its loopback)
 //   FAKE_STAGE_DELAY_MS  per-stage delay (default 250)
 //   FAKE_POLL_MS      claim loop interval (default 150)
 
@@ -21,6 +24,7 @@ import {
 } from '../src/infrastructure/outbound/sqlite/job-store.ts';
 
 const HEALTH_PORT = Number(process.env.FAKE_WORKER_PORT || 4175);
+const HEALTH_HOST = process.env.FAKE_WORKER_HOST || '127.0.0.1';
 const STAGE_DELAY_MS = Number(process.env.FAKE_STAGE_DELAY_MS || 250);
 const POLL_MS = Number(process.env.FAKE_POLL_MS || 150);
 
@@ -56,8 +60,8 @@ http
     res.writeHead(404).end();
     return;
   })
-  .listen(HEALTH_PORT, '127.0.0.1', () => {
-    console.log(`[fake-worker] health check on 127.0.0.1:${HEALTH_PORT}`);
+  .listen(HEALTH_PORT, HEALTH_HOST, () => {
+    console.log(`[fake-worker] health check on ${HEALTH_HOST}:${HEALTH_PORT}`);
   });
 
 async function run(): Promise<void> {

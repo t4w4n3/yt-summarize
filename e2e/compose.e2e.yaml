@@ -38,6 +38,7 @@ services:
     environment:
       DATA_DIR: "/data"
       FAKE_WORKER_PORT: "4175"
+      FAKE_WORKER_HOST: "0.0.0.0"
     volumes:
       - "./.tmp/data:/data"
       - "./fake-worker.ts:/app/e2e/fake-worker.ts:ro"

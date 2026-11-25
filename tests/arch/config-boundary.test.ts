@@ -76,6 +76,27 @@ describe('architecture — settings come from shared/config', () => {
     );
   });
 
+  it('the fake worker stays on loopback on the host but binds all interfaces in its container', () => {
+    // e2e/playwright.config.ts runs fake-worker directly on the host, where
+    // 127.0.0.1 keeps port 4175 off the LAN. podman-compose publishes the
+    // container port to the container IP (not its loopback), so in the
+    // container smoke stack (e2e/compose.e2e.yaml) the same process must
+    // bind 0.0.0.0 — set via FAKE_WORKER_HOST. Binding 127.0.0.1 inside the
+    // container leaves the published port answering "connection reset".
+    const src = fs.readFileSync('e2e/fake-worker.ts', 'utf8');
+    assert.match(
+      src,
+      /process\.env\.FAKE_WORKER_HOST \|\| '127\.0\.0\.1'/,
+      'fake-worker must default to the loopback bind used by the host e2e run',
+    );
+    const compose = fs.readFileSync('e2e/compose.e2e.yaml', 'utf8');
+    assert.match(
+      compose,
+      /FAKE_WORKER_HOST:\s*"0\.0\.0\.0"/,
+      'compose.e2e.yaml must bind the containerised fake worker on all interfaces so its published port is reachable',
+    );
+  });
+
   it('shared/config.ts is the single place that parses the compose literal', () => {
     const readers = tsFilesUnder(path.join(SRC, 'shared'))
       .filter((file) => !file.endsWith(path.join('config.ts')))

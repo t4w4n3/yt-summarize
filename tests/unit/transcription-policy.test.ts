@@ -171,6 +171,8 @@ describe('domain/transcription/policy — transient failures (429 / 5xx)', () =>
     assert.equal(isRetryableStatus(200), false);
     assert.equal(isRetryableStatus(201), false);
     assert.equal(isRetryableStatus(0), false);
+    assert.equal(isRetryableStatus(600), false, '600 is above the 5xx range — not a defined status, not transient');
+    assert.equal(isRetryableStatus(999), false, '999 is above the 5xx range — not a defined status, not transient');
   });
 
   it('retryDelayMs: equal jitter — half fixed, half random, on an exponential cap', () => {

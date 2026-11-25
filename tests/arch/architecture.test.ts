@@ -60,6 +60,54 @@ describe('architecture — layer dependencies (archunit)', () => {
     assert.equal(fs.existsSync('src/shared/constants.ts'), false, 'the legacy constants facade must be gone');
   });
 
+  it('image entrypoints only reference node modules that exist in the image', () => {
+    // The Dockerfile copies src/ to /app/src/, so a `node /app/...` path in an
+    // entrypoint must map to an existing file — a moved adapter that forgets
+    // its entrypoint ships a container that exits MODULE_NOT_FOUND at boot.
+    const missing: string[] = [];
+    for (const entry of fs.readdirSync('image', { withFileTypes: true })) {
+      if (!entry.name.startsWith('entrypoint-') || !entry.name.endsWith('.sh')) continue;
+      const content = fs.readFileSync(path.join('image', entry.name), 'utf8');
+      for (const match of content.matchAll(/node\s+(\/app\/\S+\.ts)/g)) {
+        const target = (match[1] ?? '').replace(/^\/app\//, '');
+        if (!fs.existsSync(target)) missing.push(`${entry.name}: node ${match[1]} → ${target} does not exist`);
+      }
+    }
+    assert.deepEqual(
+      missing,
+      [],
+      `every node entry in image/entrypoint-*.sh must point at a file copied into the image ` +
+        `(Dockerfile COPY src/ → /app/src/):\n${missing.join('\n')}`,
+    );
+  });
+
+  it('image entrypoints run the same modules as the package.json start scripts', () => {
+    // Existence alone is not enough: pointing the app container at worker.ts
+    // would still "exist" while polling jobs instead of serving HTTP. The
+    // shell entrypoint and its package.json start script are two names for
+    // the same process entry, so they must never drift apart.
+    const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')) as { scripts?: Record<string, string> };
+    const cases = [
+      ['image/entrypoint-app.sh', pkg.scripts?.start],
+      ['image/entrypoint-worker.sh', pkg.scripts?.['start:worker']],
+    ] as const;
+    const mismatches: string[] = [];
+    for (const [entrypoint, script] of cases) {
+      const fromScript = script?.match(/node\s+(\S+\.ts)/)?.[1];
+      const fromEntrypoint = fs.readFileSync(entrypoint, 'utf8').match(/node\s+\/app\/(\S+\.ts)/)?.[1];
+      if (fromEntrypoint !== fromScript) {
+        mismatches.push(
+          `${entrypoint}: runs ${fromEntrypoint ?? '(none)'} but package.json runs ${fromScript ?? '(none)'}`,
+        );
+      }
+    }
+    assert.deepEqual(
+      mismatches,
+      [],
+      `an entrypoint and its package.json start script must launch the same module:\n${mismatches.join('\n')}`,
+    );
+  });
+
   it('domain must not depend on inbound adapter', async () => {
     const rule = projectFiles()
       .inFolder('src/domain/**')

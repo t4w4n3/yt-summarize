@@ -42,10 +42,14 @@ else
   warn "podman missing (>= 5 required)"
   fail=1
 fi
-if podman-compose --version >/dev/null 2>&1; then
-  ok "$(podman-compose --version 2>&1 | tail -n 1)"
-else
+PC_VER="$(podman-compose --version 2>/dev/null | sed -n 's/.*podman-compose version \([0-9][0-9.]*\).*/\1/p' || true)"
+if [ -z "$PC_VER" ]; then
   warn "podman-compose missing"
+  fail=1
+elif [ "$(printf '%s\n%s\n' 1.5.0 "$PC_VER" | sort -V | head -n 1)" = 1.5.0 ]; then
+  ok "podman-compose $PC_VER (>= 1.5 required, CMD healthcheck as JSON)"
+else
+  warn "podman-compose $PC_VER (< 1.5 required, CMD healthcheck as JSON — run: mise install)"
   fail=1
 fi
 

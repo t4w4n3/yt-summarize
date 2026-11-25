@@ -87,10 +87,7 @@ describe('architecture — layer dependencies (archunit)', () => {
     // shell entrypoint and its package.json start script are two names for
     // the same process entry, so they must never drift apart.
     const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')) as { scripts?: Record<string, string> };
-    const cases = [
-      ['image/entrypoint-app.sh', pkg.scripts?.start],
-      ['image/entrypoint-worker.sh', pkg.scripts?.['start:worker']],
-    ] as const;
+    const cases = [['image/entrypoint-worker.sh', pkg.scripts?.['start:worker']]] as const;
     const mismatches: string[] = [];
     for (const [entrypoint, script] of cases) {
       const fromScript = script?.match(/node\s+(\S+\.ts)/)?.[1];
@@ -128,7 +125,22 @@ describe('architecture — layer dependencies (archunit)', () => {
     const app = stages.get('app') ?? '';
     const worker = stages.get('worker') ?? '';
     const vpn = stages.get('vpn') ?? '';
-    assert.equal(app.includes('curl='), true, 'app stage: expected curl package for the healthcheck');
+    assert.equal(
+      app.includes('distroless/nodejs26-debian13'),
+      true,
+      'app stage: expected distroless nodejs26 runtime (zero shell, zero curl)',
+    );
+    assert.equal(
+      app.includes('ENTRYPOINT ["/nodejs/bin/node"]'),
+      true,
+      'app stage: expected node ENTRYPOINT (no shell entrypoint)',
+    );
+    assert.equal(
+      app.includes('CMD ["/app/src/infrastructure/inbound/http.ts"]'),
+      true,
+      'app stage: expected default CMD http.ts (compose can override CMD for the fake worker)',
+    );
+    assert.equal(app.includes('USER 1000'), true, 'app stage: expected numeric USER 1000 (shared data volume uid)');
     assert.equal(worker.includes('ffmpeg='), true, 'worker stage: expected ffmpeg package for convert/transcribe');
     assert.equal(worker.includes('python3='), true, 'worker stage: expected python3 for yt-dlp');
     assert.equal(worker.includes('yt-dlp=='), true, 'worker stage: expected yt-dlp install for download stage');
@@ -138,11 +150,39 @@ describe('architecture — layer dependencies (archunit)', () => {
     assert.equal(app.includes('ffmpeg='), false, 'app stage: must not install ffmpeg (HTTP+SQLite only)');
     assert.equal(app.includes('python3='), false, 'app stage: must not install python3 (no yt-dlp)');
     assert.equal(app.includes('wireguard-tools='), false, 'app stage: must not install wireguard-tools');
+    assert.equal(app.includes('curl='), false, 'app stage: must not install curl (distroless has none)');
+    assert.equal(app.includes('apt-get'), false, 'app stage: must not install anything at runtime (distroless)');
+    assert.equal(
+      app.includes('entrypoint-app.sh'),
+      false,
+      'app stage: must not ship a shell entrypoint (distroless has no shell)',
+    );
     assert.equal(worker.includes('wireguard-tools='), false, 'worker stage: must not install wireguard-tools');
     assert.equal(worker.includes('iproute2='), false, 'worker stage: must not install iproute2');
     assert.equal(vpn.includes('ffmpeg='), false, 'vpn stage: must not install ffmpeg (SOCKS5 only)');
     assert.equal(vpn.includes('python3='), false, 'vpn stage: must not install python3 (no yt-dlp)');
     const compose = fs.readFileSync('compose.yaml', 'utf8');
+    assert.equal(compose.includes('curl'), false, 'compose: must not use curl (distroless app has none)');
+    assert.equal(
+      compose.includes('test: ["CMD", "/nodejs/bin/node", "/app/src/infrastructure/inbound/healthcheck.ts"'),
+      true,
+      'compose: expected CMD healthcheck via healthcheck.ts (podman-compose JSON keeps it shell-less)',
+    );
+    assert.equal(
+      fs.existsSync('src/infrastructure/inbound/healthcheck.ts'),
+      true,
+      'healthcheck.ts: must exist for the distroless probe',
+    );
+    assert.equal(
+      compose.includes('user: "1000"'),
+      true,
+      'compose app: expected numeric user "1000" (no node user in distroless)',
+    );
+    assert.equal(
+      compose.includes('entrypoint-app.sh'),
+      false,
+      'compose: must not run the shell entrypoint (distroless app has no shell)',
+    );
     assert.equal(compose.includes('target: "app"'), true, 'compose app: expected target "app" build');
     assert.equal(compose.includes('target: "worker"'), true, 'compose worker: expected target "worker" build');
     assert.equal(compose.includes('target: "vpn"'), true, 'compose vpn: expected target "vpn" build');
@@ -156,7 +196,27 @@ describe('architecture — layer dependencies (archunit)', () => {
     assert.equal(
       e2eCompose.includes('target: "app"'),
       true,
-      'e2e compose: expected app target (node+curl) for the fake worker healthcheck',
+      'e2e compose: expected app target (distroless node) for the fake worker healthcheck',
+    );
+    assert.equal(e2eCompose.includes('curl'), false, 'e2e compose: must not use curl (distroless app has none)');
+    assert.equal(e2eCompose.includes('fetch('), false, 'e2e compose: must not inline fetch (becomes CMD-SHELL)');
+    assert.equal(e2eCompose.includes('test:'), true, 'e2e compose: expected a healthcheck test for the fake worker');
+    assert.equal(
+      e2eCompose.includes(
+        '"/nodejs/bin/node", "/app/src/infrastructure/inbound/healthcheck.ts", "http://127.0.0.1:4175/healthz"',
+      ),
+      true,
+      'e2e compose: expected CMD healthcheck via healthcheck.ts for the fake worker (formatting-agnostic)',
+    );
+    assert.equal(
+      e2eCompose.includes('entrypoint-app.sh'),
+      false,
+      'e2e compose: must not run the shell entrypoint (distroless app has no shell)',
+    );
+    assert.equal(
+      fs.existsSync('image/entrypoint-app.sh'),
+      false,
+      'image/entrypoint-app.sh: must be deleted, distroless app runs node directly',
     );
   });
 

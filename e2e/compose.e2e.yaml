@@ -19,8 +19,7 @@ services:
       context: ".."
       dockerfile: "image/Dockerfile"
       target: "app"
-    user: "node"
-    command: ["/app/entrypoint-app.sh"]
+    user: "1000"
     ports:
       - "127.0.0.1:${E2E_PORT:-4174}:8080"
     environment:
@@ -30,15 +29,15 @@ services:
       - "./.tmp/data:/data"
     restart: "no"
 
-  # Fake worker needs only node+curl (its healthcheck), so it reuses the minimal
-  # app target instead of the fat worker target (no yt-dlp/ffmpeg/gnupg).
+  # Fake worker needs only node (distroless app target already provides it, ENTRYPOINT
+  # node + CMD override), so it reuses the app target instead of the fat worker target.
   worker:
     build:
       context: ".."
       dockerfile: "image/Dockerfile"
       target: "app"
-    user: "node"
-    command: ["node", "/app/e2e/fake-worker.ts"]
+    user: "1000"
+    command: ["/app/e2e/fake-worker.ts"]
     environment:
       DATA_DIR: "/data"
       FAKE_WORKER_PORT: "4175"
@@ -49,8 +48,10 @@ services:
     ports:
       - "127.0.0.1:${E2E_WORKER_PORT:-4175}:4175"
     restart: "no"
+    # CMD (exec) healthcheck, shell-less thanks to podman-compose >=1.5 JSON (see compose.yaml).
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:4175/healthz"]
+      test:
+        ["CMD", "/nodejs/bin/node", "/app/src/infrastructure/inbound/healthcheck.ts", "http://127.0.0.1:4175/healthz"]
       interval: "10s"
       timeout: "3s"
       retries: 3

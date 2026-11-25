@@ -110,6 +110,7 @@ url_api = "https://api.github.com/repos/jdx/hk/releases/assets/706553730"
 
 [tools.hk."platforms.linux-x64"]
 checksum = "sha256:b9330bd4b9326c3e1aefd757ff923fdf6d1b060074bcb4e54e16ec0a81fde7ec"
+checksum_source = "mise-versions"
 url = "https://github.com/jdx/hk/releases/download/v2.11.1/hk-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/hk/releases/assets/706553774"
 
@@ -185,6 +186,7 @@ url_api = "https://api.github.com/repos/pypa/pipx/releases/assets/720080157"
 
 [tools.pipx."platforms.linux-x64"]
 checksum = "sha256:bd3709947d3a36cb898f53c765aba568d01c1aef3302ec439037fcbbdad559c1"
+checksum_source = "mise-versions"
 url = "https://github.com/pypa/pipx/releases/download/1.18.16/pipx.pyz"
 url_api = "https://api.github.com/repos/pypa/pipx/releases/assets/720080157"
 
@@ -206,6 +208,10 @@ checksum_source = "mise-versions"
 url = "https://github.com/pypa/pipx/releases/download/1.18.16/pipx.pyz"
 url_api = "https://api.github.com/repos/pypa/pipx/releases/assets/720080157"
 
+[[tools."pipx:podman-compose"]]
+version = "1.6.0"
+backend = "pipx:podman-compose"
+
 [[tools.pkl]]
 version = "0.33.0"
 backend = "aqua:apple/pkl"
@@ -224,6 +230,7 @@ url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756970"
 
 [tools.pkl."platforms.linux-x64"]
 checksum = "sha256:b9a6ddea6b382b7d4db4cf78e77aa3858e0c8a7e02939d2ba298574b5d1fcc69"
+checksum_source = "mise-versions"
 url = "https://github.com/apple/pkl/releases/download/0.33.0/pkl-linux-amd64"
 url_api = "https://api.github.com/repos/apple/pkl/releases/assets/714756975"
 
@@ -355,6 +362,7 @@ url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320869"
 
 [tools.shfmt."platforms.linux-x64"]
 checksum = "sha256:76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf"
+checksum_source = "mise-versions"
 url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_amd64"
 url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320883"
 

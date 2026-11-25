@@ -1,16 +1,16 @@
 # ---- Runtime multi-cible: un seul Dockerfile, trois images least-privilege ----
 # Les trois services n'installent que les outils qu'ils spawkent vraiment :
-#   app    : node + curl (healthcheck compose) — jamais yt-dlp/ffmpeg/wg
+#   app    : distroless Node, zero shell, zero curl (ENTRYPOINT node, CMD healthcheck)
 #   worker : node + yt-dlp/python + ffmpeg + gnupg + ca-certificates
 #   vpn    : node + wireguard-tools/iproute2/bash (wg-quick) — jamais python/ffmpeg
-# La base partage le socle (node slim + bash pour les entrypoints + deps pnpm)
+# La base partage le socle (node slim + bash pour les entrypoints worker/vpn + deps pnpm)
 # et le cache de couches, mais chaque cible finale garde sa surface minimale.
 # Les stages payants sont de simples appels HTTPS à OpenRouter.
 
 FROM node:26.13.1-trixie-slim@sha256:a5a5adfee3013de54504e0e6aff49993acf7daed072e86be75b8818c0f6ac258 AS base
 
-# bash est requis par les trois entrypoints (#/usr/bin/env bash) et par
-# wg-quick côté vpn ; il vit donc dans la base partagée.
+# bash est requis par les entrypoints worker/vpn (#/usr/bin/env bash) et par
+# wg-quick côté vpn ; il vit donc dans la base partagée (et le builder app).
 # Versions épinglées (hadolint DL3008/DL3013). Re-épingler délibérément :
 # `podman run --rm node:26-trixie-slim bash -c "apt-get update && apt-cache policy <pkg>"`
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,21 +28,23 @@ ARG CACHE_BUST=""
 COPY src/ /app/src/
 RUN chown -R node:node /app
 
-# ---- app: surface minimale, seul curl (healthcheck) en plus de bash ----
-FROM base AS app
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl=8.14.1-2+deb13u7 \
-    && rm -rf /var/lib/apt/lists/*
-COPY image/entrypoint-app.sh /app/
-RUN chmod +x /app/entrypoint-app.sh && chown -R node:node /app
+# ---- app: distroless Node (zero shell, zero curl) ----
+# The slim `base` above is only a builder (pnpm install + src); the app runtime is
+# distroless nodejs26 (same Node v26.13.1) with no /bin/sh and no curl. Two consequences
+# (guarded by the arch test): no shell entrypoint — ENTRYPOINT/CMD run node directly,
+# and the old `mkdir -p /data` is already done by job-store (fs.mkdirSync).
+# UID 1000 explicit: distroless has no `node` user, but the app must keep uid 1000 to
+# share the jobs-data volume with the worker (USER node = uid 1000 in the slim images).
+FROM gcr.io/distroless/nodejs26-debian13@sha256:521609dbb1ecdefd4c4f2bd25425b51b0b063f9f3935b80f6194a16e1a999f95 AS app
+COPY --from=base /app /app
+COPY --from=base --chown=1000:1000 /data /data
+WORKDIR /app
 EXPOSE 8080
-# Healthcheck lives in compose.yaml (app service) — Dockerfile stays OCI-compatible
-# without a HEALTHCHECK instruction (which triggers "HEALTHCHECK is not supported
-# for OCI image format" warnings under podman/buildah default format).
-# `node` (uid 1000) is defined in the base image /etc/passwd and referenced the
-# same way in compose.yaml; numeric would lose readability.
-# hadolint ignore=DL3066
-USER node
+# No Dockerfile HEALTHCHECK (OCI-incompatible): the compose-level CMD healthcheck
+# (node healthcheck.ts, no shell) lives in compose.yaml.
+ENTRYPOINT ["/nodejs/bin/node"]
+CMD ["/app/src/infrastructure/inbound/http.ts"]
+USER 1000
 
 # ---- worker: yt-dlp/python + ffmpeg + gnupg + ca-certificates ----
 FROM base AS worker

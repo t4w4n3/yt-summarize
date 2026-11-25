@@ -7,8 +7,8 @@ services:
       context: "."
       dockerfile: "image/Dockerfile"
       target: "app"
-    user: "node"
-    command: ["/app/entrypoint-app.sh"]
+    # Distroless app has no `node` user; numeric uid keeps the shared jobs-data uid.
+    user: "1000"
     # Loopback-only: never publish on all interfaces. Expose via your own
     # reverse proxy / tunnel if remote access is needed.
     ports:
@@ -19,10 +19,11 @@ services:
     volumes:
       - "jobs-data:/data"
     restart: "unless-stopped"
-    # OCI-compatible: healthcheck is defined at compose level so the image
-    # stays OCI (no Dockerfile HEALTHCHECK — which podman warns "ignored for OCI").
+    # CMD (exec) healthcheck in a distroless image: works since podman-compose
+    # >=1.5 serializes CMD arrays as JSON in --health-cmd (no /bin/sh involved).
+    # (OCI-compatible: no Dockerfile HEALTHCHECK.)
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/"]
+      test: ["CMD", "/nodejs/bin/node", "/app/src/infrastructure/inbound/healthcheck.ts", "http://127.0.0.1:8080/"]
       interval: "30s"
       timeout: "5s"
       retries: 3

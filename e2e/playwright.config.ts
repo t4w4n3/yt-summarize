@@ -11,7 +11,6 @@ const workerHealthUrl = 'http://127.0.0.1:4175/healthz';
 export default defineConfig({
   testDir: import.meta.dirname,
   testMatch: /.*\.spec\.ts/,
-  globalSetup: path.join(import.meta.dirname, 'global-setup.ts'),
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
@@ -26,14 +25,18 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
   webServer: [
-    // Never reuse a server that is already listening: global-setup wipes the
-    // data dir before the servers start, and a reused server would keep its
-    // handle on the deleted SQLite file — the suite would then run against a
-    // stale database (deduped 200 where a fresh run answers 201). A busy port
-    // is a loud failure instead: kill the leftover process and rerun.
+    // Never reuse a server that is already listening: a reused server would keep
+    // its handle on a deleted SQLite file — the suite would then run against a
+    // stale database. A busy port is a loud failure instead: kill the leftover
+    // process and rerun.
     // Real app server (same code as the container, host process, temp data dir).
+    // The wipe runs inside this command, BEFORE node starts: Playwright starts
+    // webServers before any globalSetup, so a globalSetup wipe deletes behind
+    // the servers' open fd — leftover rows (deduped 200 on first POST) and a
+    // container-owned DB ("readonly database" writes) stay visible. Wiping here
+    // guarantees a fresh, host-owned DB before either process opens it.
     {
-      command: 'node src/infrastructure/inbound/http.ts',
+      command: 'rm -rf e2e/.tmp/data && node src/infrastructure/inbound/http.ts',
       cwd: path.join(import.meta.dirname, '..'),
       url: appUrl,
       reuseExistingServer: false,

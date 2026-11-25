@@ -16,7 +16,10 @@
   --font-pixel: "Press Start 2P", var(--font-ui);
 }
 
-[hidden] {
+/* body [hidden] (specificity 0,1,1) beats the single-class display
+   rules of components (e.g. .note-empty with display:flex, 0,1,0),
+   so a component can never override the hidden attribute. */
+body [hidden] {
   display: none;
 }
 
@@ -575,9 +578,6 @@ input[type="url"][aria-invalid="true"] {
   font-weight: 600;
   letter-spacing: 0.04em;
 }
-.resume-bar[hidden] {
-  display: none;
-}
 .resume-led {
   flex: 0 0 auto;
   width: 8px;
@@ -609,9 +609,6 @@ input[type="url"][aria-invalid="true"] {
   background: var(--paper-hi);
   font: 600 9px var(--font-ui);
   letter-spacing: 0.03em;
-}
-.resume-id[hidden] {
-  display: none;
 }
 .resume-actions {
   margin-left: auto;

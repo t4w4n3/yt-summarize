@@ -165,6 +165,7 @@ test('walks a job through all four stages to a rendered note', async ({ page }) 
 
   await page.clock.fastForward(2000); // final poll → done
   await expect(page.locator('#note-content')).toBeVisible();
+  await expect(page.locator('#note-empty')).toBeHidden();
   await expect(page.locator('#note-title')).toHaveText(RESULT.title);
   await expect(page.locator('#output-subtitle')).toHaveText('READY · rendered Markdown');
   await expect(page.locator('#status-message')).toHaveText(/DONE/);

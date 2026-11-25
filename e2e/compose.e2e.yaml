@@ -18,6 +18,7 @@ services:
     build:
       context: ".."
       dockerfile: "image/Dockerfile"
+      target: "app"
     user: "node"
     command: ["/app/entrypoint-app.sh"]
     ports:
@@ -29,10 +30,13 @@ services:
       - "./.tmp/data:/data"
     restart: "no"
 
+  # Fake worker needs only node+curl (its healthcheck), so it reuses the minimal
+  # app target instead of the fat worker target (no yt-dlp/ffmpeg/gnupg).
   worker:
     build:
       context: ".."
       dockerfile: "image/Dockerfile"
+      target: "app"
     user: "node"
     command: ["node", "/app/e2e/fake-worker.ts"]
     environment:

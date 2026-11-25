@@ -29,14 +29,12 @@ OUT_DIR="$STATE_DIR/out"
 [ "${1:-}" = "--" ] && shift
 
 pick_image() {
-  # L'image projet (avec yt-dlp + ffmpeg + wireguard-tools) doit être construite.
-  for c in summarize-yt_app summarize-yt_worker; do
-    if podman image exists "localhost/$c:latest" 2>/dev/null; then
-      echo "localhost/$c:latest"
-      return 0
-    fi
-  done
-  echo "Image projet absente — lance d'abord: mise run build" >&2
+  # L'image vpn (wireguard-tools + iproute2, seule avec wg-quick) doit être construite.
+  if podman image exists "localhost/summarize-yt_vpn:latest" 2>/dev/null; then
+    echo "localhost/summarize-yt_vpn:latest"
+    return 0
+  fi
+  echo "Image vpn absente — lance d'abord: mise run build" >&2
   exit 1
 }
 
@@ -63,8 +61,8 @@ podman_vpn_run() {
     exit 1
   }
   mkdir -p "$OUT_DIR"
-  # --user root: wg-quick exige root (auto_su via sudo, absent de l'image).
-  # L'image projet a USER node (non-root); sans root le tunnel ne se monte pas.
+  # --user root: wg-quick exige root. L'image vpn est déjà en USER root, mais on
+  # force explicitement pour que ce helper reste correct si elle change.
   podman run --rm --user root \
     --cap-add NET_ADMIN \
     --device /dev/net/tun \

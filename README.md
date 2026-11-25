@@ -170,7 +170,7 @@ Runtime settings live in `.env` (created by `mise run setup`; see `.env.example`
 
 ### Services and pipeline
 
-One container image runs as three compose services sharing two named volumes:
+One Dockerfile builds three least-privilege images, one per compose service sharing two named volumes:
 
 - **app** — Express server on `:8080` (loopback-only): REST API + static single-page UI. Never executes pipeline tools, never calls OpenRouter.
 - **worker** — poll loop (`WORKER_POLL_MS`): claims the next queued job, sends heartbeats, runs the four stages one job at a time with per-stage timeouts (downloading 10 min, converting 15 min, transcribing 25 min, summarizing 10 min), then marks the job done or failed with a per-stage error. Temporary files are cleaned after a successful job; after a failure the completed-stage artifacts are kept so the job can be retried without paying for them again (see Retry below), and the transcript and the summary are always kept.

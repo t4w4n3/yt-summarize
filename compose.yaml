@@ -6,6 +6,7 @@ services:
     build:
       context: "."
       dockerfile: "image/Dockerfile"
+      target: "app"
     user: "node"
     command: ["/app/entrypoint-app.sh"]
     # Loopback-only: never publish on all interfaces. Expose via your own
@@ -31,6 +32,7 @@ services:
     build:
       context: "."
       dockerfile: "image/Dockerfile"
+      target: "worker"
     user: "node"
     command: ["/app/entrypoint-worker.sh"]
     # Défauts des variables ci-dessous : src/shared/config.ts uniquement
@@ -78,6 +80,7 @@ services:
     build:
       context: "."
       dockerfile: "image/Dockerfile"
+      target: "vpn"
     user: "root"
     command: ["/app/entrypoint-vpn.sh"]
     # Tunnel WireGuard: nécessite NET_ADMIN + /dev/net/tun (confinés au netns du sidecar).
@@ -107,9 +110,9 @@ services:
       disable: true
 
 # Pragmatic shared-model: app+worker share JobRow via jobs-data volume (SQLite jobs.db).
-# Balanced today because volatility=low (supporting, single-team, same image, polling)
-# — not VOLATILITY shields the Tight Model+High-Distance coupling.
-# Revisit if queue/history UI lands — extract JobStorePort / published language.
+# Balanced today because volatility=low (supporting, single-team, same Dockerfile with
+# three least-privilege targets, polling) — not VOLATILITY shields the Tight Model+High-
+# Distance coupling. Revisit if queue/history UI lands — extract JobStorePort / published language.
 volumes:
   jobs-data:
   artifacts:

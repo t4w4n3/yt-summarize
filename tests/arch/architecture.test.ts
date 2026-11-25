@@ -108,6 +108,58 @@ describe('architecture — layer dependencies (archunit)', () => {
     );
   });
 
+  it('Dockerfile splits into per-service targets with least-privilege tools', () => {
+    const dockerfile = fs.readFileSync('image/Dockerfile', 'utf8');
+    const fromPattern = /^FROM\s+\S+(?:\s+AS\s+(\w+))?/gim;
+    const matches = [...dockerfile.matchAll(fromPattern)];
+    const stages = new Map<string, string>();
+    for (let i = 0; i < matches.length; i += 1) {
+      const matched = matches[i];
+      const name = matched?.[1] ?? '(unnamed)';
+      const start = matched?.index ?? 0;
+      const end = i + 1 < matches.length ? (matches[i + 1]?.index ?? dockerfile.length) : dockerfile.length;
+      stages.set(name, dockerfile.slice(start, end));
+    }
+    assert.deepEqual(
+      [...stages.keys()].sort(),
+      ['app', 'base', 'vpn', 'worker'],
+      'Dockerfile must define base+app+worker+vpn stages (one Dockerfile, three images)',
+    );
+    const app = stages.get('app') ?? '';
+    const worker = stages.get('worker') ?? '';
+    const vpn = stages.get('vpn') ?? '';
+    assert.equal(app.includes('curl='), true, 'app stage: expected curl package for the healthcheck');
+    assert.equal(worker.includes('ffmpeg='), true, 'worker stage: expected ffmpeg package for convert/transcribe');
+    assert.equal(worker.includes('python3='), true, 'worker stage: expected python3 for yt-dlp');
+    assert.equal(worker.includes('yt-dlp=='), true, 'worker stage: expected yt-dlp install for download stage');
+    assert.equal(worker.includes('gnupg='), true, 'worker stage: expected gnupg for legacy secret decrypt');
+    assert.equal(vpn.includes('wireguard-tools='), true, 'vpn stage: expected wireguard-tools for wg-quick');
+    assert.equal(vpn.includes('iproute2='), true, 'vpn stage: expected iproute2 for wg-quick ip calls');
+    assert.equal(app.includes('ffmpeg='), false, 'app stage: must not install ffmpeg (HTTP+SQLite only)');
+    assert.equal(app.includes('python3='), false, 'app stage: must not install python3 (no yt-dlp)');
+    assert.equal(app.includes('wireguard-tools='), false, 'app stage: must not install wireguard-tools');
+    assert.equal(worker.includes('wireguard-tools='), false, 'worker stage: must not install wireguard-tools');
+    assert.equal(worker.includes('iproute2='), false, 'worker stage: must not install iproute2');
+    assert.equal(vpn.includes('ffmpeg='), false, 'vpn stage: must not install ffmpeg (SOCKS5 only)');
+    assert.equal(vpn.includes('python3='), false, 'vpn stage: must not install python3 (no yt-dlp)');
+    const compose = fs.readFileSync('compose.yaml', 'utf8');
+    assert.equal(compose.includes('target: "app"'), true, 'compose app: expected target "app" build');
+    assert.equal(compose.includes('target: "worker"'), true, 'compose worker: expected target "worker" build');
+    assert.equal(compose.includes('target: "vpn"'), true, 'compose vpn: expected target "vpn" build');
+    const mullvad = fs.readFileSync('.mise/tasks/mullvad.sh', 'utf8');
+    assert.equal(
+      mullvad.includes('summarize-yt_vpn'),
+      true,
+      'mullvad pick_image: expected vpn image (only target with wg-quick)',
+    );
+    const e2eCompose = fs.readFileSync('e2e/compose.e2e.yaml', 'utf8');
+    assert.equal(
+      e2eCompose.includes('target: "app"'),
+      true,
+      'e2e compose: expected app target (node+curl) for the fake worker healthcheck',
+    );
+  });
+
   it('domain must not depend on inbound adapter', async () => {
     const rule = projectFiles()
       .inFolder('src/domain/**')

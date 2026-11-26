@@ -4,7 +4,7 @@
 # Keep pnpm in sync with package.json packageManager and the pnpm install line in image/Dockerfile.
 [tools]
 node = "26.13.1"
-pnpm = "12.21.0"
+pnpm = "12.23.0"
 # podman-compose >=1.5 (here latest 1.6) via pipx: its CMD healthchecks are
 # serialized as JSON (no /bin/sh), which the distroless app healthcheck needs.
 "pipx:podman-compose" = "1.6.0"

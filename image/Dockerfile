@@ -19,7 +19,7 @@ FROM node:26.13.1-trixie-slim@sha256:a5a5adfee3013de54504e0e6aff49993acf7daed072
 WORKDIR /app
 # Keep the pinned pnpm version in sync with mise.toml and package.json packageManager.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN npm install -g pnpm@12.21.0 && pnpm install --frozen-lockfile --prod
+RUN npm install -g pnpm@12.23.0 && pnpm install --frozen-lockfile --prod
 
 RUN mkdir -p /data /artifacts && chown -R node:node /app /data /artifacts
 # Bust cache when git HEAD moves so `COPY src/` is never stale (podman layer cache bug).

@@ -2,7 +2,7 @@
   "name": "summarize-yt",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@12.21.0",
+  "packageManager": "pnpm@12.23.0",
   "description": "Self-hosted YouTube learning-summary workstation",
   "type": "module",
   "main": "src/infrastructure/inbound/http.ts",

@@ -29,6 +29,12 @@ export async function download(
     titlePath,
     '-f',
     'bestaudio/best',
+    // Abort as soon as yt-dlp knows the file is over the cap (fail fast,
+    // before the full download fills the artifacts volume). The on-disk
+    // check below is the backstop: yt-dlp's filesize is occasionally
+    // unknown until the download finishes.
+    '--max-filesize',
+    String(cfg.maxDownloadBytes),
     '-o',
     output,
   ];
@@ -51,9 +57,20 @@ export async function download(
   });
   const audioFile = fs.readdirSync(context.jobDir).find((name) => name.startsWith('audio.') && name !== 'audio.wav');
   if (!audioFile) throw new StageError('YouTube audio was not downloaded.', 'downloading');
+  const audioPath = path.join(context.jobDir, audioFile);
+  if (fs.statSync(audioPath).size > cfg.maxDownloadBytes) {
+    const maxMb = Math.round(cfg.maxDownloadBytes / (1024 * 1024));
+    try {
+      fs.rmSync(audioPath, { force: true });
+    } catch {}
+    throw new StageError(
+      `Video audio is too large: it exceeds the maximum download size of ${maxMb} MB.`,
+      'downloading',
+    );
+  }
   let title = 'Untitled YouTube video';
   try {
     title = fs.readFileSync(titlePath, 'utf8').trim().split(/\r?\n/).at(-1) || title;
   } catch {}
-  return { audioPath: path.join(context.jobDir, audioFile), title: title.slice(0, 500) };
+  return { audioPath, title: title.slice(0, 500) };
 }

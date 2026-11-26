@@ -136,26 +136,27 @@ The raw commands (`podman-compose …`, `pnpm run …`) remain available, but th
 
 Runtime settings live in `.env` (created by `mise run setup`; see `.env.example`). Never put API keys there.
 
-| Variable                  | Default                      | What it does                                                                                                                                               |
-| ------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                    | `8080`                       | Port the app listens on (loopback-bound via compose)                                                                                                       |
-| `DATA_DIR`                | `/data`                      | SQLite job database directory (shared `jobs-data` volume)                                                                                                  |
-| `ARTIFACTS_DIR`           | `/artifacts`                 | Stage artifacts directory (`artifacts` volume)                                                                                                             |
-| `STT_MODEL`               | `microsoft/mai-transcribe-2` | Speech-to-text model (OpenRouter)                                                                                                                          |
-| `STT_RETRY_MAX_ATTEMPTS`  | `3`                          | Attempts per transcription request, first try included (transient failures only: 429/5xx, and the 402 whose body says `in_flight_budget_exhausted`)        |
-| `STT_RETRY_BASE_DELAY_MS` | `1000`                       | First retry delay; doubles per attempt (half fixed, half jitter)                                                                                           |
-| `STT_RETRY_MAX_DELAY_MS`  | `8000`                       | Ceiling for any single backoff delay                                                                                                                       |
-| `STT_RETRY_AFTER_MAX_MS`  | `120000`                     | Ceiling for a provider-requested wait (`Retry-After`), which overrides the backoff — worst case added to a job is (attempts − 1) × max of the two ceilings |
-| `LLM_PROVIDER`            | `openrouter`                 | Chat provider for summarization                                                                                                                            |
-| `LLM_MODEL`               | `meta/muse-ember`            | Summarization model (OpenRouter)                                                                                                                           |
-| `LLM_PROVIDER_PIN`        | `google-vertex/global`       | OpenRouter provider slug the summarization request is pinned to (`provider.only`, fallbacks disabled); blank = OpenRouter default routing                  |
-| `LLM_QUANTIZATION`        | _(blank)_                    | Quantization filter applied to the pinned provider (`provider.quantizations`); blank = any quantization                                                    |
-| `LLM_THINKING`            | `high`                       | Reasoning effort for the summarization model                                                                                                               |
-| `WORKER_POLL_MS`          | `2000`                       | Worker polling interval between queue checks                                                                                                               |
-| `JOB_TIMEOUT_MS`          | `1800000`                    | Whole-job timeout (30 min) before the job fails                                                                                                            |
-| `STALE_AFTER_MS`          | `600000`                     | Heartbeat silence (10 min) after which a running job is re-queued                                                                                          |
-| `MULLVAD_ENABLED`         | `true`                       | Route yt-dlp through the `vpn` sidecar SOCKS5 proxy                                                                                                        |
-| `MULLVAD_PROXY`           | `socks5h://127.0.0.1:1080`   | SOCKS5 proxy URL used by yt-dlp when Mullvad is enabled                                                                                                    |
+| Variable                  | Default                      | What it does                                                                                                                                                  |
+| ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                    | `8080`                       | Port the app listens on (loopback-bound via compose)                                                                                                          |
+| `DATA_DIR`                | `/data`                      | SQLite job database directory (shared `jobs-data` volume)                                                                                                     |
+| `ARTIFACTS_DIR`           | `/artifacts`                 | Stage artifacts directory (`artifacts` volume)                                                                                                                |
+| `STT_MODEL`               | `microsoft/mai-transcribe-2` | Speech-to-text model (OpenRouter)                                                                                                                             |
+| `STT_RETRY_MAX_ATTEMPTS`  | `3`                          | Attempts per transcription request, first try included (transient failures only: 429/5xx, and the 402 whose body says `in_flight_budget_exhausted`)           |
+| `STT_RETRY_BASE_DELAY_MS` | `1000`                       | First retry delay; doubles per attempt (half fixed, half jitter)                                                                                              |
+| `STT_RETRY_MAX_DELAY_MS`  | `8000`                       | Ceiling for any single backoff delay                                                                                                                          |
+| `STT_RETRY_AFTER_MAX_MS`  | `120000`                     | Ceiling for a provider-requested wait (`Retry-After`), which overrides the backoff — worst case added to a job is (attempts − 1) × max of the two ceilings    |
+| `LLM_PROVIDER`            | `openrouter`                 | Chat provider for summarization                                                                                                                               |
+| `LLM_MODEL`               | `meta/muse-ember`            | Summarization model (OpenRouter)                                                                                                                              |
+| `LLM_PROVIDER_PIN`        | `google-vertex/global`       | OpenRouter provider slug the summarization request is pinned to (`provider.only`, fallbacks disabled); blank = OpenRouter default routing                     |
+| `LLM_QUANTIZATION`        | _(blank)_                    | Quantization filter applied to the pinned provider (`provider.quantizations`); blank = any quantization                                                       |
+| `LLM_THINKING`            | `high`                       | Reasoning effort for the summarization model                                                                                                                  |
+| `WORKER_POLL_MS`          | `2000`                       | Worker polling interval between queue checks                                                                                                                  |
+| `JOB_TIMEOUT_MS`          | `1800000`                    | Whole-job timeout (30 min) before the job fails                                                                                                               |
+| `STALE_AFTER_MS`          | `600000`                     | Heartbeat silence (10 min) after which a running job is re-queued                                                                                             |
+| `MULLVAD_ENABLED`         | `true`                       | Route yt-dlp through the `vpn` sidecar SOCKS5 proxy                                                                                                           |
+| `MAX_DOWNLOAD_BYTES`      | `524288000` (500 MiB)        | Per-video cap on the yt-dlp audio download (bytes via `--max-filesize` + on-disk check); longer videos are rejected before they can fill the artifacts volume |
+| `MULLVAD_PROXY`           | `socks5h://127.0.0.1:1080`   | SOCKS5 proxy URL used by yt-dlp when Mullvad is enabled                                                                                                       |
 
 ### API
 

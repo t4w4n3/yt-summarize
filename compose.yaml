@@ -24,6 +24,9 @@ services:
       - "no-new-privileges:true"
     read_only: true
     pids_limit: 128
+    # Resource bounds (todo.md P1): single Express process + SQLite only.
+    mem_limit: "256m"
+    cpus: 0.5
     tmpfs:
       - "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777"
     # Loopback-only: never publish on all interfaces. Expose via your own
@@ -67,6 +70,10 @@ services:
       - "no-new-privileges:true"
     read_only: true
     pids_limit: 256
+    # Resource bounds (todo.md P1): ffmpeg/yt-dlp working set on large
+    # downloads; one job at a time, so the full host CPU quota is fine.
+    mem_limit: "1536m"
+    cpus: 2
     tmpfs:
       - "/tmp:rw,noexec,nosuid,nodev,size=512m,mode=1777"
     # Défauts des variables ci-dessous : src/shared/config.ts uniquement
@@ -96,6 +103,9 @@ services:
       LLM_THINKING: "${LLM_THINKING}"
       WORKER_POLL_MS: "${WORKER_POLL_MS}"
       JOB_TIMEOUT_MS: "${JOB_TIMEOUT_MS}"
+      # Plafond par vidéo de la taille de l'audio téléchargé, en octets
+      # (500 MiB par défaut) : yt-dlp --max-filesize + vérification disque.
+      MAX_DOWNLOAD_BYTES: "${MAX_DOWNLOAD_BYTES}"
       STALE_AFTER_MS: "${STALE_AFTER_MS}"
       # Mullvad: yt-dlp sort par le tunnel via le proxy SOCKS5 du service vpn
       # (seul yt-dlp est concerné — le reste du worker reste en direct).
@@ -146,6 +156,9 @@ services:
       - "no-new-privileges:true"
     read_only: true
     pids_limit: 64
+    # Resource bounds (todo.md P1): SOCKS5 proxying + wg-quick only.
+    mem_limit: "128m"
+    cpus: 0.25
     tmpfs:
       - "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777"
     # Tunnel WireGuard: nécessite /dev/net/tun (confiné au netns du sidecar).

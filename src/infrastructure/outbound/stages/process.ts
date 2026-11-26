@@ -34,6 +34,9 @@ export interface RunProcessOptions {
  */
 const LOG_CLOSE_TIMEOUT_MS = 5000;
 
+/** Per-stream cap (stdout and stderr) on child output held in memory. */
+const MAX_STREAM_BYTES = 25 * 1024 * 1024;
+
 export interface ProcessResult {
   code: number | null;
   signal: string | null;
@@ -110,15 +113,20 @@ export function runProcess(command: string, args: string[], options: RunProcessO
     child.stdout.on('data', (chunk: Buffer) => {
       const text = chunk.toString();
       stdout += text;
-      if (stdout.length > 25 * 1024 * 1024) {
+      if (stdout.length > MAX_STREAM_BYTES) {
         child.kill('SIGTERM');
         finish(reject, new StageError(`${stage} produced too much output.`, stage));
       }
       log?.write(text);
     });
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-      log?.write(chunk.toString());
+      const text = chunk.toString();
+      stderr += text;
+      if (stderr.length > MAX_STREAM_BYTES) {
+        child.kill('SIGTERM');
+        finish(reject, new StageError(`${stage} produced too much output.`, stage));
+      }
+      log?.write(text);
     });
     child.on('error', (error: Error) =>
       finish(reject, new StageError(`${stage} could not start: ${error.message}`, stage)),

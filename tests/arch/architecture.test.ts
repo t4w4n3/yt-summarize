@@ -148,6 +148,16 @@ describe('architecture — layer dependencies (archunit)', () => {
       'compose worker: expected tmpfs /tmp with rw,noexec,nosuid,nodev (scratch space for yt-dlp/ffmpeg without exec from tmp)',
     );
     assert.equal(
+      /mem_limit:\s*"?1536m"?/.test(workerBlock),
+      true,
+      'compose worker: expected mem_limit 1536m (bounds ffmpeg/yt-dlp working set; see todo.md P1)',
+    );
+    assert.equal(
+      /cpus:\s*"?2"?/.test(workerBlock),
+      true,
+      'compose worker: expected cpus 2 (bounded CPU for parsing untrusted media; see todo.md P1)',
+    );
+    assert.equal(
       workerBlock.includes('entrypoint-worker.sh'),
       false,
       'compose worker: must not run a shell entrypoint (no shell in the boot path)',
@@ -186,6 +196,16 @@ describe('architecture — layer dependencies (archunit)', () => {
       /pids_limit:\s*128/.test(appBlock),
       true,
       'compose app: expected pids_limit: 128 (single Node process, no subprocess trees; headroom for Node/libuv/V8 threads while bounding fork bombs)',
+    );
+    assert.equal(
+      /mem_limit:\s*"?256m"?/.test(appBlock),
+      true,
+      'compose app: expected mem_limit 256m (single Express process + SQLite; see todo.md P1)',
+    );
+    assert.equal(
+      /cpus:\s*"?0\.5"?/.test(appBlock),
+      true,
+      'compose app: expected cpus 0.5 (bounded CPU; the app only serves a small JSON API; see todo.md P1)',
     );
     assert.equal(
       /tmpfs:[\s\S]*\/tmp:rw,noexec,nosuid,nodev/.test(appBlock),
@@ -228,6 +248,16 @@ describe('architecture — layer dependencies (archunit)', () => {
       'e2e compose app: expected pids_limit: 128 (single Node process, same as compose.yaml app)',
     );
     assert.equal(
+      /mem_limit:\s*"?256m"?/.test(appBlock),
+      true,
+      'e2e compose app: expected mem_limit 256m (mirrors compose.yaml app; see todo.md P1)',
+    );
+    assert.equal(
+      /cpus:\s*"?0\.5"?/.test(appBlock),
+      true,
+      'e2e compose app: expected cpus 0.5 (mirrors compose.yaml app; see todo.md P1)',
+    );
+    assert.equal(
       /tmpfs:[\s\S]*\/tmp:rw,noexec,nosuid,nodev/.test(appBlock),
       true,
       'e2e compose app: expected tmpfs /tmp with rw,noexec,nosuid,nodev (mirrors compose.yaml app)',
@@ -261,6 +291,16 @@ describe('architecture — layer dependencies (archunit)', () => {
       /pids_limit:\s*128/.test(workerBlock),
       true,
       'e2e compose worker: expected pids_limit: 128 (single Node process, same as compose.yaml app)',
+    );
+    assert.equal(
+      /mem_limit:\s*"?256m"?/.test(workerBlock),
+      true,
+      'e2e compose worker: expected mem_limit 256m (fake worker runs the app target; mirrors compose.yaml app)',
+    );
+    assert.equal(
+      /cpus:\s*"?0\.5"?/.test(workerBlock),
+      true,
+      'e2e compose worker: expected cpus 0.5 (fake worker runs the app target; mirrors compose.yaml app)',
     );
     assert.equal(
       /tmpfs:[\s\S]*\/tmp:rw,noexec,nosuid,nodev/.test(workerBlock),
@@ -298,6 +338,16 @@ describe('architecture — layer dependencies (archunit)', () => {
       /pids_limit:\s*64/.test(vpnBlock),
       true,
       'compose vpn: expected pids_limit: 64 (wg-quick forks only a handful of processes; bounds fork bombs from the bash hooks)',
+    );
+    assert.equal(
+      /mem_limit:\s*"?128m"?/.test(vpnBlock),
+      true,
+      'compose vpn: expected mem_limit 128m (SOCKS5 + wg-quick only; see todo.md P1)',
+    );
+    assert.equal(
+      /cpus:\s*"?0\.25"?/.test(vpnBlock),
+      true,
+      'compose vpn: expected cpus 0.25 (proxying only; see todo.md P1)',
     );
     assert.equal(
       /tmpfs:[\s\S]*\/tmp:rw,noexec,nosuid,nodev/.test(vpnBlock),

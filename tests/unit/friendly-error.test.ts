@@ -32,6 +32,21 @@ describe('application — friendlyError', () => {
     assert.ok(!msg.includes('StageError'));
   });
 
+  it('downloading size-cap failures map to the size-limit message', () => {
+    const fromCheck = friendlyError(
+      new StageError('Video audio is too large: it exceeds the maximum download size of 500 MB.', 'downloading'),
+    );
+    assert.match(fromCheck, /too (long|large)/i);
+    const fromYtDlp = friendlyError(
+      new StageError(
+        'downloading failed with exit code 1.',
+        'downloading',
+        'ERROR: File is larger than max-filesize (500M)',
+      ),
+    );
+    assert.match(fromYtDlp, /too (long|large)/i);
+  });
+
   it('downloading network failures map to the infra message', () => {
     const msg = friendlyError(new StageError('conn', 'downloading', 'connect ECONNREFUSED'));
     assert.match(msg, /download service is temporarily unavailable/);

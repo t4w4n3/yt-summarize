@@ -240,6 +240,70 @@ describe('download — yt-dlp wrapper', () => {
     }
   });
 
+  it('passes the configured download cap to yt-dlp via --max-filesize', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    const argLog = path.join(jobDir, 'yt-args');
+    delete process.env.MAX_DOWNLOAD_BYTES;
+    installFake(
+      'yt-dlp',
+      `
+      printf '%s\\n' "$@" > "${argLog}"
+      prev=""
+      for a in "$@"; do
+        if [ "$prev" = "-o" ]; then output="$a"; fi
+        prev="$a"
+      done
+      jobdir="$(dirname "$output")"
+      printf 'Title\\n' > "$jobdir/.title"
+      : > "$jobdir/audio.webm"
+      exit 0
+      `,
+    );
+    withPath();
+    await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
+    const args = fs.readFileSync(argLog, 'utf8').split('\n').filter(Boolean);
+    const idx = args.indexOf('--max-filesize');
+    assert.ok(idx !== -1, 'should include --max-filesize');
+    assert.equal(
+      args[idx + 1],
+      String(500 * 1024 * 1024),
+      '--max-filesize must carry the 500 MiB default cap in bytes',
+    );
+  });
+
+  it('rejects and deletes the audio when the download exceeds the cap', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    process.env.MAX_DOWNLOAD_BYTES = '8';
+    const dir = jobDir;
+    installFake(
+      'yt-dlp',
+      `
+      prev=""
+      for a in "$@"; do
+        if [ "$prev" = "-o" ]; then output="$a"; fi
+        prev="$a"
+      done
+      jobdir="$(dirname "$output")"
+      printf 'Title\\n' > "$jobdir/.title"
+      printf '0123456789abcdef' > "$jobdir/audio.webm"
+      exit 0
+      `,
+    );
+    withPath();
+    await assert.rejects(download({ url: 'https://youtu.be/abc' }, baseContext(dir)), (error: unknown) => {
+      assert.ok(error instanceof StageError);
+      assert.equal((error as StageError).stage, 'downloading');
+      assert.match((error as StageError).message, /maximum download size/);
+      return true;
+    });
+    assert.equal(
+      fs.existsSync(path.join(dir, 'audio.webm')),
+      false,
+      'oversized audio must be deleted, not left on the artifacts volume',
+    );
+    delete process.env.MAX_DOWNLOAD_BYTES;
+  });
+
   it('rejects with downloading StageError when yt-dlp exits non-zero', async () => {
     jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
     delete process.env.MULLVAD_ENABLED;

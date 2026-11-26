@@ -29,6 +29,13 @@ export function friendlyError(error: unknown): string {
         searchable.includes('proxy') ||
         searchable.includes('socks') ||
         searchable.includes('timed out');
+      const isSizeCap = searchable.includes('max-filesize') || searchable.includes('maximum download size');
+      if (isSizeCap) {
+        // The post-download check carries the configured limit in its own
+        // message; the yt-dlp abort only knows a generic exit code.
+        if (error.message.includes('maximum download size')) return error.message;
+        return 'This video is too long to process: its audio exceeds the download size limit.';
+      }
       if (isInfra)
         return `The download service is temporarily unavailable (network error). Please try again in a few minutes. If the problem persists, an operator should check the VPN sidecar and worker logs.${detail}`;
       return `YouTube could not provide this video. Check that it is public and the URL is correct.${detail}`;

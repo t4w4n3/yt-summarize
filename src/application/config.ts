@@ -21,4 +21,5 @@ export interface RuntimeConfig {
   llmThinking: string;
   mullvadEnabled: boolean;
   mullvadProxy: string;
+  maxDownloadBytes: number;
 }

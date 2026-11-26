@@ -179,6 +179,10 @@ describe('shared/config — the frozen config object is fully resolved', () => {
       assert.ok(Number.isFinite(value) && value >= 1, `${name}=${value} must be a finite bound ≥ 1`);
     }
     assert.ok(
+      Number.isFinite(config.maxDownloadBytes) && config.maxDownloadBytes >= 1,
+      `maxDownloadBytes=${config.maxDownloadBytes} must be a finite bound ≥ 1`,
+    );
+    assert.ok(
       Number.isFinite(config.sttRetryBaseDelayMs) && config.sttRetryBaseDelayMs >= 0,
       'base delay is a finite bound',
     );
@@ -210,6 +214,22 @@ describe('shared/config — the frozen config object is fully resolved', () => {
     for (const [name, value] of Object.entries(blankable)) {
       assert.ok(!value.startsWith('${'), `${name}=${JSON.stringify(value)} must be a resolved value`);
     }
+  });
+});
+
+describe('shared/config — max download size', () => {
+  it('defaults the per-video download cap to 500 MiB', () => {
+    assert.equal(loadConfig({}).maxDownloadBytes, 500 * 1024 * 1024);
+  });
+
+  it('honours an explicit MAX_DOWNLOAD_BYTES, including through the compose literal', () => {
+    assert.equal(loadConfig({ MAX_DOWNLOAD_BYTES: '104857600' }).maxDownloadBytes, 104857600);
+    assert.equal(loadConfig({ MAX_DOWNLOAD_BYTES: '${MAX_DOWNLOAD_BYTES:-104857600}' }).maxDownloadBytes, 104857600);
+  });
+
+  it('falls back to the default for a non-positive or unparsable cap', () => {
+    assert.equal(loadConfig({ MAX_DOWNLOAD_BYTES: '0' }).maxDownloadBytes, 500 * 1024 * 1024);
+    assert.equal(loadConfig({ MAX_DOWNLOAD_BYTES: 'abc' }).maxDownloadBytes, 500 * 1024 * 1024);
   });
 });
 

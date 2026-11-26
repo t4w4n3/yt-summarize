@@ -25,6 +25,8 @@ export interface Config {
   staleAfterMs: number;
   mullvadEnabled: boolean;
   mullvadProxy: string;
+  /** Per-video cap on the yt-dlp audio download, in bytes (500 MiB by default). */
+  maxDownloadBytes: number;
 }
 
 /**
@@ -55,6 +57,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     staleAfterMs: boundedInt(env.STALE_AFTER_MS, 600000, 1),
     mullvadEnabled: envBool(env.MULLVAD_ENABLED, false),
     mullvadProxy: envVar(env.MULLVAD_PROXY, 'socks5h://127.0.0.1:1080'),
+    maxDownloadBytes: boundedInt(env.MAX_DOWNLOAD_BYTES, 500 * 1024 * 1024, 1),
   };
 }
 

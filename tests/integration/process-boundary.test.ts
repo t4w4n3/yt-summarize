@@ -106,6 +106,30 @@ describe('runProcess — subprocess boundary', () => {
     );
   });
 
+  it('accepts stderr exactly at the cap (boundary is inclusive)', async () => {
+    const result = await runProcess(process.execPath, ['-e', 'process.stderr.write("x".repeat(25 * 1024 * 1024));'], {
+      stage: 'downloading',
+      timeoutMs: 10000,
+    });
+    assert.equal(result.code, 0, 'stderr of exactly 25 MiB must resolve, only exceeding it rejects');
+    assert.equal(result.stderr.length, 25 * 1024 * 1024);
+  });
+
+  it('rejects when the process floods stderr (stderr cap, same bound as stdout)', async () => {
+    await assert.rejects(
+      runProcess(process.execPath, ['-e', 'process.stderr.write("x".repeat(26 * 1024 * 1024));'], {
+        stage: 'downloading',
+        timeoutMs: 5000,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof StageError, `expected a StageError from the stderr cap, got ${String(error)}`);
+        assert.equal(error.stage, 'downloading');
+        assert.match(error.message, /too much output/);
+        return true;
+      },
+    );
+  });
+
   it('settles only once the stage log stream is closed', async () => {
     // The caller deletes the job directory as soon as the promise settles, so a
     // log stream still opening in the background then fails with ENOENT as an

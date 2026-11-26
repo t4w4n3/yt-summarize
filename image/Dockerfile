@@ -4,20 +4,17 @@
 #   worker : node + yt-dlp/python + ffmpeg + ca-certificates (entrypoint Node, no gnupg)
 #   vpn    : node + wireguard-tools/iproute2/bash (wg-quick) — jamais python/ffmpeg
 # La base partage le socle build (node slim + deps pnpm) et le cache de
-# couches, mais chaque cible finale garde sa surface minimale. Le worker ne
-# descend pas de `base` (bash du vpn + outillage pnpm) : voir son stage.
+# couches, mais chaque cible finale garde sa surface minimale. Ni le worker
+# ni le vpn ne descendent de `base` (outillage pnpm + arbre app/worker) :
+# voir leurs stages.
 # Les stages payants sont de simples appels HTTPS à OpenRouter.
 
 FROM node:26.13.1-trixie-slim@sha256:a5a5adfee3013de54504e0e6aff49993acf7daed072e86be75b8818c0f6ac258 AS base
 
-# bash est requis par l'entrypoint vpn (#/usr/bin/env bash) et par wg-quick
-# côté vpn ; il vit donc dans la base partagée (et le builder app). Le worker
-# n'en dépend plus (entrypoint Node) et ne descend donc pas de `base`.
-# Versions épinglées (hadolint DL3008/DL3013). Re-épingler délibérément :
-# `podman run --rm node:26-trixie-slim bash -c "apt-get update && apt-cache policy <pkg>"`
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      bash=5.2.37-2+b10 \
-    && rm -rf /var/lib/apt/lists/*
+# bash n'est plus installé ici : seul le vpn en a besoin (wg-quick est un
+# script bash), et il ne descend plus de `base` (voir son stage) — il
+# l'installe lui-même. Le worker n'en dépend plus non plus (entrypoint Node).
+# `base` ne sert plus qu'à builder l'arbre /app copié par app et worker.
 
 WORKDIR /app
 # Keep the pinned pnpm version in sync with mise.toml and package.json packageManager.
@@ -74,14 +71,26 @@ RUN mkdir -p /data /artifacts && chown -R node:node /app /data /artifacts
 # hadolint ignore=DL3066
 USER node
 
-# ---- vpn: wireguard-tools + iproute2 (wg-quick) uniquement ----
-FROM base AS vpn
+# ---- vpn: wireguard-tools + iproute2 + bash (wg-quick) + Node (SOCKS5) only ----
+# Not FROM base: base ships the whole app/worker tree (domain, application,
+# infrastructure incl. the OpenRouter secret store, express node_modules,
+# pnpm/npm). The sidecar only needs node to run src/vpn/*.ts (Node built-ins
+# only — no dependency, so nothing to install) plus wg-quick for the tunnel:
+# bash (wg-quick is a bash script that also evals the Mullvad PostUp/PreDown
+# hooks) and awk, already in the slim base, for the PostUp route lookup. It
+# therefore starts from the same pinned slim base as the worker and copies
+# src/vpn only. npm is purged: the runtime only needs the node binary itself.
+# Versions épinglées (hadolint DL3008) — voir la note sur `base`.
+FROM node:26.13.1-trixie-slim@sha256:a5a5adfee3013de54504e0e6aff49993acf7daed072e86be75b8818c0f6ac258 AS vpn
 RUN apt-get update && apt-get install -y --no-install-recommends \
+      bash=5.2.37-2+b10 \
       iproute2=6.15.0-1 \
       wireguard-tools=1.0.20210914-3 \
-    && rm -rf /var/lib/apt/lists/*
-COPY image/entrypoint-vpn.sh /app/
-RUN chmod +x /app/entrypoint-vpn.sh
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+COPY src/vpn/ /app/src/vpn/
+RUN chown -R node:node /app
 # Image stays non-root (USER node, like the others) so DS-0002 passes: the privilege
 # grant happens in compose.yaml (`user: root`, only for vpn — needs NET_ADMIN +
 # /dev/net/tun, confined to its own netns) and in scripts (podman run --user root).

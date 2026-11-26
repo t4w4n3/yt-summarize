@@ -40,6 +40,10 @@ lint_list_files() { # lint_list_files <kind> [--changed]
   else
     git ls-files --cached --others --exclude-standard
   fi | while IFS= read -r f; do
+    # A deleted-but-unstaged file is still in the index (--cached) but no
+    # longer on disk: there is nothing left to lint, and linters fail on a
+    # missing path (e.g. shellcheck on a removed entrypoint script).
+    [ -f "$f" ] || continue
     lint_kind_matches "$kind" "$f" && printf '%s\n' "$f"
   done
 }

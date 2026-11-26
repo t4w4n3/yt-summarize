@@ -104,13 +104,36 @@ services:
       context: "."
       dockerfile: "image/Dockerfile"
       target: "vpn"
+    # Root only to bring the tunnel up (wg-quick); the Node entrypoint drops
+    # to `node` before starting SOCKS5 or sleeping, so the long-lived process
+    # is unprivileged. The image itself stays USER node (see Dockerfile).
     user: "root"
-    command: ["/app/entrypoint-vpn.sh"]
-    # Tunnel WireGuard: nécessite NET_ADMIN + /dev/net/tun (confinés au netns du sidecar).
+    command: ["node", "/app/src/vpn/entrypoint-vpn.ts"]
+    # Runtime hardening (mirrors the worker, minus what wg-quick truly needs):
+    # - drop all capabilities, re-add only NET_ADMIN (ip/wg netlink) and
+    #   SETUID/SETGID (the entrypoint's root→node drop after wg-quick up).
+    #   SOCKS5 on 1080 needs no NET_BIND_SERVICE; /dev/net/tun is granted via
+    #   `devices`, not a capability.
+    # - no-new-privileges (after the drop, setuid binaries gain nothing)
+    # - read-only image filesystem (only the /tmp tmpfs + ro /mullvad volume
+    #   are writable; the wg0.conf copy lives briefly on /tmp, then unlinked)
+    # - pids_limit (wg-quick forks only a handful of processes)
+    # - /tmp tmpfs noexec/nosuid/nodev (scratch without executing from tmp)
+    cap_drop:
+      - "ALL"
     cap_add:
       - "NET_ADMIN"
+      - "SETUID"
+      - "SETGID"
+    security_opt:
+      - "no-new-privileges:true"
+    read_only: true
+    pids_limit: 64
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777"
+    # Tunnel WireGuard: nécessite /dev/net/tun (confiné au netns du sidecar).
     devices:
-      - "/dev/net/tun"
+      - "/dev/net/tun:rwm"
     # Sidecar Mullvad: tunnel WireGuard dans SON netns + proxy SOCKS5 local.
     # Le port 1080 n'est publié qu'en loopback (personne d'autre n'y accède).
     # Le SOCKS écoute sur 0.0.0.0 *dans* le netns du sidecar uniquement — le

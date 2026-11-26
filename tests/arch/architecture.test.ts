@@ -159,6 +159,166 @@ describe('architecture — layer dependencies (archunit)', () => {
     );
   });
 
+  it('compose vpn service is runtime-hardened (least-privilege execution)', () => {
+    const compose = fs.readFileSync('compose.yaml', 'utf8');
+    const vpnBlock = compose.slice(compose.indexOf('  vpn:'), compose.indexOf('\nvolumes:'));
+    assert.equal(
+      /cap_drop:\s*\n\s*-\s*"?ALL"?/.test(vpnBlock),
+      true,
+      'compose vpn: expected cap_drop: [ALL] (only NET_ADMIN/SETUID/SETGID are re-added below; the SOCKS5 process runs unprivileged after the entrypoint drops root)',
+    );
+    const capAddBlock = vpnBlock.match(/cap_add:([\s\S]*?)(?=\n {4}[a-z_]+:)/)?.[1] ?? '';
+    const caps = [...capAddBlock.matchAll(/-\s*"?([A-Z_]+)"?/g)].map((m) => m[1]).sort();
+    assert.deepEqual(
+      caps,
+      ['NET_ADMIN', 'SETGID', 'SETUID'],
+      `compose vpn: expected cap_add exactly [NET_ADMIN, SETUID, SETGID] (NET_ADMIN for ip/wg, SETUID/SETGID for the root→node drop after wg-quick up; socks5 on 1080 needs no NET_BIND_SERVICE), got ${JSON.stringify(caps)}`,
+    );
+    assert.equal(
+      vpnBlock.includes('no-new-privileges'),
+      true,
+      'compose vpn: expected security_opt no-new-privileges (after the privilege drop, setuid binaries must not regain root)',
+    );
+    assert.equal(
+      /read_only:\s*true/.test(vpnBlock),
+      true,
+      'compose vpn: expected read_only: true (image filesystem immutable; only the /tmp tmpfs and the ro /mullvad volume are writable)',
+    );
+    assert.equal(
+      /pids_limit:\s*64/.test(vpnBlock),
+      true,
+      'compose vpn: expected pids_limit: 64 (wg-quick forks only a handful of processes; bounds fork bombs from the bash hooks)',
+    );
+    assert.equal(
+      /tmpfs:[\s\S]*\/tmp:rw,noexec,nosuid,nodev/.test(vpnBlock),
+      true,
+      'compose vpn: expected tmpfs /tmp with rw,noexec,nosuid,nodev (holds the 0600 wg0.conf copy, unlinked after wg-quick up, without exec from tmp)',
+    );
+    assert.equal(
+      vpnBlock.includes('command: ["node", "/app/src/vpn/entrypoint-vpn.ts"]'),
+      true,
+      'compose vpn: expected command running the Node entrypoint (no shell in the boot path)',
+    );
+    assert.equal(
+      vpnBlock.includes('entrypoint-vpn.sh'),
+      false,
+      'compose vpn: must not run the shell entrypoint (entrypoint-vpn.sh is deleted)',
+    );
+    assert.equal(
+      vpnBlock.includes('"/dev/net/tun:rwm"'),
+      true,
+      'compose vpn: expected explicit /dev/net/tun:rwm device (only device the tunnel needs)',
+    );
+    assert.equal(
+      vpnBlock.includes('"127.0.0.1:1080:1080"'),
+      true,
+      'compose vpn: expected SOCKS5 published on host loopback only (127.0.0.1:1080)',
+    );
+    assert.equal(
+      vpnBlock.includes(':/mullvad:ro'),
+      true,
+      'compose vpn: expected the WireGuard config volume mounted read-only (private key never writable from the container)',
+    );
+  });
+
+  it('vpn entrypoint (Node, no shell) brings the tunnel up as root then drops to node', () => {
+    assert.equal(
+      fs.existsSync('src/vpn/entrypoint-vpn.ts'),
+      true,
+      'src/vpn/entrypoint-vpn.ts: must exist (Node entrypoint, like entrypoint-worker.ts)',
+    );
+    assert.equal(
+      fs.existsSync('image/entrypoint-vpn.sh'),
+      false,
+      'image/entrypoint-vpn.sh: must be deleted (no shell in the boot path; bash remains only because wg-quick is a bash script)',
+    );
+    const entrypoint = fs.readFileSync('src/vpn/entrypoint-vpn.ts', 'utf8');
+    assert.equal(
+      entrypoint.includes('wg-quick'),
+      true,
+      'entrypoint-vpn.ts: expected wg-quick bring-up (the tunnel, PostUp hooks and all)',
+    );
+    assert.equal(
+      entrypoint.includes('timeout'),
+      true,
+      'entrypoint-vpn.ts: expected a bounded wg-quick timeout (nothing may wait without limit)',
+    );
+    assert.equal(
+      /process\.setuid\(uid\)/.test(entrypoint) && entrypoint.includes('/etc/passwd'),
+      true,
+      "entrypoint-vpn.ts: expected a privilege drop to the node user after wg-quick up (process.setuid(uid)), resolved via /etc/passwd (os.userInfo('node') returns the current user in this Node, so it would drop to uid 0 — i.e. not drop at all)",
+    );
+    assert.equal(
+      /rmSync|unlink/.test(entrypoint),
+      true,
+      'entrypoint-vpn.ts: expected the /tmp/wg0.conf copy (private key) to be unlinked after wg-quick up (shortest exposure window)',
+    );
+    assert.equal(
+      entrypoint.includes("import('./socks5.ts')"),
+      true,
+      'entrypoint-vpn.ts: expected it to start ./socks5.ts only after the privilege drop (dynamic import after setuid)',
+    );
+  });
+
+  it('Dockerfile vpn stage ships only wg-quick and the SOCKS5 runtime', () => {
+    const dockerfile = fs.readFileSync('image/Dockerfile', 'utf8');
+    const fromPattern = /^FROM\s+\S+(?:\s+AS\s+(\w+))?/gim;
+    const matches = [...dockerfile.matchAll(fromPattern)];
+    const stages = new Map<string, string>();
+    for (let i = 0; i < matches.length; i += 1) {
+      const matched = matches[i];
+      const name = matched?.[1] ?? '(unnamed)';
+      const start = matched?.index ?? 0;
+      const end = i + 1 < matches.length ? (matches[i + 1]?.index ?? dockerfile.length) : dockerfile.length;
+      stages.set(name, dockerfile.slice(start, end));
+    }
+    const vpn = stages.get('vpn') ?? '';
+    assert.equal(
+      /^FROM\s+node:26\.13\.1-trixie-slim@sha256:\S+\s+AS\s+vpn/m.test(vpn),
+      true,
+      'vpn stage: expected its own pinned slim FROM (not FROM base, otherwise it inherits the whole app/worker tree, pnpm and node_modules)',
+    );
+    assert.equal(
+      vpn.includes('bash='),
+      true,
+      'vpn stage: expected bash for wg-quick (a bash script) and the PostUp hooks',
+    );
+    assert.equal(vpn.includes('wireguard-tools='), true, 'vpn stage: expected wireguard-tools for wg-quick');
+    assert.equal(
+      vpn.includes('iproute2='),
+      true,
+      'vpn stage: expected iproute2 for wg-quick ip calls and the PostUp hook',
+    );
+    assert.equal(
+      vpn.includes('COPY src/vpn/'),
+      true,
+      'vpn stage: expected COPY of src/vpn only (the SOCKS5 server + Node entrypoint, Node built-ins only, no dependency)',
+    );
+    assert.equal(
+      vpn.includes('COPY --from=base'),
+      false,
+      'vpn stage: must not copy /app from base (that ships domain/application/infrastructure, the OpenRouter secret store and express)',
+    );
+    assert.equal(
+      vpn.includes('pnpm'),
+      false,
+      'vpn stage: must not install or ship pnpm (no dependency to install at runtime)',
+    );
+    assert.equal(
+      vpn.includes('/usr/local/lib/node_modules/npm'),
+      true,
+      'vpn stage: expected npm purged from the node image (runtime only needs the node binary)',
+    );
+    assert.equal(
+      vpn.includes('entrypoint-vpn.sh'),
+      false,
+      'vpn stage: must not ship the shell entrypoint (Node entrypoint only)',
+    );
+    for (const pkg of ['ffmpeg=', 'python3=', 'gnupg=', 'curl=']) {
+      assert.equal(vpn.includes(pkg), false, `vpn stage: must not install ${pkg} (SOCKS5 + wg-quick only)`);
+    }
+  });
+
   it('Dockerfile splits into per-service targets with least-privilege tools', () => {
     const dockerfile = fs.readFileSync('image/Dockerfile', 'utf8');
     const fromPattern = /^FROM\s+\S+(?:\s+AS\s+(\w+))?/gim;

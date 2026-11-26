@@ -1,7 +1,9 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { Ajv } from 'ajv';
 import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
+import helmet from 'helmet';
 import type { Job, JobStatus } from '../../domain/job/entity.ts';
 import { normalizeLang } from '../../domain/lang.ts';
 import { extractVideoIdFromUrl, validateYouTubeUrl } from '../../domain/youtube/validation.ts';
@@ -16,21 +18,39 @@ const publicDir = path.join(import.meta.dirname, 'public');
 
 app.disable('x-powered-by');
 
-// Security headers (todo.md P3, defense in depth — the response markdown is
-// already escaped before innerHTML). The UI ships no inline scripts/styles
-// (external app.js/style.css only), so a strict CSP is safe: 'self' everywhere.
-// No auth here by design: the app is loopback-only and remote exposure goes
-// through the operator's reverse proxy, which MUST enforce authentication
-// (see README "Access the app remotely").
-app.use((_req: Request, res: Response, next: NextFunction) => {
-  res.set({
-    'Content-Security-Policy':
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-  });
-  next();
-});
+// Security headers via helmet, with the pre-helmet CSP preserved verbatim
+// (todo.md P3, defense in depth — the response markdown is already escaped
+// before innerHTML). The UI ships no inline scripts/styles (external
+// app.js/style.css only), so a strict CSP is safe: 'self' everywhere.
+// useDefaults: false stops helmet merging its own directives in (notably
+// upgrade-insecure-requests, wrong for an app served over plain HTTP on
+// loopback). frameguard stays DENY (helmet's SAMEORIGIN default would
+// loosen it), and COEP is off: the app needs no cross-origin isolation and
+// the static adapter sends no CORP headers. No auth here by design: the app
+// is loopback-only and remote exposure goes through the operator's reverse
+// proxy, which MUST enforce authentication (see README "Access the app
+// remotely").
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        imgSrc: ["'self'"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'none'"],
+        formAction: ["'self'"],
+      },
+    },
+    frameguard: { action: 'deny' },
+    crossOriginEmbedderPolicy: false,
+  }),
+);
 
 // Rate limiting (todo.md P3): fixed window per client IP over the two POST
 // endpoints that trigger paid worker stages (summarize, retry) — an exposed
@@ -63,6 +83,56 @@ function rateLimit(req: Request, res: Response, next: NextFunction): void {
     return;
   }
   next();
+}
+
+// Request-shape gate: JSON Schemas compiled once, checked before the domain
+// rules. Fail-closed on unknown keys (additionalProperties: false) so
+// smuggled params/fields (e.g. ?limit[]=1 or {"admin": true}) are rejected
+// instead of silently ignored. No coercion, no defaults: a string stays a
+// string, so the legacy messages below still describe the same failures.
+// The schemas check shape only; host/lang semantics stay in the domain
+// (validateYouTubeUrl, normalizeLang) — hence lang is type-string here, not
+// a pattern: the domain trims and lowercases it ("FR" is valid).
+const ajv = new Ajv({ strict: true, allErrors: true });
+const summarizeBodySchema = ajv.compile({
+  type: 'object',
+  required: ['url'],
+  properties: {
+    url: { type: 'string' },
+    lang: { type: 'string' },
+  },
+  additionalProperties: false,
+});
+const historyQuerySchema = ajv.compile({
+  type: 'object',
+  properties: {
+    limit: { type: 'string', pattern: '^\\d+$' },
+    offset: { type: 'string', pattern: '^\\d+$' },
+    q: { type: 'string', maxLength: 100 },
+  },
+  additionalProperties: false,
+});
+
+// Error message for a summarize body that breaks the shape (or null when it
+// fits). Precedence, first match wins: unknown field, then url, then lang —
+// url before lang matches the handler's historical validation order.
+function summarizeBodyError(body: unknown): string | null {
+  if (summarizeBodySchema(body)) return null;
+  const errors = summarizeBodySchema.errors ?? [];
+  if (errors.some((e) => e.keyword === 'additionalProperties')) return 'Request body contains an unknown field.';
+  if (errors.some((e) => e.instancePath === '/url' || e.keyword === 'required' || e.instancePath === ''))
+    return 'Enter a YouTube video URL.';
+  return 'The output language must be a two-letter ISO 639-1 code.';
+}
+
+// Error message for history query params that break the shape (or null).
+function historyQueryError(query: unknown): string | null {
+  if (historyQuerySchema(query)) return null;
+  const errors = historyQuerySchema.errors ?? [];
+  if (errors.some((e) => e.keyword === 'additionalProperties')) return 'Unknown query parameter.';
+  if (errors.some((e) => e.instancePath === '/limit')) return 'The limit must be an integer between 1 and 50.';
+  if (errors.some((e) => e.instancePath === '/offset')) return 'The offset must be an integer between 0 and 10000.';
+  return 'The search query must be 100 characters or fewer.';
 }
 
 app.use(express.json({ limit: '16kb' }));
@@ -100,6 +170,8 @@ interface CreateBody {
 }
 
 app.post('/api/summarize', rateLimit, (req: Request<object, unknown, CreateBody>, res: Response) => {
+  const shapeError = summarizeBodyError(req.body);
+  if (shapeError) return res.status(400).json({ error: shapeError });
   const error = validateYouTubeUrl(req.body?.url);
   if (error) return res.status(400).json({ error });
   const lang = normalizeLang(req.body?.lang);
@@ -117,36 +189,27 @@ app.post('/api/summarize', rateLimit, (req: Request<object, unknown, CreateBody>
 const HISTORY_DEFAULT_LIMIT = 20;
 const HISTORY_MAX_LIMIT = 50;
 const HISTORY_MAX_OFFSET = 10000;
-const HISTORY_MAX_SEARCH_LENGTH = 100;
 
 app.get('/api/jobs', (req: Request, res: Response) => {
-  const rawLimit = req.query.limit;
+  const shapeError = historyQueryError(req.query);
+  if (shapeError) return res.status(400).json({ error: shapeError });
+  // The schema guarantees limit/offset/q are digit strings (or absent) and
+  // that no other keys exist; only the numeric range is checked here.
+  const rawLimit = req.query.limit as string | undefined;
   let limit = HISTORY_DEFAULT_LIMIT;
   if (rawLimit !== undefined) {
-    if (typeof rawLimit !== 'string' || !/^\d+$/.test(rawLimit)) {
-      return res.status(400).json({ error: 'The limit must be an integer between 1 and 50.' });
-    }
     limit = Number(rawLimit);
-    if (limit < 1 || limit > HISTORY_MAX_LIMIT) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > HISTORY_MAX_LIMIT) {
       return res.status(400).json({ error: 'The limit must be an integer between 1 and 50.' });
     }
   }
   const rawSearch = req.query.q;
-  if (rawSearch !== undefined && typeof rawSearch !== 'string') {
-    return res.status(400).json({ error: 'The search query must be 100 characters or fewer.' });
-  }
   const search = typeof rawSearch === 'string' ? rawSearch : undefined;
-  if (search !== undefined && search.length > HISTORY_MAX_SEARCH_LENGTH) {
-    return res.status(400).json({ error: 'The search query must be 100 characters or fewer.' });
-  }
-  const rawOffset = req.query.offset;
+  const rawOffset = req.query.offset as string | undefined;
   let offset = 0;
   if (rawOffset !== undefined) {
-    if (typeof rawOffset !== 'string' || !/^\d+$/.test(rawOffset)) {
-      return res.status(400).json({ error: 'The offset must be an integer between 0 and 10000.' });
-    }
     offset = Number(rawOffset);
-    if (offset < 0 || offset > HISTORY_MAX_OFFSET) {
+    if (!Number.isInteger(offset) || offset < 0 || offset > HISTORY_MAX_OFFSET) {
       return res.status(400).json({ error: 'The offset must be an integer between 0 and 10000.' });
     }
   }

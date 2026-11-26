@@ -283,8 +283,8 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   return res.status(500).json({ error: 'Unexpected server error.' });
 });
 
-const server = app.listen(runtimeConfig.port, '0.0.0.0', () => {
-  console.log(`Summarize YT app listening on http://0.0.0.0:${runtimeConfig.port}`);
+const server = app.listen(runtimeConfig.port, runtimeConfig.host, () => {
+  console.log(`Summarize YT app listening on http://${runtimeConfig.host}:${runtimeConfig.port}`);
 });
 
 function shutdown(signal: string): void {

@@ -36,6 +36,10 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       PORT: "8080"
+      # Inside the container the app must listen on all interfaces to receive
+      # the forwarded traffic; the loopback-only publish above keeps the host
+      # side on loopback.
+      HOST: "0.0.0.0"
       DATA_DIR: "/data"
       # Rate limiting on paid-work POSTs (todo.md P3); defaults live in
       # src/shared/config.ts (see worker env comment for the ${VAR} pattern).

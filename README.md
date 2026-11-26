@@ -98,27 +98,27 @@ mise run worker        # run the worker locally (paid stages need the stack secr
 
 Everyday commands. Contributor commands (coverage, mutation, lint, security, full gate) are referenced in [AGENTS.md](AGENTS.md); `mise tasks` is authoritative.
 
-| Command                           | What it does                                                                                                             |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `mise run setup`                  | One-time setup: `.env` from `.env.example`, pnpm deps, Playwright browser, Mullvad keypair                               |
-| `mise run up`                     | Build + start the stack (`podman-compose up -d --build`)                                                                 |
-| `mise run build`                  | Build the container image only                                                                                           |
-| `mise run status`                 | Show container status (`podman-compose ps`)                                                                              |
-| `mise run logs [service]`         | Follow logs (default: `app worker`)                                                                                      |
-| `mise run down`                   | Stop the stack (keeps the jobs DB and artifacts)                                                                         |
-| `mise run clean [--yes]`          | Stop and delete all data (`down -v`); prompts unless `--yes`                                                             |
-| `mise run restart [service]`      | Restart a service (default: `worker`)                                                                                    |
-| `mise run test`                   | Full hermetic gate: typecheck + unit + arch + integration + e2e (no tokens; live excluded)                               |
-| `mise run test-ui`                | UI specs only (mocked API)                                                                                               |
-| `mise run test-stack`             | API + fake-worker specs only                                                                                             |
-| `mise run test-containers`        | Container smoke e2e: real image + fake worker via podman-compose (slow; needs podman)                                    |
-| `mise run pipeline <url>`         | Submit a YouTube URL to the running stack and poll until done                                                            |
-| `mise run app [-p PORT]`          | Run the web app locally (no container) for UI/API iteration                                                              |
-| `mise run worker`                 | Run the worker locally (no container; paid stages need the stack)                                                        |
-| `mise run mullvad <mode>`         | Mullvad operations: relay rotation (`scan`), config provisioning (`init`), tunnel debug (`run`/`test`/`dryrun`/`status`) |
-| `mise run backup`                 | Snapshot both volumes (SQLite job DB + artifacts) to `~/.local/backups/`                                                 |
-| `mise run restore <file> [--yes]` | Restore volumes from a backup archive (stops the stack, restores, restarts)                                              |
-| `mise run doctor`                 | Verify tools, Node version, `.env`, and GPG secrets                                                                      |
+| Command                                | What it does                                                                                                             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `mise run setup`                       | One-time setup: `.env` from `.env.example`, pnpm deps, Playwright browser, Mullvad keypair                               |
+| `mise run up`                          | Build + start the stack (`podman-compose up -d --build`)                                                                 |
+| `mise run build`                       | Build the container image only                                                                                           |
+| `mise run status`                      | Show container status (`podman-compose ps`)                                                                              |
+| `mise run logs [service]`              | Follow logs (default: `app worker`)                                                                                      |
+| `mise run down`                        | Stop the stack (keeps the jobs DB and artifacts)                                                                         |
+| `mise run clean [--yes]`               | Stop and delete all data (`down -v`); prompts unless `--yes`                                                             |
+| `mise run restart [service]`           | Restart a service (default: `worker`)                                                                                    |
+| `mise run test`                        | Full hermetic gate: typecheck + unit + arch + integration + e2e (no tokens; live excluded)                               |
+| `mise run test-ui`                     | UI specs only (mocked API)                                                                                               |
+| `mise run test-stack`                  | API + fake-worker specs only                                                                                             |
+| `mise run test-containers`             | Container smoke e2e: real image + fake worker via podman-compose (slow; needs podman)                                    |
+| `mise run pipeline <url>`              | Submit a YouTube URL to the running stack and poll until done                                                            |
+| `mise run app [-p PORT] [--host ADDR]` | Run the web app locally (no container) for UI/API iteration (loopback by default)                                        |
+| `mise run worker`                      | Run the worker locally (no container; paid stages need the stack)                                                        |
+| `mise run mullvad <mode>`              | Mullvad operations: relay rotation (`scan`), config provisioning (`init`), tunnel debug (`run`/`test`/`dryrun`/`status`) |
+| `mise run backup`                      | Snapshot both volumes (SQLite job DB + artifacts) to `~/.local/backups/`                                                 |
+| `mise run restore <file> [--yes]`      | Restore volumes from a backup archive (stops the stack, restores, restarts)                                              |
+| `mise run doctor`                      | Verify tools, Node version, `.env`, and GPG secrets                                                                      |
 
 Aliases: `install` (setup), `start` (up), `stop` (down), `ps` (status), `b` (build), `t` (test), `tl` (test-live), `tc` (test-containers).
 
@@ -137,31 +137,32 @@ The raw commands (`podman-compose …`, `pnpm run …`) remain available, but th
 
 Runtime settings live in `.env` (created by `mise run setup`; see `.env.example`). Never put API keys there.
 
-| Variable                  | Default                      | What it does                                                                                                                                                  |
-| ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                    | `8080`                       | Port the app listens on (loopback-bound via compose)                                                                                                          |
-| `DATA_DIR`                | `/data`                      | SQLite job database directory (shared `jobs-data` volume)                                                                                                     |
-| `ARTIFACTS_DIR`           | `/artifacts`                 | Stage artifacts directory (`artifacts` volume)                                                                                                                |
-| `STT_MODEL`               | `microsoft/mai-transcribe-2` | Speech-to-text model (OpenRouter)                                                                                                                             |
-| `STT_RETRY_MAX_ATTEMPTS`  | `3`                          | Attempts per transcription request, first try included (transient failures only: 429/5xx, and the 402 whose body says `in_flight_budget_exhausted`)           |
-| `STT_RETRY_BASE_DELAY_MS` | `1000`                       | First retry delay; doubles per attempt (half fixed, half jitter)                                                                                              |
-| `STT_RETRY_MAX_DELAY_MS`  | `8000`                       | Ceiling for any single backoff delay                                                                                                                          |
-| `STT_RETRY_AFTER_MAX_MS`  | `120000`                     | Ceiling for a provider-requested wait (`Retry-After`), which overrides the backoff — worst case added to a job is (attempts − 1) × max of the two ceilings    |
-| `LLM_PROVIDER`            | `openrouter`                 | Chat provider for summarization                                                                                                                               |
-| `LLM_MODEL`               | `meta/muse-ember`            | Summarization model (OpenRouter)                                                                                                                              |
-| `LLM_PROVIDER_PIN`        | `google-vertex/global`       | OpenRouter provider slug the summarization request is pinned to (`provider.only`, fallbacks disabled); blank = OpenRouter default routing                     |
-| `LLM_QUANTIZATION`        | _(blank)_                    | Quantization filter applied to the pinned provider (`provider.quantizations`); blank = any quantization                                                       |
-| `LLM_THINKING`            | `high`                       | Reasoning effort for the summarization model                                                                                                                  |
-| `WORKER_POLL_MS`          | `2000`                       | Worker polling interval between queue checks                                                                                                                  |
-| `JOB_TIMEOUT_MS`          | `1800000`                    | Whole-job timeout (30 min) before the job fails                                                                                                               |
-| `STALE_AFTER_MS`          | `600000`                     | Heartbeat silence (10 min) after which a running job is re-queued                                                                                             |
-| `MULLVAD_ENABLED`         | `true`                       | Route yt-dlp through the `vpn` sidecar SOCKS5 proxy                                                                                                           |
-| `MAX_DOWNLOAD_BYTES`      | `524288000` (500 MiB)        | Per-video cap on the yt-dlp audio download (bytes via `--max-filesize` + on-disk check); longer videos are rejected before they can fill the artifacts volume |
-| `MAX_WAV_BYTES`           | `536870912` (512 MiB)        | Per-job cap on the converted WAV (bytes, ~4 h at 16 kHz mono); beyond it the job is rejected before any whole-file read                                       |
-| `MAX_TRANSCRIPT_BYTES`    | `1048576` (1 MiB)            | Per-job cap on the transcript read by the summarizer (bytes); beyond it the job is rejected before the transcript is loaded                                   |
-| `MULLVAD_PROXY`           | `socks5h://vpn:1080`         | SOCKS5 proxy URL used by yt-dlp when Mullvad is enabled (service name on the bridge network; host-run worker: `socks5h://127.0.0.1:1080`)                     |
-| `RATE_LIMIT_MAX`          | `10`                         | Max paid-work POSTs (`/api/summarize`, `/api/jobs/:id/retry`) per client IP per window; `429` + `Retry-After` beyond (GETs unlimited)                         |
-| `RATE_LIMIT_WINDOW_MS`    | `60000`                      | Rate-limit fixed window in milliseconds                                                                                                                       |
+| Variable                  | Default                      | What it does                                                                                                                                                                            |
+| ------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                    | `8080`                       | Port the app listens on (loopback-bound via compose)                                                                                                                                    |
+| `HOST`                    | `127.0.0.1`                  | Bind address the app listens on; only `0.0.0.0` opts into all interfaces, anything else falls back to loopback (compose forces `0.0.0.0` inside the container, published loopback-only) |
+| `DATA_DIR`                | `/data`                      | SQLite job database directory (shared `jobs-data` volume)                                                                                                                               |
+| `ARTIFACTS_DIR`           | `/artifacts`                 | Stage artifacts directory (`artifacts` volume)                                                                                                                                          |
+| `STT_MODEL`               | `microsoft/mai-transcribe-2` | Speech-to-text model (OpenRouter)                                                                                                                                                       |
+| `STT_RETRY_MAX_ATTEMPTS`  | `3`                          | Attempts per transcription request, first try included (transient failures only: 429/5xx, and the 402 whose body says `in_flight_budget_exhausted`)                                     |
+| `STT_RETRY_BASE_DELAY_MS` | `1000`                       | First retry delay; doubles per attempt (half fixed, half jitter)                                                                                                                        |
+| `STT_RETRY_MAX_DELAY_MS`  | `8000`                       | Ceiling for any single backoff delay                                                                                                                                                    |
+| `STT_RETRY_AFTER_MAX_MS`  | `120000`                     | Ceiling for a provider-requested wait (`Retry-After`), which overrides the backoff — worst case added to a job is (attempts − 1) × max of the two ceilings                              |
+| `LLM_PROVIDER`            | `openrouter`                 | Chat provider for summarization                                                                                                                                                         |
+| `LLM_MODEL`               | `meta/muse-ember`            | Summarization model (OpenRouter)                                                                                                                                                        |
+| `LLM_PROVIDER_PIN`        | `google-vertex/global`       | OpenRouter provider slug the summarization request is pinned to (`provider.only`, fallbacks disabled); blank = OpenRouter default routing                                               |
+| `LLM_QUANTIZATION`        | _(blank)_                    | Quantization filter applied to the pinned provider (`provider.quantizations`); blank = any quantization                                                                                 |
+| `LLM_THINKING`            | `high`                       | Reasoning effort for the summarization model                                                                                                                                            |
+| `WORKER_POLL_MS`          | `2000`                       | Worker polling interval between queue checks                                                                                                                                            |
+| `JOB_TIMEOUT_MS`          | `1800000`                    | Whole-job timeout (30 min) before the job fails                                                                                                                                         |
+| `STALE_AFTER_MS`          | `600000`                     | Heartbeat silence (10 min) after which a running job is re-queued                                                                                                                       |
+| `MULLVAD_ENABLED`         | `true`                       | Route yt-dlp through the `vpn` sidecar SOCKS5 proxy                                                                                                                                     |
+| `MAX_DOWNLOAD_BYTES`      | `524288000` (500 MiB)        | Per-video cap on the yt-dlp audio download (bytes via `--max-filesize` + on-disk check); longer videos are rejected before they can fill the artifacts volume                           |
+| `MAX_WAV_BYTES`           | `536870912` (512 MiB)        | Per-job cap on the converted WAV (bytes, ~4 h at 16 kHz mono); beyond it the job is rejected before any whole-file read                                                                 |
+| `MAX_TRANSCRIPT_BYTES`    | `1048576` (1 MiB)            | Per-job cap on the transcript read by the summarizer (bytes); beyond it the job is rejected before the transcript is loaded                                                             |
+| `MULLVAD_PROXY`           | `socks5h://vpn:1080`         | SOCKS5 proxy URL used by yt-dlp when Mullvad is enabled (service name on the bridge network; host-run worker: `socks5h://127.0.0.1:1080`)                                               |
+| `RATE_LIMIT_MAX`          | `10`                         | Max paid-work POSTs (`/api/summarize`, `/api/jobs/:id/retry`) per client IP per window; `429` + `Retry-After` beyond (GETs unlimited)                                                   |
+| `RATE_LIMIT_WINDOW_MS`    | `60000`                      | Rate-limit fixed window in milliseconds                                                                                                                                                 |
 
 ### API
 

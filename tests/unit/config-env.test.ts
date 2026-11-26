@@ -278,3 +278,42 @@ describe('shared/config — summarization model defaults', () => {
     assert.equal(cfg.llmQuantization, '');
   });
 });
+
+describe('shared/config — bind host (HOST)', () => {
+  it('binds 127.0.0.1 by default (loopback only, never the LAN)', () => {
+    assert.equal(
+      loadConfig({}).host,
+      '127.0.0.1',
+      'no HOST set must bind loopback, got ' + String(loadConfig({}).host),
+    );
+  });
+
+  it('honours the explicit 0.0.0.0 opt-in (all interfaces)', () => {
+    assert.equal(loadConfig({ HOST: '0.0.0.0' }).host, '0.0.0.0', 'HOST=0.0.0.0 must bind all interfaces');
+    assert.equal(loadConfig({ HOST: '127.0.0.1' }).host, '127.0.0.1', 'HOST=127.0.0.1 must bind loopback');
+    assert.equal(
+      loadConfig({ HOST: ' 0.0.0.0 ' }).host,
+      '0.0.0.0',
+      'HOST with surrounding whitespace must still opt in',
+    );
+  });
+
+  it('falls back to loopback for anything that is not the explicit opt-in', () => {
+    for (const bad of ['192.168.1.10', 'localhost', '::', '', 'all']) {
+      assert.equal(
+        loadConfig({ HOST: bad }).host,
+        '127.0.0.1',
+        `HOST=${JSON.stringify(bad)} must fall back to loopback, got ${loadConfig({ HOST: bad }).host}`,
+      );
+    }
+  });
+
+  it('resolves the compose expression like every other setting', () => {
+    assert.equal(loadConfig({ HOST: '${HOST}' }).host, '127.0.0.1', 'bare ${HOST} means unset, so loopback');
+    assert.equal(
+      loadConfig({ HOST: '${HOST:-0.0.0.0}' }).host,
+      '0.0.0.0',
+      '${HOST:-0.0.0.0} must resolve to the written default (all interfaces)',
+    );
+  });
+});

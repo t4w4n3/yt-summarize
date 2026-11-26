@@ -224,11 +224,21 @@ describe('architecture — layer dependencies (archunit)', () => {
       true,
       'compose app: expected loopback-only port publish 127.0.0.1:8080:8080 (never publish on all interfaces)',
     );
+    assert.equal(
+      appBlock.includes('HOST: "0.0.0.0"'),
+      true,
+      'compose app: expected HOST=0.0.0.0 inside the container (it must receive the forwarded traffic on its interface; the loopback-only publish above is what keeps the host side on loopback)',
+    );
   });
 
   it('e2e compose app service is runtime-hardened (mirrors compose.yaml)', () => {
     const e2e = fs.readFileSync('e2e/compose.e2e.yaml', 'utf8');
     const appBlock = e2e.slice(e2e.indexOf('  app:'), e2e.indexOf('  # Fake worker'));
+    assert.equal(
+      appBlock.includes('HOST: "0.0.0.0"'),
+      true,
+      'e2e compose app: expected HOST=0.0.0.0 inside the container (mirrors compose.yaml app)',
+    );
     assert.equal(
       /cap_drop:\s*\n\s*-\s*"?ALL"?/.test(appBlock),
       true,

@@ -5,6 +5,7 @@ const COMPOSE_EXPRESSION = /^\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*))?\}$/s;
 
 export interface Config {
   port: number;
+  host: string;
   dataDir: string;
   artifactsDir: string;
   sttModel: string;
@@ -48,6 +49,7 @@ export interface Config {
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
   return {
     port: boundedInt(env.PORT, 8080, 1),
+    host: bindHost(env.HOST),
     dataDir: envVar(env.DATA_DIR, '/data'),
     artifactsDir: envVar(env.ARTIFACTS_DIR, '/artifacts'),
     sttModel: envVar(env.STT_MODEL, 'microsoft/mai-transcribe-2'),
@@ -124,6 +126,21 @@ export function envBool(raw: string | undefined, fallback: boolean): boolean {
   if (value === 'true') return true;
   if (value === 'false') return false;
   return fallback;
+}
+
+/**
+ * Bind address for the app server, fail-closed to loopback.
+ *
+ * Only the exact opt-in `0.0.0.0` (all interfaces) is honoured; anything
+ * else — absent, blank, a LAN address, a hostname, garbage — binds
+ * `127.0.0.1`. A typo must never silently expose the LAN: the app has no
+ * authentication by design. The container sets HOST=0.0.0.0 in compose.yaml
+ * because it must receive the forwarded traffic on its interface; the
+ * loopback-only port publish is what keeps the host side on loopback.
+ */
+export function bindHost(raw: string | undefined): string {
+  const value = raw === undefined ? undefined : unwrapComposeLiteral(raw)?.trim();
+  return value === '0.0.0.0' ? '0.0.0.0' : '127.0.0.1';
 }
 
 /**

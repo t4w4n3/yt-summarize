@@ -24,6 +24,7 @@ import {
   splitWavManual,
   transcribe,
 } from '../../src/infrastructure/outbound/stages/transcribe.ts';
+import { loadConfig } from '../../src/shared/config.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers to synthesize a valid PCM WAV without invoking ffmpeg.
@@ -122,7 +123,7 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('large file (> limit) does NOT use multipart — it uses base64 JSON via input_audio', async () => {
+  it('large file (> limit) chunks directly — no whole-file multipart or base64 (F-1)', async () => {
     const dir = tmpDir();
     const wav = path.join(dir, 'audio.wav');
     // MULTIPART_LIMIT + 1 byte would already trigger large path, but building a 24 MB file
@@ -136,22 +137,21 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
     }) as typeof fs.promises.stat;
 
     let sawJson = false;
+    let sawChunkMultipart = false;
     try {
       stubFetch((opts) => {
         if (contentType(opts) === 'application/json') {
           sawJson = true;
-          const body = JSON.parse(String(opts.body)) as { model?: string; input_audio?: string };
-          assert.equal(body.model, 'microsoft/mai-transcribe-2');
-          assert.ok(typeof body.input_audio === 'string' && body.input_audio.length > 0, 'input_audio must be base64');
-          // Should be a large base64 payload (our 512 KB file → ~682 KB b64)
-          assert.ok((body.input_audio?.length ?? 0) > 100_000);
-          return jsonResponse(200, { text: 'large file transcript' });
+          return jsonResponse(200, { text: 'base64 must never be tried for a large file' });
         }
-        throw new Error('large file must not use multipart, expected JSON via input_audio');
+        assert.ok(opts.body instanceof FormData, 'only chunk multipart requests are expected');
+        sawChunkMultipart = true;
+        return jsonResponse(200, { text: 'large file transcript' });
       });
 
       const out = await transcribe(wav, baseContext(dir));
-      assert.ok(sawJson, 'expected one JSON fetch with input_audio');
+      assert.equal(sawJson, false, 'a large file must never be sent as whole-file base64 JSON');
+      assert.ok(sawChunkMultipart, 'expected the chunk multipart request');
       assert.equal(fs.readFileSync(out, 'utf8').trim(), 'large file transcript');
     } finally {
       fs.promises.stat = origStat as typeof fs.promises.stat;
@@ -183,7 +183,7 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
     }
   });
 
-  it('boundary+1: MULTIPART_LIMIT+1 uses base64 JSON', async () => {
+  it('boundary+1: MULTIPART_LIMIT+1 chunks directly (no base64 JSON)', async () => {
     const dir = tmpDir();
     const wav = path.join(dir, 'audio.wav');
     writeSyntheticWav(wav, 256 * 1024);
@@ -193,14 +193,17 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
       p === wav ? ({ size: MULTIPART_LIMIT + 1 } as Stats) : origStat(p)) as typeof fs.promises.stat;
 
     let usedJson = false;
+    let usedChunk = false;
     try {
       stubFetch((opts) => {
         if (contentType(opts) === 'application/json') usedJson = true;
+        if (opts.body instanceof FormData) usedChunk = true;
         return jsonResponse(200, { text: 'just over' });
       });
 
       await transcribe(wav, baseContext(dir));
-      assert.ok(usedJson, 'LIMIT+1 should go via input_audio JSON');
+      assert.equal(usedJson, false, 'LIMIT+1 must not go via whole-file input_audio JSON');
+      assert.ok(usedChunk, 'LIMIT+1 should go through the chunk loop');
     } finally {
       fs.promises.stat = origStat as typeof fs.promises.stat;
       fs.rmSync(dir, { recursive: true, force: true });
@@ -373,7 +376,7 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('very large file where even base64 returns 413 falls back to chunking and concatenates', async () => {
+  it('very large file chunks directly and concatenates, without trying base64 (F-1)', async () => {
     const dir = tmpDir();
     // Build a WAV whose PCM is ~11 minutes → will split into 2 chunks (10 min + 1 min)
     // 11 min * 32000 = ~21 MB which is under LIMIT, so we fake stat to force chunk path.
@@ -382,7 +385,7 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
     const wav = path.join(dir, 'audio.wav');
     writeSyntheticWav(wav, elevenMinBytes);
 
-    // Force large-file path and make base64 fail.
+    // Force large-file path: chunking must start immediately, no base64 attempt.
     const origStat = fs.promises.stat.bind(fs.promises) as (p: fs.PathLike) => Promise<Stats>;
     fs.promises.stat = (async (p: fs.PathLike): Promise<Stats> => {
       if (p === wav) return { size: MULTIPART_LIMIT + 10 * 1024 * 1024 } as Stats;
@@ -393,14 +396,7 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
       let fetchCalls = 0;
       stubFetch((opts) => {
         fetchCalls += 1;
-        if (contentType(opts) === 'application/json') {
-          // Simulate base64 still too large
-          return jsonResponse(
-            413,
-            { error: { message: 'Multipart body exceeds the 25 MB upload limit.', code: 413 } },
-            false,
-          );
-        }
+        assert.notEqual(contentType(opts), 'application/json', 'base64 JSON must never be tried for a large file');
         // Chunk fetches are multipart; return a distinct text per chunk.
         assert.ok(opts.body instanceof FormData, 'chunks must be multipart');
         return jsonResponse(200, { text: `chunk-${fetchCalls}` });
@@ -411,7 +407,11 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
       // Should contain two chunk texts joined with blank line
       assert.match(txt, /chunk-/);
       assert.equal(txt.trim().split('\n\n').length, 2, 'two chunks should be joined by blank line');
-      assert.ok(fetchCalls >= 3, '1 base64 failure + 2 chunk successes');
+      assert.equal(
+        fetchCalls,
+        2,
+        `fetchCalls=${fetchCalls} must be 2: exactly the two chunk successes, no base64 attempt`,
+      );
       // Chunks dir should have been cleaned
       assert.equal(fs.existsSync(path.join(dir, 'chunks')), false);
     } finally {
@@ -438,6 +438,57 @@ describe('transcribe — 25 MB multipart boundary (outbound adapter)', () => {
       assert.equal(h.toString('ascii', 8, 12), 'WAVE');
     }
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('rejects before any provider call when the WAV exceeds MAX_WAV_BYTES (F-1)', async () => {
+    const dir = tmpDir();
+    const wav = path.join(dir, 'audio.wav');
+    writeSyntheticWav(wav, 10 * 1024); // 10 KiB on disk, cap is 1000 bytes
+
+    let fetchCalls = 0;
+    stubFetch(() => {
+      fetchCalls += 1;
+      return jsonResponse(200, { text: 'must never be fetched' });
+    });
+    try {
+      await assert.rejects(
+        transcribe(wav, baseContext(dir), loadConfig({ MAX_WAV_BYTES: '1000' })),
+        (error: unknown) => {
+          const err = error as { stage?: string; message?: string; details?: string };
+          assert.equal(err.stage, 'transcribing', `stage=${err.stage} must be transcribing`);
+          assert.match(
+            err.message ?? '',
+            /too long to process/,
+            `message=${err.message} must be the clean user message`,
+          );
+          assert.equal(err.details, '', 'user message must not carry internal details');
+          return true;
+        },
+      );
+      assert.equal(fetchCalls, 0, `fetchCalls=${fetchCalls} must be 0: no whole-file read may be attempted`);
+      const log = fs.readFileSync(path.join(dir, 'stage.log'), 'utf8');
+      assert.match(log, /exceeds max WAV size/, `stage.log must record the rejection, got: ${log}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('splitWavManual throws instead of silently truncating beyond 1000 chunks (F-1)', async () => {
+    const dir = tmpDir();
+    const wav = path.join(dir, 'audio.wav');
+    // 0.1 s chunks (3200 bytes) on a 3.3 MB WAV → ~1032 chunks, past the ceiling.
+    writeSyntheticWav(wav, 3_300_000);
+    const chunkDir = path.join(dir, 'chunks');
+    fs.mkdirSync(chunkDir, { recursive: true });
+    try {
+      await assert.rejects(
+        splitWavManual(wav, chunkDir, 0.1),
+        /too many chunks/,
+        'must error, never silently drop the tail',
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('exports stay coherent: constants keep their documented values', () => {

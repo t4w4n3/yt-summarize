@@ -235,6 +235,32 @@ describe('shared/config — max download size', () => {
   });
 });
 
+describe('shared/config — WAV and transcript caps (F-1)', () => {
+  it('defaults the WAV cap to 512 MiB and the transcript cap to 1 MiB', () => {
+    const cfg = loadConfig({});
+    assert.equal(cfg.maxWavBytes, 512 * 1024 * 1024, `maxWavBytes=${cfg.maxWavBytes} must be 536870912 (512 MiB)`);
+    assert.equal(
+      cfg.maxTranscriptBytes,
+      1 * 1024 * 1024,
+      `maxTranscriptBytes=${cfg.maxTranscriptBytes} must be 1048576 (1 MiB)`,
+    );
+  });
+
+  it('honours explicit MAX_WAV_BYTES / MAX_TRANSCRIPT_BYTES, including through the compose literal', () => {
+    assert.equal(loadConfig({ MAX_WAV_BYTES: '104857600' }).maxWavBytes, 104857600);
+    assert.equal(loadConfig({ MAX_WAV_BYTES: '${MAX_WAV_BYTES:-104857600}' }).maxWavBytes, 104857600);
+    assert.equal(loadConfig({ MAX_TRANSCRIPT_BYTES: '2097152' }).maxTranscriptBytes, 2097152);
+    assert.equal(loadConfig({ MAX_TRANSCRIPT_BYTES: '${MAX_TRANSCRIPT_BYTES:-2097152}' }).maxTranscriptBytes, 2097152);
+  });
+
+  it('falls back to the defaults for a non-positive or unparsable cap', () => {
+    assert.equal(loadConfig({ MAX_WAV_BYTES: '0' }).maxWavBytes, 512 * 1024 * 1024);
+    assert.equal(loadConfig({ MAX_WAV_BYTES: 'abc' }).maxWavBytes, 512 * 1024 * 1024);
+    assert.equal(loadConfig({ MAX_TRANSCRIPT_BYTES: '0' }).maxTranscriptBytes, 1 * 1024 * 1024);
+    assert.equal(loadConfig({ MAX_TRANSCRIPT_BYTES: 'abc' }).maxTranscriptBytes, 1 * 1024 * 1024);
+  });
+});
+
 describe('shared/config — STT retry bounds', () => {
   it('defaults the provider-requested wait ceiling to 120 s', () => {
     // OpenRouter's in-flight 402 asks for ~120 s; the ceiling bounds that wait.

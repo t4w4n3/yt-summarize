@@ -19,6 +19,7 @@ import { convert } from '../../src/infrastructure/outbound/stages/convert.ts';
 import { download } from '../../src/infrastructure/outbound/stages/download.ts';
 import type { StageContext } from '../../src/infrastructure/outbound/stages/process.ts';
 import { StageError } from '../../src/infrastructure/outbound/stages/process.ts';
+import { loadConfig } from '../../src/shared/config.ts';
 
 let binDir: string | undefined;
 let jobDir: string | undefined;
@@ -533,6 +534,59 @@ describe('convert — ffmpeg wrapper', () => {
       convert(audioPath, baseContext(jobDir)),
       (error: unknown) => error instanceof Error && (error as { stage?: string }).stage === 'converting',
     );
+  });
+
+  it('rejects with a converting StageError when the WAV exceeds MAX_WAV_BYTES', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    // Fake ffmpeg writes a 2000-byte WAV; the cap is 1000 bytes.
+    installFake(
+      'ffmpeg',
+      `
+wav=""
+for a in "$@"; do wav="$a"; done
+head -c 2000 /dev/zero > "$wav"
+exit 0
+`,
+    );
+    withPath();
+    const audioPath = path.join(jobDir, 'audio.webm');
+    fs.writeFileSync(audioPath, 'dummy');
+
+    await assert.rejects(
+      convert(audioPath, baseContext(jobDir), loadConfig({ MAX_WAV_BYTES: '1000' })),
+      (error: unknown) => {
+        assert.ok(error instanceof StageError, `expected StageError, got ${String(error)}`);
+        assert.equal((error as StageError).stage, 'converting', 'cap rejection must be attributed to converting');
+        assert.match(
+          (error as StageError).message,
+          /too long to process/,
+          `message=${(error as StageError).message} must be the clean user message`,
+        );
+        assert.equal((error as StageError).details, '', 'user message must not carry internal details');
+        return true;
+      },
+    );
+    const log = fs.readFileSync(path.join(jobDir, 'stage.log'), 'utf8');
+    assert.match(log, /2000 bytes exceeds/, `stage.log must record the measured size, got: ${log}`);
+  });
+
+  it('accepts a WAV exactly at MAX_WAV_BYTES (cap is inclusive)', async () => {
+    jobDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-test-'));
+    installFake(
+      'ffmpeg',
+      `
+wav=""
+for a in "$@"; do wav="$a"; done
+head -c 1000 /dev/zero > "$wav"
+exit 0
+`,
+    );
+    withPath();
+    const audioPath = path.join(jobDir, 'audio.webm');
+    fs.writeFileSync(audioPath, 'dummy');
+
+    const wav = await convert(audioPath, baseContext(jobDir), loadConfig({ MAX_WAV_BYTES: '1000' }));
+    assert.equal(fs.statSync(wav).size, 1000, 'a WAV of exactly 1000 bytes must pass a 1000-byte cap');
   });
 
   it('passes through stage context (timeout, logPath, heartbeat, signal)', async () => {

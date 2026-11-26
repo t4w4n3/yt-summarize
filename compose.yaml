@@ -111,6 +111,12 @@ services:
       # Plafond par vidéo de la taille de l'audio téléchargé, en octets
       # (500 MiB par défaut) : yt-dlp --max-filesize + vérification disque.
       MAX_DOWNLOAD_BYTES: "${MAX_DOWNLOAD_BYTES}"
+      # Plafond du WAV converti, en octets (512 MiB par défaut, ~4 h à 16 kHz) :
+      # rejet terminal avant toute lecture entière en RAM (todo.md F-1).
+      MAX_WAV_BYTES: "${MAX_WAV_BYTES}"
+      # Plafond du transcript lu par le résumeur, en octets (1 MiB par défaut)
+      # (todo.md F-1 bis).
+      MAX_TRANSCRIPT_BYTES: "${MAX_TRANSCRIPT_BYTES}"
       STALE_AFTER_MS: "${STALE_AFTER_MS}"
       # Mullvad: yt-dlp sort par le tunnel via le proxy SOCKS5 du service vpn
       # (seul yt-dlp est concerné — le reste du worker reste en direct).

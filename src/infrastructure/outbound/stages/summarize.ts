@@ -5,6 +5,7 @@ import { loadConfig } from '../../../shared/config.ts';
 import { resolveOpenRouterKey } from './openrouter.ts';
 import type { StageContext } from './process.ts';
 import { StageError } from './process.ts';
+import { assertWithinSizeCap } from './size-cap.ts';
 
 const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -66,6 +67,16 @@ export async function summarize(
   const systemPrompt = fs
     .readFileSync(path.join(import.meta.dirname, 'prompts', 'summarize.md'), 'utf8')
     .replaceAll('{{OUTPUT_LANGUAGE}}', lang);
+  // F-1 bis: bound the transcript before reading it whole into the prompt.
+  const transcriptSize = fs.statSync(transcriptPath).size;
+  assertWithinSizeCap(
+    transcriptSize,
+    cfg.maxTranscriptBytes,
+    'summarizing',
+    context.logPath,
+    'transcript.txt',
+    'transcript',
+  );
   const transcript = fs.readFileSync(transcriptPath, 'utf8');
   // Pin the summarization endpoint: OpenRouter otherwise routes to whichever
   // provider of the model is cheapest/fastest right now, which changes output

@@ -26,8 +26,10 @@ export function isBase64LimitError(message: string): boolean {
   return message.includes('413') || message.includes('25 MB');
 }
 
-export function chooseInitialStrategy(sizeBytes: number): 'multipart' | 'base64' {
-  return fitsMultipart(sizeBytes) ? 'multipart' : 'base64';
+export function chooseInitialStrategy(sizeBytes: number): 'multipart' | 'chunk' {
+  // F-1: a large WAV goes straight to streamed chunking — the base64 strategy
+  // reads the whole file into RAM (plus ~33% as base64) before any request.
+  return fitsMultipart(sizeBytes) ? 'multipart' : 'chunk';
 }
 
 export function nextAfterMultipartFailure(errorMessage: string): 'base64' | null {

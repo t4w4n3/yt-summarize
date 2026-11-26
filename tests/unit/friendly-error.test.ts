@@ -61,6 +61,19 @@ describe('application — friendlyError', () => {
     assert.match(msg, /could not resolve the OpenRouter credential/i);
   });
 
+  it('size-cap rejections (F-1) surface exactly the clean user message, no detail appended', () => {
+    for (const stage of ['converting', 'transcribing', 'summarizing']) {
+      const msg = friendlyError(
+        new StageError('This video is too long to process: its audio exceeds the maximum size limit.', stage),
+      );
+      assert.equal(
+        msg,
+        'This video is too long to process: its audio exceeds the maximum size limit.',
+        `stage=${stage} must surface the clean message verbatim, got: ${msg}`,
+      );
+    }
+  });
+
   it('other StageErrors keep message + detail', () => {
     const err = new StageError('Summarization failed (HTTP 429).', 'summarizing', 'rate limited');
     const msg = friendlyError(err);

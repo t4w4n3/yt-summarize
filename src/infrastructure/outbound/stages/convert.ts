@@ -1,8 +1,17 @@
+import fs from 'node:fs';
 import path from 'node:path';
+import type { RuntimeConfig } from '../../../application/config.ts';
+import { loadConfig } from '../../../shared/config.ts';
 import type { StageContext } from './process.ts';
 import { runProcess } from './process.ts';
+import { assertWithinSizeCap } from './size-cap.ts';
 
-export async function convert(audioPath: string, context: StageContext): Promise<string> {
+export async function convert(
+  audioPath: string,
+  context: StageContext,
+  runtimeConfig?: RuntimeConfig,
+): Promise<string> {
+  const cfg = runtimeConfig ?? loadConfig(process.env);
   const wavPath = path.join(context.jobDir, 'audio.wav');
   await runProcess(
     'ffmpeg',
@@ -29,5 +38,9 @@ export async function convert(audioPath: string, context: StageContext): Promise
       signal: context.signal,
     },
   );
+  // F-1: bound the converted WAV before any stage reads it whole into RAM.
+  // The output format is fixed (16 kHz mono), so its byte size is its duration.
+  const size = (await fs.promises.stat(wavPath)).size;
+  assertWithinSizeCap(size, cfg.maxWavBytes, 'converting', context.logPath, 'audio.wav', 'WAV');
   return wavPath;
 }

@@ -57,6 +57,8 @@ describe('stage ports — facade shape', () => {
       mullvadEnabled: true,
       mullvadProxy: 'socks5h://127.0.0.1:9999',
       maxDownloadBytes: 500 * 1024 * 1024,
+      maxWavBytes: 512 * 1024 * 1024,
+      maxTranscriptBytes: 1 * 1024 * 1024,
     };
     const ports = createPipelineStagePorts(
       {

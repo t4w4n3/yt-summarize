@@ -84,12 +84,13 @@ describe('domain/transcription/policy — error classification', () => {
 });
 
 describe('domain/transcription/policy — strategy planner', () => {
-  it('chooseInitialStrategy: small → multipart, large → base64, boundary → multipart', () => {
+  it('chooseInitialStrategy: small → multipart, large → chunk, boundary → multipart', () => {
     assert.equal(chooseInitialStrategy(0), 'multipart');
     assert.equal(chooseInitialStrategy(1024), 'multipart');
     assert.equal(chooseInitialStrategy(MULTIPART_LIMIT), 'multipart');
-    assert.equal(chooseInitialStrategy(MULTIPART_LIMIT + 1), 'base64');
-    assert.equal(chooseInitialStrategy(MULTIPART_LIMIT + 10 * 1024 * 1024), 'base64');
+    // F-1: a large WAV is chunked directly — base64 would read it whole into RAM.
+    assert.equal(chooseInitialStrategy(MULTIPART_LIMIT + 1), 'chunk');
+    assert.equal(chooseInitialStrategy(MULTIPART_LIMIT + 10 * 1024 * 1024), 'chunk');
   });
 
   it('nextAfterMultipartFailure: size-limit error → base64, other errors → null', () => {

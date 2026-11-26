@@ -19,6 +19,7 @@ import { loadConfig } from '../../../shared/config.ts';
 import * as openrouter from './openrouter.ts';
 import type { StageContext } from './process.ts';
 import { runProcess, StageError } from './process.ts';
+import { assertWithinSizeCap } from './size-cap.ts';
 
 export { CHUNK_DURATION_SEC, MULTIPART_LIMIT } from '../../../domain/transcription/policy.ts';
 
@@ -405,7 +406,7 @@ export async function splitWavManual(wavPath: string, chunkDir: string, chunkDur
       files.push(chunkPath);
       readOffset += aligned;
       index += 1;
-      if (index > 1000) break;
+      if (index > 1000) throw new Error('too many chunks');
     }
     return files;
   } finally {
@@ -478,7 +479,11 @@ export async function transcribe(
     try {
       statSize = (await fs.promises.stat(wavPath)).size;
     } catch {}
-    // Domain strategy (policy.ts): small → multipart first, large → base64 first.
+    // F-1: bound the WAV before any whole-file read (multipart/base64).
+    // Defence in depth with convert: a resume or an older artifact must not
+    // slip an unbounded WAV past the convert check.
+    assertWithinSizeCap(statSize, cfg.maxWavBytes, 'transcribing', context.logPath, 'audio.wav', 'WAV');
+    // Domain strategy (policy.ts): small → multipart first, large → chunk directly.
     // Each failure is classified by the policy; anything that is not a known
     // limit error is rethrown instead of falling through.
     const initial = chooseInitialStrategy(statSize);
@@ -509,8 +514,9 @@ export async function transcribe(
       }
     }
 
-    if (!resumeChunks && text === null) {
-      // For large files or small files that got 413, try base64 JSON.
+    if (!resumeChunks && text === null && initial !== 'chunk') {
+      // Small files that got a 413 on multipart try base64 JSON. Large files
+      // skip it entirely: base64 reads the whole WAV into RAM (F-1).
       const attempt = await retried(() => stt.attemptBase64(wavPath, apiKey, signal));
       if (attempt.ok) {
         text = attempt.text;
@@ -532,6 +538,9 @@ export async function transcribe(
     }
 
     if (text === null) {
+      if (initial === 'chunk') {
+        appendLog(context.logPath, `large WAV (${statSize} bytes): chunking directly without whole-file strategies`);
+      }
       // Final fallback: chunk and transcribe sequentially.
       const chunkPaths = await splitter.splitIntoChunks(wavPath, context.jobDir, CHUNK_DURATION_SEC);
       if (chunkPaths.length === 0) throw new StageError('Could not split audio for transcription.', 'transcribing');

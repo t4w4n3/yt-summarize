@@ -14,7 +14,7 @@ import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 import type { StageContext } from '../../src/infrastructure/outbound/stages/process.ts';
 import { extractContent, providerRouting, summarize } from '../../src/infrastructure/outbound/stages/summarize.ts';
-import { config } from '../../src/shared/config.ts';
+import { config, loadConfig } from '../../src/shared/config.ts';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'summarize-test-'));
@@ -185,6 +185,60 @@ describe('summarize — OpenRouter provider pin', () => {
         only: [config.llmProviderPin],
         allow_fallbacks: false,
       });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects before any provider call when the transcript exceeds MAX_TRANSCRIPT_BYTES (F-1 bis)', async () => {
+    const dir = tmpDir();
+    const transcript = writeTranscript(dir, 'x'.repeat(1000)); // 1000 bytes, cap is 100
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return jsonResponse(200, { choices: [{ message: { content: '# Never' } }] });
+    }) as typeof fetch;
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
+    try {
+      await assert.rejects(
+        summarize(
+          transcript,
+          { jobDir: dir, logPath: path.join(dir, 'stage.log'), timeoutMs: 5000 } as StageContext,
+          loadConfig({ MAX_TRANSCRIPT_BYTES: '100' }),
+        ),
+        (error: unknown) => {
+          const err = error as { stage?: string; message?: string; details?: string };
+          assert.equal(err.stage, 'summarizing', `stage=${err.stage} must be summarizing`);
+          assert.match(
+            err.message ?? '',
+            /too long to process/,
+            `message=${err.message} must be the clean user message`,
+          );
+          assert.equal(err.details, '', 'user message must not carry internal details');
+          return true;
+        },
+      );
+      assert.equal(fetchCalls, 0, `fetchCalls=${fetchCalls} must be 0: no provider call for an oversized transcript`);
+      const log = fs.readFileSync(path.join(dir, 'stage.log'), 'utf8');
+      assert.match(log, /exceeds max transcript size/, `stage.log must record the rejection, got: ${log}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a transcript exactly at MAX_TRANSCRIPT_BYTES (cap is inclusive)', async () => {
+    const dir = tmpDir();
+    const transcript = writeTranscript(dir, 'x'.repeat(100)); // exactly 100 bytes, cap is 100
+    globalThis.fetch = (async () =>
+      jsonResponse(200, { choices: [{ message: { content: '# Boundary' } }] })) as typeof fetch;
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
+    try {
+      const md = await summarize(
+        transcript,
+        { jobDir: dir, logPath: path.join(dir, 'stage.log'), timeoutMs: 5000 } as StageContext,
+        loadConfig({ MAX_TRANSCRIPT_BYTES: '100' }),
+      );
+      assert.equal(md, '# Boundary', 'a transcript of exactly 100 bytes must pass a 100-byte cap');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

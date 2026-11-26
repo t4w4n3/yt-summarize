@@ -22,4 +22,6 @@ export interface RuntimeConfig {
   mullvadEnabled: boolean;
   mullvadProxy: string;
   maxDownloadBytes: number;
+  maxWavBytes: number;
+  maxTranscriptBytes: number;
 }

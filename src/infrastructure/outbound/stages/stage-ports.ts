@@ -44,7 +44,7 @@ export function createPipelineStagePorts(
       download: (input) => stageFunctions.download({ url: input.url }, contextOf(input), runtimeConfig),
     },
     converter: {
-      convert: (input) => stageFunctions.convert(input.audioPath, contextOf(input)),
+      convert: (input) => stageFunctions.convert(input.audioPath, contextOf(input), runtimeConfig),
     },
     transcriber: {
       transcribe: (input) => stageFunctions.transcribe(input.wavPath, contextOf(input), runtimeConfig),

@@ -174,6 +174,8 @@ describe('shared/config — the frozen config object is fully resolved', () => {
       pollMs: config.pollMs,
       jobTimeoutMs: config.jobTimeoutMs,
       staleAfterMs: config.staleAfterMs,
+      rateLimitMax: config.rateLimitMax,
+      rateLimitWindowMs: config.rateLimitWindowMs,
     } as const;
     for (const [name, value] of Object.entries(numeric)) {
       assert.ok(Number.isFinite(value) && value >= 1, `${name}=${value} must be a finite bound ≥ 1`);

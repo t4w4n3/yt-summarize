@@ -30,12 +30,17 @@ services:
     tmpfs:
       - "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777"
     # Loopback-only: never publish on all interfaces. Expose via your own
-    # reverse proxy / tunnel if remote access is needed.
+    # reverse proxy / tunnel if remote access is needed — the proxy MUST
+    # enforce authentication (the app has none by design; see README).
     ports:
       - "127.0.0.1:8080:8080"
     environment:
       PORT: "8080"
       DATA_DIR: "/data"
+      # Rate limiting on paid-work POSTs (todo.md P3); defaults live in
+      # src/shared/config.ts (see worker env comment for the ${VAR} pattern).
+      RATE_LIMIT_MAX: "${RATE_LIMIT_MAX}"
+      RATE_LIMIT_WINDOW_MS: "${RATE_LIMIT_WINDOW_MS}"
     volumes:
       - "jobs-data:/data"
     restart: "unless-stopped"

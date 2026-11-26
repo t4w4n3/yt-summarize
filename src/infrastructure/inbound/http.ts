@@ -15,6 +15,56 @@ const store = createSqliteJobStore(db);
 const publicDir = path.join(import.meta.dirname, 'public');
 
 app.disable('x-powered-by');
+
+// Security headers (todo.md P3, defense in depth — the response markdown is
+// already escaped before innerHTML). The UI ships no inline scripts/styles
+// (external app.js/style.css only), so a strict CSP is safe: 'self' everywhere.
+// No auth here by design: the app is loopback-only and remote exposure goes
+// through the operator's reverse proxy, which MUST enforce authentication
+// (see README "Access the app remotely").
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.set({
+    'Content-Security-Policy':
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+  });
+  next();
+});
+
+// Rate limiting (todo.md P3): fixed window per client IP over the two POST
+// endpoints that trigger paid worker stages (summarize, retry) — an exposed
+// instance without this lets anyone burn the OpenRouter budget. In-memory,
+// single process (the app is one Express process; no shared store needed).
+// GETs are unlimited (the UI polls). Behind a reverse proxy, req.ip is the
+// proxy's address (no trust-proxy), so remote users share one bucket — that
+// still caps the total spend rate, which is the point. Buckets expire with
+// their window; a sweep bounds the map.
+const rateBuckets = new Map<string, { start: number; count: number }>();
+function rateLimit(req: Request, res: Response, next: NextFunction): void {
+  const now = Date.now();
+  const windowMs = runtimeConfig.rateLimitWindowMs;
+  const ip = req.ip ?? 'unknown';
+  let bucket = rateBuckets.get(ip);
+  if (!bucket || now - bucket.start >= windowMs) {
+    bucket = { start: now, count: 0 };
+    rateBuckets.set(ip, bucket);
+  }
+  if (rateBuckets.size > 1024) {
+    for (const [key, entry] of rateBuckets) {
+      if (now - entry.start >= windowMs) rateBuckets.delete(key);
+    }
+  }
+  bucket.count += 1;
+  if (bucket.count > runtimeConfig.rateLimitMax) {
+    const retryAfter = Math.max(1, Math.ceil((bucket.start + windowMs - now) / 1000));
+    res.set('Retry-After', String(retryAfter));
+    res.status(429).json({ error: 'Too many requests. Please retry later.' });
+    return;
+  }
+  next();
+}
+
 app.use(express.json({ limit: '16kb' }));
 
 interface PublicJob {
@@ -49,7 +99,7 @@ interface CreateBody {
   lang?: unknown;
 }
 
-app.post('/api/summarize', (req: Request<object, unknown, CreateBody>, res: Response) => {
+app.post('/api/summarize', rateLimit, (req: Request<object, unknown, CreateBody>, res: Response) => {
   const error = validateYouTubeUrl(req.body?.url);
   if (error) return res.status(400).json({ error });
   const lang = normalizeLang(req.body?.lang);
@@ -115,7 +165,7 @@ app.get('/api/jobs/:id', (req: Request<{ id: string }>, res: Response) => {
 // already on disk (downloaded audio, audio.wav, chunk transcripts,
 // transcript.txt), so retrying does not pay again for completed stages.
 // 404 unknown, 409 when the job is not failed (queued/running/done).
-app.post('/api/jobs/:id/retry', (req: Request<{ id: string }>, res: Response) => {
+app.post('/api/jobs/:id/retry', rateLimit, (req: Request<{ id: string }>, res: Response) => {
   const existing = store.get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Job not found.' });
   if (existing.status !== 'failed') return res.status(409).json({ error: 'Only failed jobs can be retried.' });

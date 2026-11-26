@@ -76,7 +76,7 @@ Notes:
 
 ### Access the app remotely (optional)
 
-The stack binds `127.0.0.1:8080` (loopback only — never exposed publicly). Open [http://localhost:8080](http://localhost:8080) on the host, or expose it with whatever reverse proxy / tunnel you already use.
+The stack binds `127.0.0.1:8080` (loopback only — never exposed publicly). Open [http://localhost:8080](http://localhost:8080) on the host, or expose it with whatever reverse proxy / tunnel you already use. The app has **no authentication by design** — your proxy/tunnel **must** enforce it (basic auth, SSO, IP allowlist…). Without it, anyone who can reach the app can submit jobs and spend your OpenRouter budget. Mitigations that are in the app regardless: `POST /api/summarize` + `POST /api/jobs/:id/retry` are rate-limited (10/min/IP by default, `RATE_LIMIT_MAX`/`RATE_LIMIT_WINDOW_MS` in `.env`), and security headers (CSP, `X-Content-Type-Options`, `X-Frame-Options`) are set on every response.
 
 ### Back up and restore data
 
@@ -158,10 +158,12 @@ Runtime settings live in `.env` (created by `mise run setup`; see `.env.example`
 | `MULLVAD_ENABLED`         | `true`                       | Route yt-dlp through the `vpn` sidecar SOCKS5 proxy                                                                                                           |
 | `MAX_DOWNLOAD_BYTES`      | `524288000` (500 MiB)        | Per-video cap on the yt-dlp audio download (bytes via `--max-filesize` + on-disk check); longer videos are rejected before they can fill the artifacts volume |
 | `MULLVAD_PROXY`           | `socks5h://vpn:1080`         | SOCKS5 proxy URL used by yt-dlp when Mullvad is enabled (service name on the bridge network; host-run worker: `socks5h://127.0.0.1:1080`)                     |
+| `RATE_LIMIT_MAX`          | `10`                         | Max paid-work POSTs (`/api/summarize`, `/api/jobs/:id/retry`) per client IP per window; `429` + `Retry-After` beyond (GETs unlimited)                         |
+| `RATE_LIMIT_WINDOW_MS`    | `60000`                      | Rate-limit fixed window in milliseconds                                                                                                                       |
 
 ### API
 
-- `POST /api/summarize` with `{ "url": "https://youtu.be/...", "lang": "fr" }` — `lang` is an optional two-letter ISO 639-1 code for the note's language (default `en`; the UI pre-selects the browser locale). Responses: `201 { jobId }` for a new job, `200 { jobId, deduped: true }` when the same video + language already has a job, `400 { error }` for an invalid URL or language.
+- `POST /api/summarize` with `{ "url": "https://youtu.be/...", "lang": "fr" }` — `lang` is an optional two-letter ISO 639-1 code for the note's language (default `en`; the UI pre-selects the browser locale). Responses: `201 { jobId }` for a new job, `200 { jobId, deduped: true }` when the same video + language already has a job, `400 { error }` for an invalid URL or language, `429 { error }` + `Retry-After` when rate-limited (see `RATE_LIMIT_MAX`).
 - `GET /api/jobs/:id` — `200 { jobId, status, stage, progress, title, error, lang, createdAt, updatedAt }`, `404 { error }` when unknown. `status` is `queued`, `running`, `done`, or `failed`; `stage` is one of `downloading`, `converting`, `transcribing`, `summarizing`.
 - `GET /api/jobs` — history: `200 { jobs: [...], total, limit, offset, hasMore }` with done jobs only, newest first, metadata only (no Markdown body). Query parameters: `limit` (default 20, integer between 1 and 50, otherwise `400`), `offset` (default 0, integer between 0 and 10000, otherwise `400`), and `q` (case-insensitive title search, at most 100 characters, otherwise `400`). The UI's HISTORY list under the source column browses this endpoint 10 notes at a time with a LOAD MORE button that appends the next page, and opens a note via `GET /api/jobs/:id/result`.
 - `POST /api/jobs/:id/retry` — re-queue a failed job (`200` with the job in `queued` status, error/stage/progress cleared), `404 { error }` when unknown, `409 { error }` when the job is not failed. The worker resumes from the artifacts already on disk (downloaded audio, `audio.wav`, per-chunk transcripts, `transcript.txt`), so completed stages are not paid for again.

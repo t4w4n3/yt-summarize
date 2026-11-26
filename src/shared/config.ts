@@ -27,6 +27,10 @@ export interface Config {
   mullvadProxy: string;
   /** Per-video cap on the yt-dlp audio download, in bytes (500 MiB by default). */
   maxDownloadBytes: number;
+  /** Max paid-work POSTs (/api/summarize, /api/jobs/:id/retry) per client IP per window (P3 rate limiting). */
+  rateLimitMax: number;
+  /** Rate-limit window in ms (fixed window, per client IP). */
+  rateLimitWindowMs: number;
 }
 
 /**
@@ -61,6 +65,8 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     // container) overrides with socks5h://127.0.0.1:1080 via .env.
     mullvadProxy: envVar(env.MULLVAD_PROXY, 'socks5h://vpn:1080'),
     maxDownloadBytes: boundedInt(env.MAX_DOWNLOAD_BYTES, 500 * 1024 * 1024, 1),
+    rateLimitMax: boundedInt(env.RATE_LIMIT_MAX, 10, 1),
+    rateLimitWindowMs: boundedInt(env.RATE_LIMIT_WINDOW_MS, 60000, 1000),
   };
 }
 

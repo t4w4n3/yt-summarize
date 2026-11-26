@@ -7,28 +7,33 @@
 
 import dns from 'node:dns';
 import net from 'node:net';
+import { hasBlockedAddress, parseSocksLimits } from './socks-policy.ts';
 
 const PORT = Number(process.env.SOCKS_PORT || 1080);
 // Défaut loopback — en production le sidecar `vpn` surcharge via
 // SOCKS_HOST=0.0.0.0 (confiné à son netns, publié host 127.0.0.1:1080 uniquement).
 const HOST = process.env.SOCKS_HOST || '127.0.0.1';
 const MULLVAD_DNS = process.env.MULLVAD_DNS || '10.64.0.1';
+// Bornes (todo.md SOCKS5 sans filtre) : cap de connexions, timeouts
+// connect/idle/DNS — rien ne peut attendre ou croître sans limite.
+// Surchargeables via SOCKS_MAX_CONNECTIONS, SOCKS_CONNECT_TIMEOUT_MS,
+// SOCKS_IDLE_TIMEOUT_MS, SOCKS_DNS_TIMEOUT_MS (voir socks-policy.ts).
+const LIMITS = parseSocksLimits(process.env);
 
 // Résolution DNS via le DNS Mullvad (dans le tunnel). Le resolv.conf du
 // container pointe vers le stub systemd-resolved de l'hôte, injoignable ici.
 // Pas de fallback vers le résolveur système: la requête DNS fuirait hors du
 // tunnel (garantie de confidentialité du sidecar).
-const resolver = new dns.promises.Resolver();
+const resolver = new dns.promises.Resolver({ timeout: LIMITS.dnsTimeoutMs });
 try {
   resolver.setServers([MULLVAD_DNS]);
 } catch {}
 
-async function resolveHost(host: string): Promise<string> {
-  if (net.isIP(host)) return host;
+async function resolveHosts(host: string): Promise<string[]> {
+  if (net.isIP(host)) return [host];
   const ips = await resolver.resolve4(host);
-  const first = ips[0];
-  if (!first) throw new Error(`no A record for ${host}`);
-  return first;
+  if (ips.length === 0) throw new Error(`no A record for ${host}`);
+  return ips;
 }
 
 interface SocksAddress {
@@ -57,7 +62,24 @@ function parseAddress(buf: Buffer, offset: number): SocksAddress | null {
   return null;
 }
 
+let activeConnections = 0;
+
 const server = net.createServer((socket) => {
+  if (activeConnections >= LIMITS.maxConnections) {
+    console.error(`SOCKS5: cap de ${LIMITS.maxConnections} connexions atteint, connexion refusée`);
+    socket.destroy();
+    return;
+  }
+  activeConnections++;
+  socket.once('close', () => {
+    activeConnections--;
+  });
+  // Timeout d'inactivité dès l'accept : couvre le greeting, la requête,
+  // puis le pipe (le timeout se réarme sur l'activité du socket).
+  socket.setTimeout(LIMITS.idleTimeoutMs, () => {
+    console.error(`SOCKS5: connexion inactive ${LIMITS.idleTimeoutMs}ms, coupure`);
+    socket.destroy();
+  });
   socket.on('error', () => {});
   socket.once('data', (greeting: Buffer) => {
     if (greeting.length < 2 || greeting[0] !== 0x05) return socket.destroy();
@@ -75,21 +97,47 @@ const server = net.createServer((socket) => {
         // process (rejet non géré dans ce listener async).
         if (request.length < 3 + addr.addrLen + 2) return socket.destroy();
         const port = request.readUInt16BE(3 + addr.addrLen);
-        let ip: string;
+        let ips: string[];
         try {
-          ip = await resolveHost(addr.host); // DNS via le tunnel (10.64.0.1)
+          ips = await resolveHosts(addr.host); // DNS via le tunnel (10.64.0.1)
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           console.error(`CONNECT ${addr.host}:${port} — DNS via le tunnel impossible (${message})`);
           return socket.destroy();
         }
-        const remote = net.connect({ port, host: ip }, () => {
+        // Défense en profondeur : deny explicite des destinations
+        // non-routables (loopback, link-local/métadonnées, privé, CGNAT,
+        // multicast/réservé), sur l'IP littérale comme sur le DNS résolu.
+        // On refuse si UNE des adresses A est bloquée, et on ne dial que
+        // la première (par IP, donc pas de rebind DNS entre check et dial).
+        if (hasBlockedAddress(ips)) {
+          console.error(`CONNECT ${addr.host}:${port} (${ips.join(',')}) — destination bloquée (non-routable/privée)`);
+          // Réponse SOCKS5 0x02 (not allowed by ruleset), puis FIN.
+          return socket.end(Buffer.from([0x05, 0x02, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+        }
+        const ip = ips[0] as string;
+        const remote = net.connect({ port, host: ip });
+        const connectTimer = setTimeout(() => {
+          console.error(`CONNECT ${addr.host} (${ip}):${port} — timeout de connexion ${LIMITS.connectTimeoutMs}ms`);
+          remote.destroy();
+          socket.destroy();
+        }, LIMITS.connectTimeoutMs);
+        remote.once('connect', () => {
+          clearTimeout(connectTimer);
+          remote.setTimeout(LIMITS.idleTimeoutMs, () => {
+            console.error(`CONNECT ${addr.host} (${ip}):${port} — amont inactif ${LIMITS.idleTimeoutMs}ms, coupure`);
+            remote.destroy();
+            socket.destroy();
+          });
           console.log(`CONNECT ${addr.host} (${ip}):${port}`);
           socket.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])); // success
           socket.pipe(remote);
           remote.pipe(socket);
         });
-        remote.on('error', () => socket.destroy());
+        remote.on('error', () => {
+          clearTimeout(connectTimer);
+          socket.destroy();
+        });
       } catch (error) {
         // Défense en profondeur: une requête malformée coupe la connexion,
         // jamais le process du sidecar.

@@ -116,11 +116,11 @@ services:
       - "artifacts:/artifacts"
     secrets:
       - "openrouter_key"
-    # host DNS/network; required on hosts without podman's aardvark-dns. Kept
-    # intentionally for now (see todo.md): dropping it would restore network
-    # isolation but can break DNS resolution on such hosts. Do not remove
-    # without a DNS regression test on a host without aardvark-dns.
-    network_mode: "host"
+    # Bridge network (default): the worker parses untrusted media (yt-dlp/
+    # ffmpeg) without host/LAN reachability. Needs podman's aardvark-dns for
+    # service-name resolution (`vpn`); external DNS is forwarded by the
+    # embedded DNS. Gated by `mise run test-dns` (scripts/dns-regression.sh)
+    # — see todo.md P2. Do NOT re-add host networking without that gate.
     restart: "unless-stopped"
     # Runs as non-root `node` (image default); no HTTP endpoint to probe.
     healthcheck:

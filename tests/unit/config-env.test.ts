@@ -142,14 +142,14 @@ describe('shared/config — mullvadSettings', () => {
   it('is off with the sidecar proxy when nothing is configured', () => {
     delete process.env.MULLVAD_ENABLED;
     delete process.env.MULLVAD_PROXY;
-    assert.deepEqual(mullvadSettings(), { enabled: false, proxy: 'socks5h://127.0.0.1:1080' });
+    assert.deepEqual(mullvadSettings(), { enabled: false, proxy: 'socks5h://vpn:1080' });
   });
 
   it('keeps the tunnel on when podman-compose passes the raw expression (regression)', () => {
     // Exactly what the deployed worker receives when MULLVAD_ENABLED is not in .env
     process.env.MULLVAD_ENABLED = '${MULLVAD_ENABLED:-true}';
-    process.env.MULLVAD_PROXY = '${MULLVAD_PROXY:-socks5h://127.0.0.1:1080}';
-    assert.deepEqual(mullvadSettings(), { enabled: true, proxy: 'socks5h://127.0.0.1:1080' });
+    process.env.MULLVAD_PROXY = '${MULLVAD_PROXY:-socks5h://vpn:1080}';
+    assert.deepEqual(mullvadSettings(), { enabled: true, proxy: 'socks5h://vpn:1080' });
   });
 
   it('honours an explicit proxy and an explicit disable', () => {

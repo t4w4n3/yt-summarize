@@ -49,7 +49,7 @@ Submits the URL to the running stack and polls until the note is ready. Accepts 
 
 ### Download reliably via the Mullvad VPN
 
-YouTube blocks datacenter IPs. The worker can route yt-dlp through a Mullvad WireGuard tunnel via the `vpn` sidecar, which exposes a loopback-only SOCKS5 proxy on `127.0.0.1:1080`. Only yt-dlp's traffic exits through the tunnel — the app, the rest of the worker, and the host are unaffected, and no host routes or firewall rules are touched.
+YouTube blocks datacenter IPs. The worker can route yt-dlp through a Mullvad WireGuard tunnel via the `vpn` sidecar, which exposes a SOCKS5 proxy on port 1080. The worker reaches it by service name (`socks5h://vpn:1080`) on the compose bridge network — host networking was removed (todo.md P2), so yt-dlp no longer runs with LAN/host-loopback reachability; the sidecar also publishes the proxy on host loopback (`127.0.0.1:1080`) for host-run tooling. Only yt-dlp's traffic exits through the tunnel — the app, the rest of the worker, and the host are unaffected, and no host routes or firewall rules are touched. Bridge DNS + SOCKS are gated by `mise run test-dns` (needs podman's aardvark-dns, shipped with podman ≥ 4 + netavark).
 
 First-time setup (needs a Mullvad account, ~€5/month):
 
@@ -72,6 +72,7 @@ Notes:
 - YouTube blacklists exit IPs over time: run `mise run mullvad scan` to find a relay that works, then `mise run mullvad init -i <addr> -r <relay>`.
 - Without a config, the `vpn` service stays down cleanly and the stack still starts. To download directly (datacenter IP, often blocked), set `MULLVAD_ENABLED=false` in `.env`.
 - `mise run doctor` reports a missing Mullvad config.
+- **Upgrading from host networking (P2):** if your `.env` still sets `MULLVAD_PROXY=socks5h://127.0.0.1:1080`, change it to `socks5h://vpn:1080` — the worker no longer shares the host network namespace, so `127.0.0.1` no longer reaches the sidecar. (Host-run workers keep `127.0.0.1`.) Verify with `mise run test-dns`.
 
 ### Access the app remotely (optional)
 
@@ -156,7 +157,7 @@ Runtime settings live in `.env` (created by `mise run setup`; see `.env.example`
 | `STALE_AFTER_MS`          | `600000`                     | Heartbeat silence (10 min) after which a running job is re-queued                                                                                             |
 | `MULLVAD_ENABLED`         | `true`                       | Route yt-dlp through the `vpn` sidecar SOCKS5 proxy                                                                                                           |
 | `MAX_DOWNLOAD_BYTES`      | `524288000` (500 MiB)        | Per-video cap on the yt-dlp audio download (bytes via `--max-filesize` + on-disk check); longer videos are rejected before they can fill the artifacts volume |
-| `MULLVAD_PROXY`           | `socks5h://127.0.0.1:1080`   | SOCKS5 proxy URL used by yt-dlp when Mullvad is enabled                                                                                                       |
+| `MULLVAD_PROXY`           | `socks5h://vpn:1080`         | SOCKS5 proxy URL used by yt-dlp when Mullvad is enabled (service name on the bridge network; host-run worker: `socks5h://127.0.0.1:1080`)                     |
 
 ### API
 
@@ -175,7 +176,7 @@ One Dockerfile builds three least-privilege images, one per compose service shar
 
 - **app** — Express server on `:8080` (loopback-only): REST API + static single-page UI. Never executes pipeline tools, never calls OpenRouter.
 - **worker** — poll loop (`WORKER_POLL_MS`): claims the next queued job, sends heartbeats, runs the four stages one job at a time with per-stage timeouts (downloading 10 min, converting 15 min, transcribing 25 min, summarizing 10 min), then marks the job done or failed with a per-stage error. Temporary files are cleaned after a successful job; after a failure the completed-stage artifacts are kept so the job can be retried without paying for them again (see Retry below), and the transcript and the summary are always kept.
-- **vpn** — WireGuard tunnel in its own network namespace plus a loopback-only SOCKS5 proxy (`127.0.0.1:1080`). Only yt-dlp's traffic exits through it; DNS is resolved inside the tunnel.
+- **vpn** — WireGuard tunnel in its own network namespace plus a SOCKS5 proxy (port 1080, reached by the worker as `vpn:1080` on the bridge network, also published on host loopback `127.0.0.1:1080`). Only yt-dlp's traffic exits through it; DNS is resolved inside the tunnel.
 
 Pipeline per job:
 

@@ -53,6 +53,12 @@ else
   fail=1
 fi
 
+if [ -x /usr/lib/podman/aardvark-dns ]; then
+  ok "aardvark-dns present (bridge service-name DNS — the worker resolves the 'vpn' sidecar by name since P2)"
+else
+  warn "aardvark-dns missing — the worker cannot resolve the 'vpn' service name on the bridge network (see todo.md P2). Install it (ships with podman >= 4 + netavark) or run: mise run test-dns to see the failure."
+fi
+
 echo "project config:"
 if [ -f .env ]; then
   ok ".env present"

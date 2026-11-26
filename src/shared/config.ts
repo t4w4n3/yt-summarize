@@ -56,7 +56,10 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     jobTimeoutMs: boundedInt(env.JOB_TIMEOUT_MS, 1800000, 1),
     staleAfterMs: boundedInt(env.STALE_AFTER_MS, 600000, 1),
     mullvadEnabled: envBool(env.MULLVAD_ENABLED, false),
-    mullvadProxy: envVar(env.MULLVAD_PROXY, 'socks5h://127.0.0.1:1080'),
+    // Service name on the bridge network (todo.md P2): the worker reaches the
+    // SOCKS5 sidecar as `vpn` via aardvark-dns. A host-run worker (no
+    // container) overrides with socks5h://127.0.0.1:1080 via .env.
+    mullvadProxy: envVar(env.MULLVAD_PROXY, 'socks5h://vpn:1080'),
     maxDownloadBytes: boundedInt(env.MAX_DOWNLOAD_BYTES, 500 * 1024 * 1024, 1),
   };
 }
@@ -114,12 +117,13 @@ export function envBool(raw: string | undefined, fallback: boolean): boolean {
 /**
  * Mullvad proxy settings for yt-dlp, read on each call (tests and operators
  * change the environment at runtime). Defaults mirror compose.yaml/.env.example:
- * the tunnel is off unless enabled, and the sidecar proxy is the loopback SOCKS5.
+ * the tunnel is off unless enabled, and the sidecar proxy is the `vpn` service
+ * on the bridge network (a host-run worker overrides with 127.0.0.1 via .env).
  */
 export function mullvadSettings(): { enabled: boolean; proxy: string } {
   return {
     enabled: envBool(process.env.MULLVAD_ENABLED, false),
-    proxy: envVar(process.env.MULLVAD_PROXY, 'socks5h://127.0.0.1:1080'),
+    proxy: envVar(process.env.MULLVAD_PROXY, 'socks5h://vpn:1080'),
   };
 }
 

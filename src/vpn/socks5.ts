@@ -1,7 +1,9 @@
 // Serveur SOCKS5 minimal (CONNECT, sans auth) qui tourne DANS le container VPN.
 // Tout son trafic sort par le tunnel Mullvad (route par défaut via wg0 dans le
-// netns du sidecar). Le worker pointe yt-dlp dessus: --proxy socks5h://127.0.0.1:1080
-// (socks5h = le nom d'hôte est résolu PAR le proxy, donc DNS aussi via le tunnel).
+// netns du sidecar). Le worker pointe yt-dlp dessus: --proxy socks5h://vpn:1080
+// (nom de service sur le réseau bridge, résolu par aardvark-dns ; socks5h =
+// le nom d'hôte YouTube est résolu PAR le proxy, donc DNS aussi via le tunnel).
+// Un worker lancé sur l'hôte (hors conteneur) utilise socks5h://127.0.0.1:1080.
 
 import dns from 'node:dns';
 import net from 'node:net';

@@ -163,9 +163,16 @@ describe('architecture — layer dependencies (archunit)', () => {
       'compose worker: must not run a shell entrypoint (no shell in the boot path)',
     );
     assert.equal(
-      workerBlock.includes('network_mode: "host"'),
-      true,
-      'compose worker: network_mode host is kept intentionally until DNS is fixed (see todo.md); do not drop it silently',
+      /network_mode:/.test(workerBlock),
+      false,
+      'compose worker: network_mode must be absent — the worker parses untrusted media on the isolated ' +
+        'bridge network (todo.md P2), never host networking (LAN/host-loopback reachable). Bridge DNS + ' +
+        'vpn SOCKS are gated by scripts/dns-regression.sh; do not re-add host networking without it.',
+    );
+    assert.equal(
+      /^\s+ports:/m.test(workerBlock),
+      false,
+      'compose worker: must publish no port (it polls the jobs DB; on the bridge network nothing is exposed)',
     );
   });
 

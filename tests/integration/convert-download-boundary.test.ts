@@ -172,7 +172,7 @@ describe('download — yt-dlp wrapper', () => {
     const args = fs.readFileSync(argLog, 'utf8').split('\n').filter(Boolean);
     const proxyIdx = args.indexOf('--proxy');
     assert.ok(proxyIdx !== -1, 'should include --proxy');
-    assert.equal(args[proxyIdx + 1], 'socks5h://127.0.0.1:1080');
+    assert.equal(args[proxyIdx + 1], 'socks5h://vpn:1080');
   });
 
   it('uses custom MULLVAD_PROXY when set', async () => {
@@ -228,7 +228,7 @@ describe('download — yt-dlp wrapper', () => {
       await download({ url: 'https://youtu.be/abc' }, baseContext(jobDir));
       const args = fs.readFileSync(argLog, 'utf8').split('\n').filter(Boolean);
       assert.ok(!args.includes('--proxy'), `should not include --proxy when MULLVAD_ENABLED=${String(val)}`);
-      assert.ok(!args.includes('socks5h://127.0.0.1:1080'));
+      assert.ok(!args.includes('socks5h://vpn:1080'));
       fs.rmSync(jobDir, { recursive: true, force: true });
       jobDir = undefined;
       // reset fake bin for next iteration

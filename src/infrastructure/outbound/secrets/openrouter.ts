@@ -1,37 +1,33 @@
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { OpenRouterSecretError, type SecretStore } from '../../../application/ports/secret-store.ts';
 
 export type { OpenRouterSecretErrorCode } from '../../../application/ports/secret-store.ts';
 export { OpenRouterSecretError };
 
-// Single contract for secret layout — podman secret → legacy GPG → env var
+// Single contract for secret layout — podman secret → env var
 // for the OpenRouter key. Downloads go through the Mullvad sidecar.
+// The legacy GPG bind-mount fallback (/secrets/openrouter.gpg + gnupg in the
+// worker image) was removed: the host-side sync (scripts/sync-secrets.sh)
+// decrypts with the host keyring and delivers plaintext via the podman
+// secret, so the worker image needs no gnupg and no keyring.
 
 const OPENROUTER_SECRET_PATH = '/run/secrets/openrouter_key';
-const OPENROUTER_LEGACY_GPG = '/secrets/openrouter.gpg';
 
 export interface OpenRouterSecretStoreOptions {
   secretPath?: string;
-  legacyGpgPath?: string;
   apiKey?: string;
-  gnupgHome?: string;
-  gpgTimeoutMs?: number;
 }
 
 /**
  * Resolve the OpenRouter API key.
- * Tries podman secret → legacy GPG → env var.
+ * Tries podman secret → env var.
  * Returns the key string when found, null when missing (placeholder counts as missing).
- * Throws an OpenRouterSecretError when a configured secret is invalid or GPG
- * decryption fails — callers (worker layer) translate this at the stage boundary
+ * Throws an OpenRouterSecretError when a configured secret is invalid —
+ * callers (worker layer) translate this at the stage boundary
  * so `shared` never depends on `worker`.
  */
 export function createOpenRouterSecretStore(options: OpenRouterSecretStoreOptions = {}): SecretStore {
   const secretPath = options.secretPath ?? OPENROUTER_SECRET_PATH;
-  const legacyGpgPath = options.legacyGpgPath ?? OPENROUTER_LEGACY_GPG;
-  const gpgTimeoutMs = options.gpgTimeoutMs ?? 30_000;
-  const gnupgHome = options.gnupgHome ?? process.env.GNUPGHOME ?? '/run/gnupg';
   return {
     async resolveOpenRouterKey(): Promise<string | null> {
       // 1) podman secret (rootless-friendly, tmpfs 0440)
@@ -58,12 +54,7 @@ export function createOpenRouterSecretStore(options: OpenRouterSecretStoreOption
         }
       }
 
-      // 2) legacy GPG path (bind mount, requires gnupg + keyring)
-      if (fs.existsSync(legacyGpgPath)) {
-        return decryptViaGpg(legacyGpgPath, { timeoutMs: gpgTimeoutMs, gnupgHome });
-      }
-
-      // 3) env var escape hatch for local dev without podman
+      // 2) env var escape hatch for local dev without podman
       const apiKey = options.apiKey !== undefined ? options.apiKey : process.env.OPENROUTER_API_KEY;
       if (apiKey?.startsWith('sk-or-')) {
         return apiKey.trim();
@@ -76,53 +67,4 @@ export function createOpenRouterSecretStore(options: OpenRouterSecretStoreOption
 
 export async function resolveOpenRouterKey(): Promise<string | null> {
   return createOpenRouterSecretStore().resolveOpenRouterKey();
-}
-
-function decryptViaGpg(gpgPath: string, options: { timeoutMs: number; gnupgHome: string }): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    const child = spawn('gpg', ['--quiet', '--batch', '--no-tty', '--decrypt', gpgPath], {
-      env: { ...process.env, GNUPGHOME: options.gnupgHome },
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdin.end();
-    const timeout = setTimeout(() => child.kill('SIGKILL'), options.timeoutMs);
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk;
-    });
-    child.on('error', (error: Error) => {
-      clearTimeout(timeout);
-      reject(
-        new OpenRouterSecretError(`Could not decrypt the OpenRouter key: ${error.message}`, 'decryption-failed', {
-          cause: error,
-        }),
-      );
-    });
-    child.on('close', (code) => {
-      clearTimeout(timeout);
-      const key =
-        stdout
-          .trim()
-          .split('\n')
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .at(-1) || '';
-      if (code !== 0 || !key.startsWith('sk-or-')) {
-        const detail = stderr.trim().slice(-400);
-        const cause = new Error(detail || `gpg exited with code ${code ?? 'unknown'}`);
-        reject(
-          new OpenRouterSecretError(
-            'Could not resolve the OpenRouter credential from the legacy encrypted secret.',
-            'decryption-failed',
-            { cause },
-          ),
-        );
-      } else {
-        resolve(key);
-      }
-    });
-  });
 }

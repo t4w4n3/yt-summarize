@@ -1,19 +1,19 @@
 /**
  * Integration tests for the SecretStore adapter (phase 2B).
- * Drives the port through real temporary files; the legacy gpg path is
- * left to the existing contract tests.
+ * Drives the port through real temporary files.
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, it } from 'node:test';
+import { afterEach, describe, it, mock } from 'node:test';
 import { OpenRouterSecretError } from '../../src/application/ports/secret-store.ts';
 import { createOpenRouterSecretStore } from '../../src/infrastructure/outbound/secrets/openrouter.ts';
 
 let dir: string | undefined;
 
 afterEach(() => {
+  mock.restoreAll();
   if (dir !== undefined) {
     try {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -22,10 +22,9 @@ afterEach(() => {
   dir = undefined;
 });
 
-function freshStore(rootPath: string, options: { secretPath?: string; legacyGpgPath?: string; apiKey?: string } = {}) {
+function freshStore(rootPath: string, options: { secretPath?: string; apiKey?: string } = {}) {
   return createOpenRouterSecretStore({
     secretPath: options.secretPath ?? path.join(rootPath, 'openrouter_key'),
-    legacyGpgPath: options.legacyGpgPath ?? path.join(rootPath, 'openrouter.gpg'),
     apiKey: options.apiKey,
   });
 }
@@ -40,7 +39,7 @@ describe('SecretStore (filesystem adapter)', () => {
     const root = isolatedDirs();
     const secretPath = path.join(root, 'key');
     fs.writeFileSync(secretPath, 'noise\nsk-or-older\nsk-or-valid\n', 'utf8');
-    const store = freshStore(root, { secretPath, legacyGpgPath: path.join(root, 'missing.gpg'), apiKey: 'sk-or-env' });
+    const store = freshStore(root, { secretPath, apiKey: 'sk-or-env' });
     assert.equal(await store.resolveOpenRouterKey(), 'sk-or-valid');
   });
 
@@ -48,7 +47,7 @@ describe('SecretStore (filesystem adapter)', () => {
     const root = isolatedDirs();
     const secretPath = path.join(root, 'key');
     fs.writeFileSync(secretPath, 'not-an-openrouter-key\n', 'utf8');
-    const store = freshStore(root, { secretPath, legacyGpgPath: path.join(root, 'missing.gpg'), apiKey: 'sk-or-env' });
+    const store = freshStore(root, { secretPath, apiKey: 'sk-or-env' });
     await assert.rejects(store.resolveOpenRouterKey(), (error: unknown) => {
       if (!(error instanceof OpenRouterSecretError)) return false;
       assert.equal(error.code, 'invalid-secret');
@@ -62,17 +61,36 @@ describe('SecretStore (filesystem adapter)', () => {
     fs.writeFileSync(secretPath, '\n\n', 'utf8');
     const store = freshStore(root, {
       secretPath,
-      legacyGpgPath: path.join(root, 'missing.gpg'),
       apiKey: 'sk-or-fallback',
     });
     assert.equal(await store.resolveOpenRouterKey(), 'sk-or-fallback');
+  });
+
+  it('does not look for a legacy GPG file and falls through to the explicit apiKey', async () => {
+    // Even if a file exists at the old bind-mount path, the store must not
+    // attempt any GPG decryption: it only knows the podman secret + env var.
+    mock.method(fs, 'existsSync', (filePath: fs.PathLike) => filePath.toString() === '/secrets/openrouter.gpg');
+    mock.method(fs, 'readFileSync', () => 'not-a-real-gpg-file');
+    try {
+      const store = createOpenRouterSecretStore({
+        secretPath: '/run/secrets/openrouter_key',
+        apiKey: 'sk-or-env-fallback',
+      });
+      assert.equal(
+        await store.resolveOpenRouterKey(),
+        'sk-or-env-fallback',
+        'with fs.existsSync(/secrets/openrouter.gpg)=true and readFileSync returning garbage, resolveOpenRouterKey must ignore the legacy path and return apiKey=sk-or-env-fallback, not throw a decryption error or return the garbage',
+      );
+    } finally {
+      mock.restoreAll();
+    }
   });
 
   it('treats the placeholder as missing and returns null when nothing else exists', async () => {
     const root = isolatedDirs();
     const secretPath = path.join(root, 'key');
     fs.writeFileSync(secretPath, 'sk-or-missing-placeholder\n', 'utf8');
-    const store = freshStore(root, { secretPath, legacyGpgPath: path.join(root, 'missing.gpg'), apiKey: '' });
+    const store = freshStore(root, { secretPath, apiKey: '' });
     assert.equal(await store.resolveOpenRouterKey(), null);
   });
 });

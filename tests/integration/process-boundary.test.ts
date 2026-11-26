@@ -160,6 +160,30 @@ describe('runProcess — subprocess boundary', () => {
     }
   });
 
+  it('does not leak OPENROUTER_API_KEY to the child process', async () => {
+    process.env.OPENROUTER_API_KEY = 'sk-or-test-secret';
+    process.env.SYTVT_CHILD_MARKER = 'visible';
+    try {
+      const result = await runProcess(
+        process.execPath,
+        [
+          '-e',
+          'process.stdout.write((process.env.OPENROUTER_API_KEY ?? "absent") + "|" + (process.env.SYTVT_CHILD_MARKER ?? "absent"));',
+        ],
+        { stage: 'downloading', timeoutMs: 5000 },
+      );
+      assert.equal(
+        result.stdout,
+        'absent|visible',
+        'child must not see OPENROUTER_API_KEY=sk-or-test-secret while still seeing SYTVT_CHILD_MARKER=visible; actual stdout was ' +
+          JSON.stringify(result.stdout),
+      );
+    } finally {
+      delete process.env.OPENROUTER_API_KEY;
+      delete process.env.SYTVT_CHILD_MARKER;
+    }
+  });
+
   it('rejects with a could-not-start StageError when the binary is missing', async () => {
     await assert.rejects(
       runProcess('/nonexistent/binary-xyz', ['arg'], { stage: 'converting', timeoutMs: 5000 }),

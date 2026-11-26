@@ -31,8 +31,8 @@ export async function resolveOpenRouterKey(): Promise<string> {
   }
 
   throw new StageError(
-    'Could not resolve the OpenRouter credential. Check the GPG mounts and worker logs.',
+    'Could not resolve the OpenRouter credential. Check the podman secret and worker logs.',
     'pipeline',
-    `no secret at /run/secrets/openrouter_key and no legacy file at /secrets/openrouter.gpg`,
+    'no secret at /run/secrets/openrouter_key and OPENROUTER_API_KEY is not set',
   );
 }

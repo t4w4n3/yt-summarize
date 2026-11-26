@@ -3,7 +3,7 @@
  * credential resolver that translates shared secret failures into StageErrors.
  *
  * We drive the real shared resolveOpenRouterKey by mocking fs/existsSync so the
- * podman/legacy/env resolution paths are exercised without real secrets, then
+ * podman-secret/env resolution paths are exercised without real secrets, then
  * assert openrouter.ts translates the outcome into a stage-attributed error.
  *
  * Category: integration — adapter boundary (mocked fs / env).

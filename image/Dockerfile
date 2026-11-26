@@ -1,16 +1,18 @@
 # ---- Runtime multi-cible: un seul Dockerfile, trois images least-privilege ----
 # Les trois services n'installent que les outils qu'ils spawkent vraiment :
 #   app    : distroless Node, zero shell, zero curl (ENTRYPOINT node, CMD healthcheck)
-#   worker : node + yt-dlp/python + ffmpeg + gnupg + ca-certificates
+#   worker : node + yt-dlp/python + ffmpeg + ca-certificates (entrypoint Node, no gnupg)
 #   vpn    : node + wireguard-tools/iproute2/bash (wg-quick) — jamais python/ffmpeg
-# La base partage le socle (node slim + bash pour les entrypoints worker/vpn + deps pnpm)
-# et le cache de couches, mais chaque cible finale garde sa surface minimale.
+# La base partage le socle build (node slim + deps pnpm) et le cache de
+# couches, mais chaque cible finale garde sa surface minimale. Le worker ne
+# descend pas de `base` (bash du vpn + outillage pnpm) : voir son stage.
 # Les stages payants sont de simples appels HTTPS à OpenRouter.
 
 FROM node:26.13.1-trixie-slim@sha256:a5a5adfee3013de54504e0e6aff49993acf7daed072e86be75b8818c0f6ac258 AS base
 
-# bash est requis par les entrypoints worker/vpn (#/usr/bin/env bash) et par
-# wg-quick côté vpn ; il vit donc dans la base partagée (et le builder app).
+# bash est requis par l'entrypoint vpn (#/usr/bin/env bash) et par wg-quick
+# côté vpn ; il vit donc dans la base partagée (et le builder app). Le worker
+# n'en dépend plus (entrypoint Node) et ne descend donc pas de `base`.
 # Versions épinglées (hadolint DL3008/DL3013). Re-épingler délibérément :
 # `podman run --rm node:26-trixie-slim bash -c "apt-get update && apt-cache policy <pkg>"`
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -46,23 +48,29 @@ ENTRYPOINT ["/nodejs/bin/node"]
 CMD ["/app/src/infrastructure/inbound/http.ts"]
 USER 1000
 
-# ---- worker: yt-dlp/python + ffmpeg + gnupg + ca-certificates ----
-FROM base AS worker
+# ---- worker: yt-dlp/python + ffmpeg + ca-certificates (entrypoint Node, no gnupg) ----
+# Not FROM base: base carries the vpn bash + pnpm build tooling. The worker
+# only needs the copied /app tree plus its three tools, so it starts from the
+# same pinned slim base directly and copies /app from `base` — no pipx and
+# no gnupg at runtime, and its entrypoint is Node (no shell in the boot path).
+# Caveat: Debian slim ships /bin/bash + /bin/sh as essential packages, so a
+# shell binary is present in the image regardless; a truly shell-less worker
+# would need a distroless binary-copy image (see todo.md).
+# pipx is build-only: it installs yt-dlp into /opt/pipx (a venv the runtime
+# python3 executes) and is then purged in the same layer, so it does not ship.
+FROM node:26.13.1-trixie-slim@sha256:a5a5adfee3013de54504e0e6aff49993acf7daed072e86be75b8818c0f6ac258 AS worker
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates=20250419+deb13u1 \
       ffmpeg=7:7.1.5-0+deb13u1 \
-      gnupg=2.4.7-21+deb13u1 \
       python3=3.13.5-1 \
       pipx=1.7.1-1 \
+    && PIPX_HOME="/opt/pipx" PIPX_BIN_DIR="/usr/local/bin" pipx install --pip-args="--no-cache-dir" "yt-dlp==2026.10.26" \
+    && apt-get purge -y pipx \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
-# yt-dlp as a global binary so it stays on PATH for the non-root `node` user
-ENV PIPX_HOME="/opt/pipx"
-ENV PIPX_BIN_DIR="/usr/local/bin"
-RUN pipx install --pip-args="--no-cache-dir" "yt-dlp==2026.10.26"
-
-COPY image/entrypoint-worker.sh /app/
-RUN chmod +x /app/entrypoint-worker.sh && chown -R node:node /app
+COPY --from=base /app /app
+RUN mkdir -p /data /artifacts && chown -R node:node /app /data /artifacts
 # hadolint ignore=DL3066
 USER node
 

@@ -35,7 +35,23 @@ services:
       dockerfile: "image/Dockerfile"
       target: "worker"
     user: "node"
-    command: ["/app/entrypoint-worker.sh"]
+    command: ["node", "/app/src/infrastructure/inbound/entrypoint-worker.ts"]
+    # Runtime hardening (worker parses untrusted YouTube media via yt-dlp/ffmpeg):
+    # - drop all capabilities (worker binds no port, needs no NET_ADMIN/CHOWN)
+    # - no-new-privileges (setuid/setgid binaries reached from parsed media gain nothing)
+    # - read-only image filesystem (only the two volumes + /tmp tmpfs are writable)
+    # - pids_limit (bound subprocess trees from yt-dlp/ffmpeg)
+    # - /tmp tmpfs noexec/nosuid/nodev (scratch without executing from tmp)
+    # HOME is redirected onto the /tmp tmpfs: yt-dlp/ffmpeg/fontconfig write
+    # caches under $HOME/.cache, which is read-only in the image otherwise.
+    cap_drop:
+      - "ALL"
+    security_opt:
+      - "no-new-privileges:true"
+    read_only: true
+    pids_limit: 256
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,nodev,size=512m,mode=1777"
     # Défauts des variables ci-dessous : src/shared/config.ts uniquement
     # (envVar / boundedInt). podman-compose 1.3.0 ne substitue que les variables
     # présentes dans .env ; pour une variable absente il passe au conteneur le
@@ -45,6 +61,8 @@ services:
     environment:
       DATA_DIR: "/data"
       ARTIFACTS_DIR: "/artifacts"
+      HOME: "/tmp"
+      XDG_CACHE_HOME: "/tmp/.cache"
       STT_MODEL: "${STT_MODEL}"
       # Retry borné des erreurs transitoires du provider STT (429 / 5xx, et le
       # 402 « in-flight budget » qui demande juste d'attendre).
@@ -71,7 +89,11 @@ services:
       - "artifacts:/artifacts"
     secrets:
       - "openrouter_key"
-    network_mode: "host" # host DNS/network; required on hosts without podman's aardvark-dns
+    # host DNS/network; required on hosts without podman's aardvark-dns. Kept
+    # intentionally for now (see todo.md): dropping it would restore network
+    # isolation but can break DNS resolution on such hosts. Do not remove
+    # without a DNS regression test on a host without aardvark-dns.
+    network_mode: "host"
     restart: "unless-stopped"
     # Runs as non-root `node` (image default); no HTTP endpoint to probe.
     healthcheck:

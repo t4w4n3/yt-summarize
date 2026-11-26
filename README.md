@@ -190,8 +190,8 @@ The summarization prompt produces a study artifact proportional to the video len
 
 ### Secrets and trust boundaries
 
-- The OpenRouter key is GPG-encrypted at rest on the host (`~/.secrets/openrouter.gpg`, 0600) with a passphrase-less keyring (`~/.gnupg`, 0700). `mise run up` syncs it into the `openrouter_key` podman secret; the worker reads `/run/secrets/openrouter_key` (tmpfs, 0440) and decrypts per request, so the plaintext key only ever lives in worker memory for one HTTPS call. It never lands in `.env`, the image, or a volume.
-- `app`/`worker` run as non-root `node`; only `vpn` runs as root (needs `NET_ADMIN` + `/dev/net/tun`, confined to its own network namespace).
+- The OpenRouter key is GPG-encrypted at rest on the host (`~/.secrets/openrouter.gpg`, 0600) with a passphrase-less keyring (`~/.gnupg`, 0700). `mise run up` decrypts it on the host and syncs the plaintext into the `openrouter_key` podman secret; the worker reads `/run/secrets/openrouter_key` (tmpfs, 0440), so the plaintext key only ever lives in worker memory for one HTTPS call. It never lands in `.env`, the image, or a volume. (The former in-container GPG fallback was removed: the worker image ships no `gnupg`.)
+- `app`/`worker` run as non-root `node`; only `vpn` runs as root (needs `NET_ADMIN` + `/dev/net/tun`, confined to its own network namespace). The worker additionally runs with `cap_drop: [ALL]`, `no-new-privileges`, a read-only image filesystem (only its two volumes + a `noexec` `/tmp` tmpfs are writable) and a `pids_limit`, because it parses untrusted YouTube media with yt-dlp/ffmpeg. Its child processes (yt-dlp/ffmpeg) never inherit `OPENROUTER_API_KEY`.
 
 ## Testing
 
@@ -206,7 +206,7 @@ The hermetic gate covers domain use cases through ports (fakes), outbound adapte
 
 ### Container smoke tests (optional, slower)
 
-The host-process suite never exercises the image itself — the Dockerfile, entrypoints, and compose wiring ship untested. `mise run test-containers` closes that gap: it builds the real image and runs the stack specs against it via a dedicated compose file (`e2e/compose.e2e.yaml`), which swaps the real worker for the fake one (no secrets, no yt-dlp/ffmpeg/gnupg) and maps ports 4174/4175 so it can run alongside a dev stack:
+The host-process suite never exercises the image itself — the Dockerfile, entrypoints, and compose wiring ship untested. `mise run test-containers` closes that gap: it builds the real image and runs the stack specs against it via a dedicated compose file (`e2e/compose.e2e.yaml`), which swaps the real worker for the fake one (no secrets, no yt-dlp/ffmpeg) and maps ports 4174/4175 so it can run alongside a dev stack:
 
 ```bash
 mise run test-containers   # needs podman/podman-compose; builds the image on first run

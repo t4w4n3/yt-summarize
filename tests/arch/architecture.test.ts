@@ -81,27 +81,81 @@ describe('architecture — layer dependencies (archunit)', () => {
     );
   });
 
-  it('image entrypoints run the same modules as the package.json start scripts', () => {
-    // Existence alone is not enough: pointing the app container at worker.ts
-    // would still "exist" while polling jobs instead of serving HTTP. The
-    // shell entrypoint and its package.json start script are two names for
-    // the same process entry, so they must never drift apart.
+  it('the worker entrypoint (Node, no shell) runs the same module as the start:worker script', () => {
+    // Compose runs the Node entrypoint directly (no shell in the boot path):
+    // directly, and that entrypoint must import the same worker.ts that
+    // `pnpm start:worker` runs, otherwise the container polls a different
+    // (or no) pipeline than local dev.
     const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')) as { scripts?: Record<string, string> };
-    const cases = [['image/entrypoint-worker.sh', pkg.scripts?.['start:worker']]] as const;
-    const mismatches: string[] = [];
-    for (const [entrypoint, script] of cases) {
-      const fromScript = script?.match(/node\s+(\S+\.ts)/)?.[1];
-      const fromEntrypoint = fs.readFileSync(entrypoint, 'utf8').match(/node\s+\/app\/(\S+\.ts)/)?.[1];
-      if (fromEntrypoint !== fromScript) {
-        mismatches.push(
-          `${entrypoint}: runs ${fromEntrypoint ?? '(none)'} but package.json runs ${fromScript ?? '(none)'}`,
-        );
-      }
-    }
-    assert.deepEqual(
-      mismatches,
-      [],
-      `an entrypoint and its package.json start script must launch the same module:\n${mismatches.join('\n')}`,
+    const fromScript = pkg.scripts?.['start:worker']?.match(/node\s+(\S+\.ts)/)?.[1];
+    const compose = fs.readFileSync('compose.yaml', 'utf8');
+    const fromCompose = compose.match(/entrypoint-worker\.ts/)?.[0];
+    const entrypoint = fs.readFileSync('src/infrastructure/inbound/entrypoint-worker.ts', 'utf8');
+    const imported = entrypoint.match(/import\(['"]\.\/(\S+\.ts)['"]\)/)?.[1];
+    assert.equal(
+      fromCompose !== undefined,
+      true,
+      'compose worker: expected command running entrypoint-worker.ts (Node entrypoint, no shell)',
+    );
+    assert.equal(
+      imported,
+      'worker.ts',
+      `entrypoint-worker.ts: expected it to import ./worker.ts (the polling loop), got ${String(imported)}`,
+    );
+    assert.equal(
+      fromScript,
+      'src/infrastructure/inbound/worker.ts',
+      `package.json start:worker: expected node src/infrastructure/inbound/worker.ts, got ${String(fromScript)}`,
+    );
+    assert.equal(
+      fs.existsSync('image/entrypoint-worker.sh'),
+      false,
+      'image/entrypoint-worker.sh: must be deleted (Node entrypoint only; no shell in the boot path)',
+    );
+  });
+
+  it('compose worker service is runtime-hardened (least-privilege execution)', () => {
+    const compose = fs.readFileSync('compose.yaml', 'utf8');
+    const workerBlock = compose.slice(compose.indexOf('  worker:'), compose.indexOf('  vpn:'));
+    assert.equal(
+      workerBlock.includes('cap_drop:'),
+      true,
+      'compose worker: expected cap_drop (drop ALL capabilities; worker binds no port and needs no NET_ADMIN)',
+    );
+    assert.equal(
+      /cap_drop:\s*\n\s*-\s*"?ALL"?/.test(workerBlock),
+      true,
+      'compose worker: expected cap_drop: [ALL] (worker only forks yt-dlp/ffmpeg, no capability required)',
+    );
+    assert.equal(
+      workerBlock.includes('no-new-privileges'),
+      true,
+      'compose worker: expected security_opt no-new-privileges (setuid binaries from parsed media must not gain privilege)',
+    );
+    assert.equal(
+      /read_only:\s*true/.test(workerBlock),
+      true,
+      'compose worker: expected read_only: true (image filesystem immutable; only volumes + tmpfs are writable)',
+    );
+    assert.equal(
+      workerBlock.includes('pids_limit:'),
+      true,
+      'compose worker: expected pids_limit (bound fork bombs from yt-dlp/ffmpeg subprocess trees)',
+    );
+    assert.equal(
+      /tmpfs:[\s\S]*\/tmp:rw,noexec,nosuid,nodev/.test(workerBlock),
+      true,
+      'compose worker: expected tmpfs /tmp with rw,noexec,nosuid,nodev (scratch space for yt-dlp/ffmpeg without exec from tmp)',
+    );
+    assert.equal(
+      workerBlock.includes('entrypoint-worker.sh'),
+      false,
+      'compose worker: must not run a shell entrypoint (no shell in the boot path)',
+    );
+    assert.equal(
+      workerBlock.includes('network_mode: "host"'),
+      true,
+      'compose worker: network_mode host is kept intentionally until DNS is fixed (see todo.md); do not drop it silently',
     );
   });
 
@@ -144,7 +198,26 @@ describe('architecture — layer dependencies (archunit)', () => {
     assert.equal(worker.includes('ffmpeg='), true, 'worker stage: expected ffmpeg package for convert/transcribe');
     assert.equal(worker.includes('python3='), true, 'worker stage: expected python3 for yt-dlp');
     assert.equal(worker.includes('yt-dlp=='), true, 'worker stage: expected yt-dlp install for download stage');
-    assert.equal(worker.includes('gnupg='), true, 'worker stage: expected gnupg for legacy secret decrypt');
+    assert.equal(
+      worker.includes('gnupg='),
+      false,
+      'worker stage: must not install gnupg (legacy GPG secret fallback removed; host syncs the podman secret)',
+    );
+    assert.equal(
+      worker.includes('bash='),
+      false,
+      'worker stage: must not install bash (Node entrypoint only; base carries bash for vpn)',
+    );
+    assert.equal(
+      /FROM\s+\S+\s+AS\s+worker/.test(worker),
+      true,
+      'worker stage: expected its own FROM line (not FROM base, otherwise it inherits bash + apt tooling from base)',
+    );
+    assert.equal(
+      worker.includes('apt-get purge'),
+      true,
+      'worker stage: expected apt-get purge of pipx after installing yt-dlp (pipx is build-only, must not ship at runtime)',
+    );
     assert.equal(vpn.includes('wireguard-tools='), true, 'vpn stage: expected wireguard-tools for wg-quick');
     assert.equal(vpn.includes('iproute2='), true, 'vpn stage: expected iproute2 for wg-quick ip calls');
     assert.equal(app.includes('ffmpeg='), false, 'app stage: must not install ffmpeg (HTTP+SQLite only)');

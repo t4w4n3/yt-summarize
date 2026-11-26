@@ -48,7 +48,13 @@ export function runProcess(command: string, args: string[], options: RunProcessO
     return Promise.reject(new StageError(`${stage} was cancelled.`, stage));
   }
   return new Promise<ProcessResult>((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+    // yt-dlp/ffmpeg parse untrusted media and must never inherit the paid-stage
+    // credential (the env-var fallback in secrets/openrouter.ts reads it from
+    // process.env; the podman-secret path does not set it, but children of a
+    // locally-run worker could still see it). Strip it from the child env.
+    const childEnv = { ...process.env, ...env };
+    delete childEnv.OPENROUTER_API_KEY;
+    const child = spawn(command, args, { cwd, env: childEnv, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let settled = false;

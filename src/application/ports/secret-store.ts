@@ -1,9 +1,9 @@
 /**
  * Outbound port for OpenRouter credential resolution.
- * The application layer owns the contract; the filesystem/GPG adapter in
+ * The application layer owns the contract; the filesystem adapter in
  * `infrastructure/outbound/secrets/openrouter.ts` implements it.
  */
-export type OpenRouterSecretErrorCode = 'invalid-secret' | 'decryption-failed';
+export type OpenRouterSecretErrorCode = 'invalid-secret';
 
 /** Stable failure type for OpenRouter credential resolution across module boundaries. */
 export class OpenRouterSecretError extends Error {
@@ -20,7 +20,7 @@ export interface SecretStore {
   /**
    * Resolve the OpenRouter API key.
    * Returns the key string when found, null when missing (placeholder counts as missing).
-   * Throws an OpenRouterSecretError when a configured secret is invalid or GPG decryption fails.
+   * Throws an OpenRouterSecretError when a configured secret is invalid.
    */
   resolveOpenRouterKey(): Promise<string | null>;
 }

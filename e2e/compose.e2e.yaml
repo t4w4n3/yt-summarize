@@ -20,6 +20,16 @@ services:
       dockerfile: "image/Dockerfile"
       target: "app"
     user: "1000"
+    # Runtime hardening: mirrors compose.yaml app so test-containers exercises
+    # the shipped hardened config (same distroless target; writes only /data).
+    cap_drop:
+      - "ALL"
+    security_opt:
+      - "no-new-privileges:true"
+    read_only: true
+    pids_limit: 128
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777"
     ports:
       - "127.0.0.1:${E2E_PORT:-4174}:8080"
     environment:
@@ -37,6 +47,16 @@ services:
       dockerfile: "image/Dockerfile"
       target: "app"
     user: "1000"
+    # Runtime hardening: mirrors compose.yaml app (same distroless target;
+    # the fake worker writes only to the shared data dir).
+    cap_drop:
+      - "ALL"
+    security_opt:
+      - "no-new-privileges:true"
+    read_only: true
+    pids_limit: 128
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777"
     command: ["/app/e2e/fake-worker.ts"]
     environment:
       DATA_DIR: "/data"

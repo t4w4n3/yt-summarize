@@ -128,7 +128,7 @@ describe('architecture — layer dependencies (archunit)', () => {
       'compose worker: expected cap_drop: [ALL] (worker only forks yt-dlp/ffmpeg, no capability required)',
     );
     assert.equal(
-      workerBlock.includes('no-new-privileges'),
+      workerBlock.includes('no-new-privileges:true'),
       true,
       'compose worker: expected security_opt no-new-privileges (setuid binaries from parsed media must not gain privilege)',
     );
@@ -159,6 +159,116 @@ describe('architecture — layer dependencies (archunit)', () => {
     );
   });
 
+  it('compose app service is runtime-hardened (least-privilege execution)', () => {
+    const compose = fs.readFileSync('compose.yaml', 'utf8');
+    const appBlock = compose.slice(compose.indexOf('  app:'), compose.indexOf('  worker:'));
+    assert.equal(
+      /cap_drop:\s*\n\s*-\s*"?ALL"?/.test(appBlock),
+      true,
+      'compose app: expected cap_drop: [ALL] (app binds an unprivileged port and opens no socket/device; no capability required)',
+    );
+    assert.equal(
+      appBlock.includes('cap_add:'),
+      false,
+      'compose app: must not re-add any capability (least privilege; unlike vpn, the app needs none)',
+    );
+    assert.equal(
+      appBlock.includes('no-new-privileges:true'),
+      true,
+      'compose app: expected security_opt no-new-privileges (defense in depth; distroless ships no setuid binaries)',
+    );
+    assert.equal(
+      /read_only:\s*true/.test(appBlock),
+      true,
+      'compose app: expected read_only: true (image filesystem immutable; only the jobs-data volume is writable)',
+    );
+    assert.equal(
+      /pids_limit:\s*128/.test(appBlock),
+      true,
+      'compose app: expected pids_limit: 128 (single Node process, no subprocess trees; headroom for Node/libuv/V8 threads while bounding fork bombs)',
+    );
+    assert.equal(
+      /tmpfs:[\s\S]*\/tmp:rw,noexec,nosuid,nodev/.test(appBlock),
+      true,
+      'compose app: expected tmpfs /tmp with rw,noexec,nosuid,nodev (holds SQLite temp files without exec from tmp)',
+    );
+    assert.equal(
+      appBlock.includes('"127.0.0.1:8080:8080"'),
+      true,
+      'compose app: expected loopback-only port publish 127.0.0.1:8080:8080 (never publish on all interfaces)',
+    );
+  });
+
+  it('e2e compose app service is runtime-hardened (mirrors compose.yaml)', () => {
+    const e2e = fs.readFileSync('e2e/compose.e2e.yaml', 'utf8');
+    const appBlock = e2e.slice(e2e.indexOf('  app:'), e2e.indexOf('  # Fake worker'));
+    assert.equal(
+      /cap_drop:\s*\n\s*-\s*"?ALL"?/.test(appBlock),
+      true,
+      'e2e compose app: expected cap_drop: [ALL] (same hardened config as compose.yaml app, so test-containers exercises it)',
+    );
+    assert.equal(
+      appBlock.includes('cap_add:'),
+      false,
+      'e2e compose app: must not re-add any capability (least privilege; the app needs none)',
+    );
+    assert.equal(
+      appBlock.includes('no-new-privileges:true'),
+      true,
+      'e2e compose app: expected security_opt no-new-privileges:true (mirrors compose.yaml app)',
+    );
+    assert.equal(
+      /read_only:\s*true/.test(appBlock),
+      true,
+      'e2e compose app: expected read_only: true (image filesystem immutable; only the bind-mounted data dir is writable)',
+    );
+    assert.equal(
+      /pids_limit:\s*128/.test(appBlock),
+      true,
+      'e2e compose app: expected pids_limit: 128 (single Node process, same as compose.yaml app)',
+    );
+    assert.equal(
+      /tmpfs:[\s\S]*\/tmp:rw,noexec,nosuid,nodev/.test(appBlock),
+      true,
+      'e2e compose app: expected tmpfs /tmp with rw,noexec,nosuid,nodev (mirrors compose.yaml app)',
+    );
+  });
+
+  it('e2e compose fake worker service is runtime-hardened (mirrors compose.yaml app)', () => {
+    const e2e = fs.readFileSync('e2e/compose.e2e.yaml', 'utf8');
+    const workerBlock = e2e.slice(e2e.indexOf('  worker:'));
+    assert.equal(
+      /cap_drop:\s*\n\s*-\s*"?ALL"?/.test(workerBlock),
+      true,
+      'e2e compose worker: expected cap_drop: [ALL] (fake worker runs the same distroless app target; binds an unprivileged port, needs no capability)',
+    );
+    assert.equal(
+      workerBlock.includes('cap_add:'),
+      false,
+      'e2e compose worker: must not re-add any capability (least privilege; the fake worker needs none)',
+    );
+    assert.equal(
+      workerBlock.includes('no-new-privileges:true'),
+      true,
+      'e2e compose worker: expected security_opt no-new-privileges:true (mirrors compose.yaml app)',
+    );
+    assert.equal(
+      /read_only:\s*true/.test(workerBlock),
+      true,
+      'e2e compose worker: expected read_only: true (fake worker writes only to the shared data dir)',
+    );
+    assert.equal(
+      /pids_limit:\s*128/.test(workerBlock),
+      true,
+      'e2e compose worker: expected pids_limit: 128 (single Node process, same as compose.yaml app)',
+    );
+    assert.equal(
+      /tmpfs:[\s\S]*\/tmp:rw,noexec,nosuid,nodev/.test(workerBlock),
+      true,
+      'e2e compose worker: expected tmpfs /tmp with rw,noexec,nosuid,nodev (mirrors compose.yaml app)',
+    );
+  });
+
   it('compose vpn service is runtime-hardened (least-privilege execution)', () => {
     const compose = fs.readFileSync('compose.yaml', 'utf8');
     const vpnBlock = compose.slice(compose.indexOf('  vpn:'), compose.indexOf('\nvolumes:'));
@@ -175,7 +285,7 @@ describe('architecture — layer dependencies (archunit)', () => {
       `compose vpn: expected cap_add exactly [NET_ADMIN, SETUID, SETGID] (NET_ADMIN for ip/wg, SETUID/SETGID for the root→node drop after wg-quick up; socks5 on 1080 needs no NET_BIND_SERVICE), got ${JSON.stringify(caps)}`,
     );
     assert.equal(
-      vpnBlock.includes('no-new-privileges'),
+      vpnBlock.includes('no-new-privileges:true'),
       true,
       'compose vpn: expected security_opt no-new-privileges (after the privilege drop, setuid binaries must not regain root)',
     );

@@ -9,6 +9,23 @@ services:
       target: "app"
     # Distroless app has no `node` user; numeric uid keeps the shared jobs-data uid.
     user: "1000"
+    # Runtime hardening (mirrors the worker, minus the HOME redirect it needs
+    # for yt-dlp/ffmpeg caches — the app writes nothing but jobs.db on the
+    # jobs-data volume):
+    # - drop all capabilities (app binds 8080 unprivileged, opens no device)
+    # - no-new-privileges (defense in depth; distroless ships no setuid binaries)
+    # - read-only image filesystem (only the jobs-data volume is writable)
+    # - pids_limit (single Node process, no subprocess trees; headroom for
+    #   Node/libuv/V8 threads while bounding fork bombs)
+    # - /tmp tmpfs noexec/nosuid/nodev (SQLite temp files without exec from tmp)
+    cap_drop:
+      - "ALL"
+    security_opt:
+      - "no-new-privileges:true"
+    read_only: true
+    pids_limit: 128
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777"
     # Loopback-only: never publish on all interfaces. Expose via your own
     # reverse proxy / tunnel if remote access is needed.
     ports:

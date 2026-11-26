@@ -61,6 +61,26 @@ describe('application — friendlyError', () => {
     assert.match(msg, /could not resolve the OpenRouter credential/i);
   });
 
+  it('summarizing credential present only in details still maps (classification, not leakage)', () => {
+    const msg = friendlyError(
+      new StageError(
+        'The summarization API could not be reached.',
+        'summarizing',
+        'HTTP 403 from provider at /run/secrets/openrouter_key',
+      ),
+    );
+    assert.match(
+      msg,
+      /could not resolve the OpenRouter credential/i,
+      `details-only 403 must map to credential message, got: ${msg}`,
+    );
+    assert.equal(
+      msg.includes('/run/secrets/openrouter_key'),
+      false,
+      `secret path from details must not leak, got: ${msg}`,
+    );
+  });
+
   it('size-cap rejections (F-1) surface exactly the clean user message, no detail appended', () => {
     for (const stage of ['converting', 'transcribing', 'summarizing']) {
       const msg = friendlyError(
@@ -74,11 +94,64 @@ describe('application — friendlyError', () => {
     }
   });
 
-  it('other StageErrors keep message + detail', () => {
+  it('StageError details never reach the user message (todo: frottage erreurs)', () => {
+    const cases: Array<{ stage: string; message: string; details: string; leaked: string }> = [
+      {
+        stage: 'downloading',
+        message: 'downloading failed with exit code 1.',
+        details: 'ERROR: proxy socks5h://vpn:1080 failed for /artifacts/job-1/audio.m4a',
+        leaked: 'socks5h://vpn:1080',
+      },
+      {
+        stage: 'downloading',
+        message: 'conn',
+        details: 'connect ECONNREFUSED socks5h://vpn:1080 /artifacts/job-1',
+        leaked: '/artifacts/job-1',
+      },
+      {
+        stage: 'downloading',
+        message: 'downloading failed with exit code 1.',
+        details: 'ERROR: Video unavailable, see /artifacts/job-9/stderr.log',
+        leaked: '/artifacts/job-9/stderr.log',
+      },
+      {
+        stage: 'transcribing',
+        message: 'Transcription failed (HTTP 500).',
+        details: '{"error":{"message":"provider body sk-or-v1-secret"}} at /artifacts/job-1/audio.wav',
+        leaked: 'sk-or-v1-secret',
+      },
+      {
+        stage: 'summarizing',
+        message: 'Summarization failed (HTTP 429).',
+        details: '{"error":"rate limited"} provider body',
+        leaked: 'provider body',
+      },
+      {
+        stage: 'converting',
+        message: 'convert broke',
+        details: 'ffmpeg barfed on /artifacts/job-1/audio.wav',
+        leaked: '/artifacts/job-1/audio.wav',
+      },
+    ];
+    for (const { stage, message, details, leaked } of cases) {
+      const msg = friendlyError(new StageError(message, stage, details));
+      assert.equal(
+        msg.includes(leaked),
+        false,
+        `stage=${stage} details=${JSON.stringify(details)} must not leak ${JSON.stringify(leaked)} into user message, got: ${JSON.stringify(msg)}`,
+      );
+      assert.equal(
+        msg.includes(details),
+        false,
+        `stage=${stage} full details must not appear in user message, got: ${JSON.stringify(msg)}`,
+      );
+    }
+  });
+
+  it('other StageErrors keep message only, without detail', () => {
     const err = new StageError('Summarization failed (HTTP 429).', 'summarizing', 'rate limited');
     const msg = friendlyError(err);
-    assert.match(msg, /Summarization failed/);
-    assert.match(msg, /rate limited/);
+    assert.equal(msg, 'Summarization failed (HTTP 429).', `message-only expected, got: ${msg}`);
   });
 
   it('plain errors pass through; empty/unknown get the default', () => {
@@ -90,9 +163,17 @@ describe('application — friendlyError', () => {
     assert.equal(friendlyError(''), 'The worker stopped unexpectedly.');
   });
 
-  it('long details are truncated to the last 600 chars', () => {
+  it('long details are dropped entirely, not truncated into the message', () => {
     const msg = friendlyError(new StageError('fail', 'downloading', 'x'.repeat(800)));
-    assert.ok(msg.includes('x'.repeat(600)));
-    assert.equal(msg.includes('x'.repeat(601)), false);
+    assert.equal(
+      msg.includes('x'),
+      false,
+      `800 x's of details must not appear in user message, got: ${JSON.stringify(msg)}`,
+    );
+    assert.equal(
+      msg,
+      'YouTube could not provide this video. Check that it is public and the URL is correct.',
+      `downloading fallback message expected verbatim, got: ${JSON.stringify(msg)}`,
+    );
   });
 });

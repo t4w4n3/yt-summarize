@@ -1,7 +1,11 @@
 /**
  * Friendly error mapping owned by the application layer (phase 1D).
  * Converts stage-attributed errors into user-facing messages without
- * leaking internals. Pure function — no I/O, no config.
+ * leaking internals. `StageError.details` (paths, proxy URLs, provider
+ * bodies) is used only to classify the failure — it is never part of the
+ * returned string, so it never reaches `job.error` (served by the API).
+ * Details stay in the worker logs (`console.error` on the full error).
+ * Pure function — no I/O, no config.
  */
 import { type StagedError, StageError } from './errors.ts';
 
@@ -13,7 +17,6 @@ export function stageOf(error: unknown): string | null {
 
 export function friendlyError(error: unknown): string {
   if (error instanceof StageError) {
-    const detail = error.details ? ` ${error.details.slice(-600)}` : '';
     if (error.stage === 'downloading') {
       const searchable = `${error.message} ${error.details}`.toLowerCase();
       const isInfra =
@@ -37,13 +40,13 @@ export function friendlyError(error: unknown): string {
         return 'This video is too long to process: its audio exceeds the download size limit.';
       }
       if (isInfra)
-        return `The download service is temporarily unavailable (network error). Please try again in a few minutes. If the problem persists, an operator should check the VPN sidecar and worker logs.${detail}`;
-      return `YouTube could not provide this video. Check that it is public and the URL is correct.${detail}`;
+        return 'The download service is temporarily unavailable (network error). Please try again in a few minutes. If the problem persists, an operator should check the VPN sidecar and worker logs.';
+      return 'YouTube could not provide this video. Check that it is public and the URL is correct.';
     }
     if (error.stage === 'transcribing' && error.message.includes('model is missing')) return error.message;
-    if (error.stage === 'summarizing' && /credential|auth|api key|401|403/i.test(`${error.message} ${detail}`))
+    if (error.stage === 'summarizing' && /credential|auth|api key|401|403/i.test(`${error.message} ${error.details}`))
       return 'The summarizer could not resolve the OpenRouter credential. Check the GPG mounts and worker logs.';
-    return `${error.message}${detail}`;
+    return error.message;
   }
   if (error instanceof Error && error.message) return error.message;
   if (error instanceof Error) return 'The worker stopped unexpectedly.';

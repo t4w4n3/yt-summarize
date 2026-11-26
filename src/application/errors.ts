@@ -1,7 +1,8 @@
 /**
  * Pipeline error contracts owned by the application layer (phase 1D).
- * `StageError` carries the stage that produced an error plus truncated
- * detail for the friendly mapping in `./friendly-error.ts`. The worker's
+ * `StageError` carries the stage that produced an error plus detail used
+ * only to classify the failure in `./friendly-error.ts` (and logged by the
+ * worker) — never persisted to `job.error`. The worker's
  * `stages/process.ts` re-exports this class so existing import paths work.
  */
 

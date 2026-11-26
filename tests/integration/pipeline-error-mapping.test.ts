@@ -46,11 +46,10 @@ describe('pipeline — stage attribution & friendly errors', () => {
     assert.match(msg, /could not resolve the OpenRouter credential/i);
   });
 
-  it('friendlyError appends details for other StageErrors', () => {
+  it('friendlyError returns message only for other StageErrors (details never persisted)', () => {
     const err = new StageError('Summarization failed (HTTP 429).', 'summarizing', 'rate limited');
     const msg = friendlyError(err);
-    assert.match(msg, /Summarization failed/);
-    assert.match(msg, /rate limited/);
+    assert.equal(msg, 'Summarization failed (HTTP 429).', `message-only expected, got: ${msg}`);
   });
 
   it('friendlyError returns the message for a plain Error', () => {
@@ -69,20 +68,17 @@ describe('pipeline — stage attribution & friendly errors', () => {
     assert.equal(msg.endsWith('correct.'), true);
   });
 
-  it('friendlyError truncates long details to 600 chars', () => {
+  it('friendlyError drops long details entirely, not truncated', () => {
     const long = 'x'.repeat(800);
     const msg = friendlyError(new StageError('fail', 'downloading', long));
-    // detail is ` ` + last 600 chars of long
-    assert.ok(msg.includes('x'.repeat(600)));
-    assert.equal(msg.includes('x'.repeat(601)), false);
+    assert.equal(msg.includes('x'), false, `800 x's must not appear, got: ${JSON.stringify(msg)}`);
     assert.match(msg, /YouTube could not provide this video/);
   });
 
-  it('friendlyError does not map transcribing without model missing', () => {
+  it('friendlyError does not map transcribing without model missing (message only)', () => {
     const err = new StageError('Transcription failed (HTTP 500).', 'transcribing', 'nope');
     const msg = friendlyError(err);
-    assert.match(msg, /Transcription failed/);
-    assert.match(msg, /nope/);
+    assert.equal(msg, 'Transcription failed (HTTP 500).', `message-only expected, got: ${msg}`);
     assert.equal(msg.includes('model is missing'), false);
   });
 
@@ -97,14 +93,17 @@ describe('pipeline — stage attribution & friendly errors', () => {
       assert.match(msg, /could not resolve the OpenRouter credential/i, `pattern ${pattern} should map`);
     }
     const plain = friendlyError(new StageError('Summarization failed (HTTP 429).', 'summarizing', 'rate limited'));
-    assert.match(plain, /Summarization failed/);
-    assert.match(plain, /rate limited/);
+    assert.equal(
+      plain,
+      'Summarization failed (HTTP 429).',
+      `non-credential summarizing must be message-only, got: ${plain}`,
+    );
   });
 
-  it('friendlyError handles StageError with unknown stage as message+detail', () => {
+  it('friendlyError handles StageError with unknown stage as message only', () => {
     const err = new StageError('convert broke', 'converting', 'ffmpeg barfed');
     const msg = friendlyError(err);
-    assert.equal(msg, 'convert broke ffmpeg barfed');
+    assert.equal(msg, 'convert broke', `unknown stage must be message-only, got: ${msg}`);
   });
 
   it('friendlyError handles string and non-string errors', () => {

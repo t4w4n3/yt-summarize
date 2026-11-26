@@ -34,6 +34,9 @@ local checkSteps = new Mapping<String, Step> {
   ["lint-yaml"] {
     check = "METRICS_CALLER=hk mise run lint-yaml"
   }
+  ["lint-md"] {
+    check = "METRICS_CALLER=hk mise run lint-md"
+  }
   ["lint-containerfile"] {
     check = "METRICS_CALLER=hk mise run lint-containerfile"
   }

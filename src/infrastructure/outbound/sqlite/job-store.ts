@@ -272,10 +272,7 @@ export function closeDatabase(db: DatabaseSync): void {
 }
 
 /**
- * SQLite JobStore adapter (phase 2A). Delegates to the legacy shared
- * helpers and maps rows to the domain Job entity; `updateStage`/`mark*`
- * first validate through the entity transitions so the domain owns the
- * state machine while the adapter only persists the result.
+ * Maps a raw SQLite row to the domain Job entity.
  */
 export function jobDbRowToJob(row: JobDbRow): Job {
   return {
@@ -297,7 +294,10 @@ export function jobDbRowToJob(row: JobDbRow): Job {
 }
 
 /**
- * SQLite JobStore adapter (phase 2A).
+ * SQLite JobStore adapter: delegates to the SQL helpers in this file and
+ * maps rows to the domain Job entity; `updateStage`/`mark*` first validate
+ * through the entity transitions so the domain owns the state machine
+ * while the adapter only persists the result.
  */
 export function createSqliteJobStore(db: DatabaseSync): JobStore {
   return {

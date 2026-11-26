@@ -4,7 +4,8 @@
 
 # Whether <path> belongs to lint kind <kind>.
 # Kinds: js (JS/TS/JSON), sh (shell), yaml (non-compose YAML),
-#        compose (compose YAML), containerfile (Containerfile/Dockerfile).
+#        compose (compose YAML), containerfile (Containerfile/Dockerfile),
+#        md (Markdown).
 lint_kind_matches() { # lint_kind_matches <kind> <path>
   local kind=$1 path=$2 base
   base=$(basename "$path")
@@ -21,6 +22,11 @@ lint_kind_matches() { # lint_kind_matches <kind> <path>
       return 1
       ;;
     containerfile:[Cc]ontainerfile* | containerfile:[Dd]ockerfile*) return 0 ;;
+    md:*.md)
+      # LLM prompt templates are not documents (no H1, no headings by design).
+      case "$path" in */prompts/*.md) return 1 ;; *) : ;; esac
+      return 0
+      ;;
     *) : ;;
   esac
   return 1

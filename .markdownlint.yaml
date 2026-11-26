@@ -1,0 +1,15 @@
+---
+# markdownlint config for `mise run lint-md` (markdownlint-cli).
+# Biome owns markdown *formatting* (it pads tables); this file owns
+# markdown *lint* (structure: headings, fences, emphasis).
+# Line length (MD013) is off by design: the reference tables and prose
+# are long single lines (commands, env-var rows) and nothing in the repo
+# wraps prose — re-enabling it would fight every edited doc.
+default: true
+MD013: false
+# DESIGN.md intentionally repeats "### Named Rules" under parallel
+# sections (Colors, Typography, Elevation & Depth): only forbid
+# duplicates among siblings.
+MD024:
+  siblings_only: true
+...

@@ -39,6 +39,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.6",
     "archunit": "^2.5.5",
+    "markdownlint-cli": "^0.50.1",
     "typescript": "^6.0.3"
   }
 }

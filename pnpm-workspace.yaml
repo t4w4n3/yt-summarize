@@ -9,3 +9,8 @@ auditConfig:
     - GHSA-g3hv-75wg-m249
 overrides:
   qs: ^6.16.0
+  # GHSA-238p-pmpm-9mq7 (katex, low, prototype pollution) via
+  # markdownlint-cli > markdownlint > micromark-extension-math : force la
+  # version patchée (le math rendering de markdownlint n'en a pas besoin,
+  # mais le lockfile doit passer pnpm audit --audit-level=low).
+  katex: ">=0.18.2"

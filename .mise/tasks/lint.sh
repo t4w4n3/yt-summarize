@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-#MISE description="Run every linter (JS/TS/JSON, shell, YAML, Containerfile, compose) — max strictness"
+#MISE description="Run every linter (JS/TS/JSON, shell, YAML, Markdown, Containerfile, compose) — max strictness"
 #USAGE flag "--fix" help="Auto-fix findings where the linter supports it"
 #USAGE flag "--changed" help="Only lint uncommitted files (staged + unstaged + untracked)"
 #USAGE flag "--fail-fast --ff" help="Stop at the first failing linter"
@@ -16,7 +16,7 @@ ARGS=()
 [ "${usage_changed:-}" = "true" ] && ARGS+=(--changed)
 
 status=0
-for task in lint-types lint-js lint-shell lint-yaml lint-containerfile lint-compose; do
+for task in lint-types lint-js lint-shell lint-yaml lint-md lint-containerfile lint-compose; do
   echo "── mise run $task ${ARGS[*]:-}"
   if ! mise run "$task" ${ARGS+"${ARGS[@]}"}; then
     status=1

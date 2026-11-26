@@ -4,7 +4,7 @@
 
 ## Overview
 
-**Creative North Star: "The One-Bit Study Workstation"**
+### Creative North Star: "The One-Bit Study Workstation"
 
 Summarize YT is a small, tactile desktop for one serious task: turning a video into a study artifact worth keeping. The interface borrows from early one-bit desktops and HyperCard-like work surfaces: black-and-white pixels, stippled grays, title bars, windows, and inverse pressed states. The visual language makes the pipeline feel inspectable rather than magical.
 
@@ -124,7 +124,7 @@ The four stages are a horizontal line of numbered square nodes: Download, Conver
 
 ## Do's and Don'ts
 
-### Do:
+### Do
 
 - **Do** use the black/white/dither foundation before reaching for lime.
 - **Do** make the current pipeline stage and recovery message explicit in words, not only color.
@@ -132,7 +132,7 @@ The four stages are a horizontal line of numbered square nodes: Download, Conver
 - **Do** keep note content readable and let the Markdown become the densest surface when it exists.
 - **Do** use the lime accent for action, selection, and live state.
 
-### Don't:
+### Don't
 
 - **Don't** introduce gradients, rounded cards, glass effects, or soft dashboard tiles.
 - **Don't** use pixel type for long-form note copy, helper text, or error explanations.
